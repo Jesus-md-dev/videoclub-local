@@ -34,6 +34,8 @@ export default function WatchPage() {
   const [ready, setReady] = useState(false);
   const [tracks, setTracks] = useState({ audio: [], subtitles: [] });
   const [audioIndex, setAudioIndex] = useState(null);
+  const [playbackKey, setPlaybackKey] = useState(0);
+  const [stuck, setStuck] = useState(false);
   const playerRef = useRef(null);
   const resumeTimeRef = useRef(null);
 
@@ -111,9 +113,26 @@ export default function WatchPage() {
       );
     };
 
+    // Si la reproducción se queda esperando datos y no se recupera sola en
+    // un rato, se ofrece un botón para reintentar sin recargar la página.
+    let stallTimer;
+    const onWaiting = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => setStuck(true), 15000);
+    };
+    const clearStall = () => {
+      clearTimeout(stallTimer);
+      setStuck(false);
+    };
+    const onError = () => setStuck(true);
+
     player.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
     player.addEventListener('pause', onPause);
     player.addEventListener('ended', onEnded);
+    player.addEventListener('waiting', onWaiting);
+    player.addEventListener('playing', clearStall);
+    player.addEventListener('timeupdate', clearStall);
+    player.addEventListener('error', onError);
 
     const interval = setInterval(() => saveProgress(id, player), 5000);
     const onBeforeUnload = () => saveProgress(id, player);
@@ -123,17 +142,29 @@ export default function WatchPage() {
       player.removeEventListener('loadedmetadata', onLoadedMetadata);
       player.removeEventListener('pause', onPause);
       player.removeEventListener('ended', onEnded);
+      player.removeEventListener('waiting', onWaiting);
+      player.removeEventListener('playing', clearStall);
+      player.removeEventListener('timeupdate', clearStall);
+      player.removeEventListener('error', onError);
       window.removeEventListener('beforeunload', onBeforeUnload);
       clearInterval(interval);
+      clearTimeout(stallTimer);
       saveProgress(id, player);
     };
-  }, [video, ready, id]);
+  }, [video, ready, id, playbackKey]);
 
   const handleAudioChange = (e) => {
     const value = e.target.value;
     const player = playerRef.current;
     resumeTimeRef.current = player ? player.currentTime : null;
     setAudioIndex(value === '' ? null : Number(value));
+  };
+
+  const retryPlayback = () => {
+    const player = playerRef.current;
+    resumeTimeRef.current = player ? player.currentTime : null;
+    setStuck(false);
+    setPlaybackKey((k) => k + 1);
   };
 
   const streamSrc = `/api/stream/${id}${audioIndex != null ? `?audio=${audioIndex}` : ''}`;
@@ -163,17 +194,25 @@ export default function WatchPage() {
           </div>
         )}
         {!error && video && ready && (
-          <video ref={playerRef} controls autoPlay src={streamSrc}>
-            {tracks.subtitles.map((track) => (
-              <track
-                key={track.index}
-                kind="subtitles"
-                src={`/api/subtitle/${id}/${track.index}`}
-                srcLang={track.language || 'und'}
-                label={trackLabel(track)}
-              />
-            ))}
-          </video>
+          <div className="player-column">
+            <video key={playbackKey} ref={playerRef} controls autoPlay src={streamSrc}>
+              {tracks.subtitles.map((track) => (
+                <track
+                  key={track.index}
+                  kind="subtitles"
+                  src={`/api/subtitle/${id}/${track.index}`}
+                  srcLang={track.language || 'und'}
+                  label={trackLabel(track)}
+                />
+              ))}
+            </video>
+            {stuck && (
+              <div className="stall-banner">
+                <span>La reproducción parece atascada.</span>
+                <button onClick={retryPlayback}>Reintentar</button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </>

@@ -20,8 +20,36 @@ function parseAudioIndex(req) {
   return req.query.audio != null ? Number(req.query.audio) : null;
 }
 
+// Conecta el stream de lectura a la respuesta, cerrando limpiamente en
+// cualquier caso anómalo (error de disco, cliente que corta la conexión al
+// buscar en la barra de progreso, ...) en vez de dejar la petición colgada
+// esperando datos que nunca van a llegar (lo que obliga a recargar).
+function pipeWithCleanup(req, res, readStream) {
+  readStream.on('error', (err) => {
+    console.warn(`Error leyendo el vídeo: ${err.message}`);
+    readStream.destroy();
+    if (!res.headersSent) {
+      res.status(500).end();
+    } else {
+      res.destroy();
+    }
+  });
+
+  req.on('close', () => {
+    readStream.destroy();
+  });
+
+  readStream.pipe(res);
+}
+
 function sendFileWithRange(req, res, filePath, contentType) {
-  const stat = fs.statSync(filePath);
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    res.status(404).json({ error: 'Archivo no encontrado en disco' });
+    return;
+  }
   const fileSize = stat.size;
   const range = req.headers.range;
 
@@ -31,7 +59,7 @@ function sendFileWithRange(req, res, filePath, contentType) {
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes',
     });
-    fs.createReadStream(filePath).pipe(res);
+    pipeWithCleanup(req, res, fs.createReadStream(filePath));
     return;
   }
 
@@ -55,7 +83,7 @@ function sendFileWithRange(req, res, filePath, contentType) {
     'Content-Length': end - start + 1,
     'Content-Type': contentType,
   });
-  fs.createReadStream(filePath, { start, end }).pipe(res);
+  pipeWithCleanup(req, res, fs.createReadStream(filePath, { start, end }));
 }
 
 router.get('/stream/:id/status', async (req, res) => {
