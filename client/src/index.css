@@ -760,6 +760,76 @@ video {
   align-items: flex-start;
 }
 
+.queue-wrap {
+  max-width: 800px;
+}
+
+.queue-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.queue-summary strong {
+  color: var(--text);
+}
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 24px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.queue-row-active {
+  border-color: var(--accent);
+}
+
+.queue-row-failed {
+  border-color: var(--accent);
+  opacity: 0.75;
+}
+
+.queue-position {
+  color: var(--text-dim);
+  min-width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.queue-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-meta {
+  color: var(--text-dim);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .path-row input[type='text'] {
   flex: 1;
 }

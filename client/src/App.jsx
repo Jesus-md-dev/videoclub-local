@@ -3,6 +3,7 @@ import CatalogPage from './pages/CatalogPage';
 import WatchPage from './pages/WatchPage';
 import ConfigPage from './pages/ConfigPage';
 import ProfilesPage from './pages/ProfilesPage';
+import QueuePage from './pages/QueuePage';
 import { getActiveProfileId } from './profile';
 
 function RequireProfile({ children }) {
@@ -31,6 +32,7 @@ export default function App() {
         }
       />
       <Route path="/config" element={<ConfigPage />} />
+      <Route path="/queue" element={<QueuePage />} />
     </Routes>
   );
 }

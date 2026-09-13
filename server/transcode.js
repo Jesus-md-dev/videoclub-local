@@ -141,9 +141,9 @@ function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex, hdr }, useGpu
 
 // La conversión de ffmpeg actualmente en marcha (si hay alguna), para poder
 // interrumpirla a propósito desde forcePriority().
-let activeJob = null; // { key, command }
+let activeJob = null; // { key, command, meta }
 
-function runOnce(inputPath, tmpOutput, key, opts, useGpu, format = 'mp4') {
+function runOnce(inputPath, tmpOutput, key, opts, useGpu, format = 'mp4', meta = null) {
   return new Promise((resolve, reject) => {
     progress.set(key, { percent: null, startedAt: Date.now() });
 
@@ -182,12 +182,12 @@ function runOnce(inputPath, tmpOutput, key, opts, useGpu, format = 'mp4') {
         resolve();
       });
 
-    activeJob = { key, command, interrupted: false };
+    activeJob = { key, command, interrupted: false, meta };
     command.save(tmpOutput);
   });
 }
 
-async function runFfmpegNow(inputPath, key, opts) {
+async function runFfmpegNow(inputPath, key, opts, meta) {
   fs.mkdirSync(TRANSCODED_PATH, { recursive: true });
   const ext = opts.outputExt || '.mp4';
   const format = opts.outputFormat || 'mp4';
@@ -195,7 +195,7 @@ async function runFfmpegNow(inputPath, key, opts) {
   const useGpu = !opts.videoCopy && (await checkGpuAvailable());
 
   try {
-    await runOnce(inputPath, tmpOutput, key, opts, useGpu, format);
+    await runOnce(inputPath, tmpOutput, key, opts, useGpu, format, meta);
   } catch (err) {
     fs.rm(tmpOutput, { force: true }, () => {});
     if (err.interrupted) throw err;
@@ -203,7 +203,7 @@ async function runFfmpegNow(inputPath, key, opts) {
     // La GPU ha fallado para este archivo en concreto (a menudo por tener ya
     // otra sesión NVENC abierta): reintenta con CPU en vez de fallar del todo.
     console.warn(`Fallo con GPU, reintentando con CPU: ${err.message}`);
-    await runOnce(inputPath, tmpOutput, key, opts, false, format);
+    await runOnce(inputPath, tmpOutput, key, opts, false, format, meta);
   }
 
   fs.renameSync(tmpOutput, outputFile(key, ext));
@@ -230,9 +230,9 @@ async function drainFfmpegQueue() {
   ffmpegDraining = false;
 }
 
-function runFfmpeg(inputPath, key, opts, priority = 'low') {
+function runFfmpeg(inputPath, key, opts, priority = 'low', meta = null) {
   return new Promise((resolve, reject) => {
-    const task = { key, run: () => runFfmpegNow(inputPath, key, opts).then(resolve, reject) };
+    const task = { key, meta, run: () => runFfmpegNow(inputPath, key, opts, meta).then(resolve, reject) };
     (priority === 'high' ? ffmpegHighQueue : ffmpegLowQueue).push(task);
     drainFfmpegQueue();
   });
@@ -327,7 +327,8 @@ async function ensureChecked(video, audioIndex = null, priority = 'low') {
       audioMapIndex: useDefault ? null : effectiveAudio,
       hdr: isHdrSource(videoStream),
     },
-    priority
+    priority,
+    { id: video.id, title: video.title, size: video.size }
   )
     .then(() => status.set(key, 'ready'))
     .catch((err) => {
@@ -387,6 +388,31 @@ function peekProgressPercent(video) {
   return entry && typeof entry.percent === 'number' ? entry.percent : null;
 }
 
+// Foto instantánea de la cola de conversión real (para una página de
+// estado): el trabajo activo ahora mismo y el resto en el orden exacto en
+// que les tocará su turno (alta prioridad primero, luego baja).
+function getQueueSnapshot() {
+  const active = activeJob
+    ? {
+        key: activeJob.key,
+        ...activeJob.meta,
+        percent: progress.get(activeJob.key)?.percent ?? null,
+      }
+    : null;
+  const queued = [...ffmpegHighQueue, ...ffmpegLowQueue].map((task, index) => ({
+    key: task.key,
+    ...task.meta,
+    position: index + 1,
+  }));
+  return { active, queued };
+}
+
+// Claves marcadas como 'failed' (no se pudieron analizar o convertir), para
+// poder revisarlas desde la página de estado.
+function getFailedKeys() {
+  return [...status.entries()].filter(([, value]) => value === 'failed').map(([key]) => key);
+}
+
 // En modo "sin convertir" (?raw=1) se sirve el archivo tal cual, así que el
 // navegador solo reproduce la pista de audio que trae por defecto: cambiar
 // de idioma no tiene ningún efecto (la mayoría de navegadores no exponen las
@@ -429,7 +455,8 @@ async function ensureRawAudio(video, audioIndex) {
       outputExt: ext,
       outputFormat: CONTAINER_FORMATS[ext] || 'matroska',
     },
-    'high'
+    'high',
+    { id: video.id, title: video.title, size: video.size }
   )
     .then(() => status.set(key, 'ready'))
     .catch((err) => {
@@ -512,4 +539,6 @@ module.exports = {
   ensureRawAudio,
   rawAudioProgress,
   rawAudioFile,
+  getQueueSnapshot,
+  getFailedKeys,
 };

@@ -17,6 +17,7 @@ const browseRouter = require('./routes/browse');
 const tracksRouter = require('./routes/tracks');
 const trickplayRouter = require('./routes/trickplay');
 const profilesRouter = require('./routes/profiles');
+const queueRouter = require('./routes/queue');
 
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
@@ -42,6 +43,7 @@ app.use('/api', browseRouter);
 app.use('/api', tracksRouter);
 app.use('/api', trickplayRouter);
 app.use('/api', profilesRouter);
+app.use('/api', queueRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
