@@ -42,7 +42,6 @@ function VideoCard({ video }) {
 function FolderCard({ folder, onOpen }) {
   return (
     <button className="card folder-card" onClick={() => onOpen(folder.path)}>
-      <span className="badge folder-badge">📁 Carpeta</span>
       {folder.thumbnailId ? (
         <img
           className="poster"
