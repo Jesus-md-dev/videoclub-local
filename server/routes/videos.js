@@ -6,6 +6,15 @@ const transcode = require('../transcode');
 
 const router = express.Router();
 
+// El "type" que devuelven las fuentes (tv/anime/movie) es poco fiable para
+// distinguir anime: TVmaze indexa muchos animes como series de TV normales
+// y solo a veces los etiqueta también con el género "Anime". Se usa esa
+// etiqueta de género (más consistente) como señal real.
+function resolveType(meta) {
+  if (meta.type === 'anime' || meta.genres?.includes('Anime')) return 'anime';
+  return meta.type;
+}
+
 function toPublicVideo(video) {
   return {
     id: video.id,
@@ -33,11 +42,17 @@ router.get('/videos/browse', (req, res) => {
     parent,
     folders: folders.map((folder) => {
       const meta = metadata.getCached(folder.name);
-      return { ...folder, genres: meta.genres, cleanName: meta.cleanName, poster: meta.poster };
+      return { ...folder, genres: meta.genres, cleanName: meta.cleanName, poster: meta.poster, type: resolveType(meta) };
     }),
     videos: videos.map((video) => {
       const meta = metadata.getCached(catalog.metadataKeyFor(video));
-      return { ...toPublicVideo(video), genres: meta.genres, cleanName: meta.cleanName, poster: meta.poster };
+      return {
+        ...toPublicVideo(video),
+        genres: meta.genres,
+        cleanName: meta.cleanName,
+        poster: meta.poster,
+        type: resolveType(meta),
+      };
     }),
   });
 });

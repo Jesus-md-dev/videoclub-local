@@ -293,15 +293,33 @@ async function fetchWikidataFilm(query, priority) {
 // encuentre géneros reales; no asume de antemano si es serie o película
 // (eso lo decide el propio resultado de la búsqueda, no la estructura de
 // carpetas/archivos en disco).
+//
+// TVmaze indexa muchos animes como series de TV normales, y solo a veces
+// los etiqueta también con el género "Anime" — por eso, salvo que ya venga
+// con esa etiqueta, se comprueba también en Jikan (específico de anime)
+// para no clasificar mal algo que sí lo es.
 async function fetchBest(query, priority) {
   const tv = await fetchTvMaze(query, priority);
+  if (tv && tv.genres.includes('Anime')) return tv;
+
+  const anime = await fetchJikan(query, priority);
+  if (anime && anime.genres.length) {
+    if (tv && tv.genres.length) {
+      return {
+        genres: normalizeGenres([...tv.genres, ...anime.genres, 'anime']),
+        year: tv.year || anime.year,
+        type: 'anime',
+        cleanName: tv.cleanName || anime.cleanName,
+        poster: tv.poster || anime.poster,
+      };
+    }
+    return anime;
+  }
+
   if (tv && tv.genres.length) return tv;
 
   const movie = await fetchWikidataFilm(query, priority);
   if (movie && movie.genres.length) return movie;
-
-  const anime = await fetchJikan(query, priority);
-  if (anime && anime.genres.length) return anime;
 
   return tv || movie || anime || null;
 }

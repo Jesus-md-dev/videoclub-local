@@ -242,6 +242,12 @@ export default function CatalogPage() {
   const visibleFolders = genre ? folders.filter((f) => f.genres?.includes(genre)) : folders;
   const visibleVideos = genre ? videos.filter((v) => v.genres?.includes(genre)) : videos;
 
+  // En la raíz, las carpetas (series/anime) se separan en dos filas según
+  // el tipo detectado por las fuentes de metadatos; dentro de una carpeta
+  // concreta (episodios de una sola obra) no aplica la distinción.
+  const animeFolders = !dir ? visibleFolders.filter((f) => f.type === 'anime') : [];
+  const seriesFolders = !dir ? visibleFolders.filter((f) => f.type !== 'anime') : visibleFolders;
+
   const list = searching ? filtered : visibleVideos;
   const showFolders = !searching && visibleFolders.length > 0;
   const isEmpty = !error && list.length === 0 && (searching || visibleFolders.length === 0);
@@ -300,11 +306,22 @@ export default function CatalogPage() {
               </>
             )}
 
-            {showFolders && (
+            {showFolders && seriesFolders.length > 0 && (
               <>
                 <p className="section-title">{dir ? 'Carpetas' : 'Series'}</p>
                 <div className="grid folder-grid">
-                  {visibleFolders.map((folder) => (
+                  {seriesFolders.map((folder) => (
+                    <FolderCard key={folder.path} folder={folder} onOpen={goToDir} />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {showFolders && animeFolders.length > 0 && (
+              <>
+                <p className="section-title">Animes</p>
+                <div className="grid folder-grid">
+                  {animeFolders.map((folder) => (
                     <FolderCard key={folder.path} folder={folder} onOpen={goToDir} />
                   ))}
                 </div>
