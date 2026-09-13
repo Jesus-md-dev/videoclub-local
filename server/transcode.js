@@ -35,26 +35,60 @@ async function resolveKey(video, audioIndex) {
   return effectiveAudio === defaultAudio ? video.id : `${video.id}#a${effectiveAudio}`;
 }
 
-function runFfmpeg(inputPath, key, { videoCopy, audioCopy, audioMapIndex }) {
-  return new Promise((resolve, reject) => {
+// Se detecta una sola vez si la GPU (NVENC) funciona de verdad en este
+// equipo probando una codificación mínima; si algo falla (sin GPU NVIDIA,
+// controlador antiguo, etc.) se usa libx264 (CPU) para todo, sin más aviso.
+let gpuAvailable = null;
+function checkGpuAvailable() {
+  if (gpuAvailable !== null) return Promise.resolve(gpuAvailable);
+  return new Promise((resolve) => {
     fs.mkdirSync(TRANSCODED_PATH, { recursive: true });
-    const tmpOutput = `${outputFile(key)}.tmp.mp4`;
+    const checkFile = path.join(TRANSCODED_PATH, '.gpu-check.mp4');
+    ffmpeg()
+      .input('color=black:s=320x240:d=0.1')
+      .inputFormat('lavfi')
+      .videoCodec('h264_nvenc')
+      .outputOptions(['-frames:v 1'])
+      .format('mp4')
+      .on('error', () => {
+        gpuAvailable = false;
+        fs.rm(checkFile, { force: true }, () => {});
+        console.warn('GPU (NVENC) no disponible en este equipo: las conversiones usarán la CPU (más lentas).');
+        resolve(false);
+      })
+      .on('end', () => {
+        gpuAvailable = true;
+        fs.rm(checkFile, { force: true }, () => {});
+        console.log('GPU (NVENC) disponible: las conversiones que necesiten recodificar usarán la GPU.');
+        resolve(true);
+      })
+      .save(checkFile);
+  });
+}
 
-    const outputOptions = [
-      '-map 0:v:0',
-      audioMapIndex != null ? `-map 0:${audioMapIndex}` : '-map 0:a:0?',
-      `-c:v ${videoCopy ? 'copy' : 'libx264'}`,
-      `-c:a ${audioCopy ? 'copy' : 'aac'}`,
-      '-movflags +faststart',
-    ];
-    if (!videoCopy) {
-      outputOptions.push('-preset veryfast', '-crf 23');
-    }
+function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex }, useGpu) {
+  const outputOptions = [
+    '-map 0:v:0',
+    audioMapIndex != null ? `-map 0:${audioMapIndex}` : '-map 0:a:0?',
+    `-c:v ${videoCopy ? 'copy' : useGpu ? 'h264_nvenc' : 'libx264'}`,
+    `-c:a ${audioCopy ? 'copy' : 'aac'}`,
+    '-movflags +faststart',
+  ];
+  if (!videoCopy) {
+    // Fuentes de 10 bits (HDR/HEVC) deben bajarse a 8 bits: h264_nvenc no
+    // codifica H.264 en 10 bits, y da igual mantenerlos para este uso.
+    outputOptions.push('-pix_fmt yuv420p');
+    outputOptions.push(...(useGpu ? ['-preset p4', '-rc vbr', '-cq 23'] : ['-preset veryfast', '-crf 23']));
+  }
+  return outputOptions;
+}
 
+function runOnce(inputPath, tmpOutput, key, opts, useGpu) {
+  return new Promise((resolve, reject) => {
     progress.set(key, { percent: null, startedAt: Date.now() });
 
     ffmpeg(inputPath)
-      .outputOptions(outputOptions)
+      .outputOptions(buildOutputOptions(opts, useGpu))
       .format('mp4')
       .on('progress', (p) => {
         if (typeof p.percent === 'number' && !Number.isNaN(p.percent)) {
@@ -64,16 +98,44 @@ function runFfmpeg(inputPath, key, { videoCopy, audioCopy, audioMapIndex }) {
       })
       .on('error', (err) => {
         progress.delete(key);
-        fs.rm(tmpOutput, { force: true }, () => {});
         reject(err);
       })
       .on('end', () => {
         progress.delete(key);
-        fs.renameSync(tmpOutput, outputFile(key));
         resolve();
       })
       .save(tmpOutput);
   });
+}
+
+async function runFfmpegNow(inputPath, key, opts) {
+  fs.mkdirSync(TRANSCODED_PATH, { recursive: true });
+  const tmpOutput = `${outputFile(key)}.tmp.mp4`;
+  const useGpu = !opts.videoCopy && (await checkGpuAvailable());
+
+  try {
+    await runOnce(inputPath, tmpOutput, key, opts, useGpu);
+  } catch (err) {
+    fs.rm(tmpOutput, { force: true }, () => {});
+    if (!useGpu) throw err;
+    // La GPU ha fallado para este archivo en concreto (a menudo por tener ya
+    // otra sesión NVENC abierta): reintenta con CPU en vez de fallar del todo.
+    console.warn(`Fallo con GPU, reintentando con CPU: ${err.message}`);
+    await runOnce(inputPath, tmpOutput, key, opts, false);
+  }
+
+  fs.renameSync(tmpOutput, outputFile(key));
+}
+
+// Cola global: como mucho una conversión de ffmpeg a la vez, sin importar
+// si la pide el precalentamiento en segundo plano o una petición del
+// usuario en ese momento. Sin esto, varias conversiones en paralelo pueden
+// agotar las sesiones NVENC de la GPU (y saturar la CPU/disco).
+let ffmpegQueueTail = Promise.resolve();
+function runFfmpeg(inputPath, key, opts) {
+  const run = ffmpegQueueTail.then(() => runFfmpegNow(inputPath, key, opts));
+  ffmpegQueueTail = run.catch(() => {});
+  return run;
 }
 
 async function ensureChecked(video, audioIndex = null) {

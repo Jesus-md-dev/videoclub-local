@@ -12,12 +12,34 @@
   box-sizing: border-box;
 }
 
+/* Foco visible y grande para navegación por mando (smart TV) o teclado: se
+   aplica a cualquier botón/enlace que no tenga ya su propio estilo de foco
+   más específico (las carátulas .card sí lo tienen, más abajo). */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--accent-glow);
+  outline-offset: 2px;
+}
+
+html {
+  /* Evita que iOS agrande el texto solo al girar a horizontal, y fija una
+     base de la que escalar el resto en la media query de pantallas grandes. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
   font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
   min-height: 100vh;
+  /* Respeta el "notch"/barra de gestos en móviles con recorte (iPhone en
+     horizontal, algunos Android). */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 #root {
@@ -104,6 +126,11 @@ main {
   border-color: var(--accent);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--accent-glow);
   z-index: 1;
+}
+
+.card:focus-visible {
+  /* Ya tiene su propio indicador de foco (borde + sombra) más arriba. */
+  outline: none;
 }
 
 .poster {
@@ -232,8 +259,9 @@ main {
 
 .watch-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 12px 16px;
   padding: 20px clamp(16px, 4vw, 48px);
   border-bottom: 2px solid var(--border);
   background: var(--bg-alt);
@@ -565,4 +593,103 @@ video {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 16px;
+}
+
+/* ---- Móvil: objetivos táctiles más grandes, cuadrícula más apretada ---- */
+@media (max-width: 480px) {
+  header {
+    padding: 14px 16px;
+  }
+
+  main {
+    padding: 16px 16px 40px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+    gap: 12px;
+  }
+
+  .chip,
+  .crumb,
+  .back-link,
+  .episode-nav button,
+  .track-select,
+  .config-wrap button,
+  .config-wrap button.secondary {
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+
+  .episode-nav {
+    width: 100%;
+  }
+
+  .episode-nav button {
+    flex: 1;
+  }
+
+  .watch-title {
+    font-size: 16px;
+  }
+
+  .path-row {
+    flex-direction: column;
+  }
+
+  .browser-modal {
+    padding: 16px;
+    max-height: 85vh;
+  }
+}
+
+/* ---- Tablet: aprovecha el ancho extra sin llegar al tamaño de escritorio ---- */
+@media (min-width: 600px) and (max-width: 1024px) {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  }
+}
+
+/* ---- Pantallas grandes / smart TV: UI "a 3 metros", más grande y legible,
+   y el reproductor aprovecha el ancho en vez de quedarse pequeño en medio
+   de una pantalla enorme. ---- */
+@media (min-width: 1600px) {
+  body {
+    font-size: 18px;
+  }
+
+  .logo {
+    font-size: 38px;
+  }
+
+  .section-title {
+    font-size: 17px;
+    letter-spacing: 4px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 28px;
+  }
+
+  .card-title {
+    font-size: 17px;
+  }
+
+  video {
+    max-width: min(1700px, 88vw);
+  }
+
+  .chip,
+  .crumb,
+  .back-link,
+  .episode-nav button,
+  .track-select {
+    font-size: 16px;
+    padding: 10px 20px;
+  }
+
+  .watch-title {
+    font-size: 28px;
+  }
 }
