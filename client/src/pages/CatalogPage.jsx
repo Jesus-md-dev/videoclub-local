@@ -116,6 +116,10 @@ export default function CatalogPage() {
 
   const genre = searchParams.get('genre') || '';
 
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [dir]);
+
   const [folders, setFolders] = useState([]);
   const [videos, setVideos] = useState([]);
   const [allVideos, setAllVideos] = useState([]);
