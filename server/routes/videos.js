@@ -23,6 +23,7 @@ function toPublicVideo(video) {
     modifiedAt: video.modifiedAt,
     hasThumbnail: thumbnails.hasThumbnail(video.id),
     seriesKey: catalog.getShowKeyFor(video),
+    processing: transcode.peekStatus(video) === 'processing',
   };
 }
 
@@ -42,7 +43,17 @@ router.get('/videos/browse', (req, res) => {
     parent,
     folders: folders.map((folder) => {
       const meta = metadata.getCached(folder.name);
-      return { ...folder, genres: meta.genres, cleanName: meta.cleanName, poster: meta.poster, type: resolveType(meta) };
+      const processing = catalog
+        .listDir(folder.path)
+        .videos.some((v) => transcode.peekStatus(v) === 'processing');
+      return {
+        ...folder,
+        genres: meta.genres,
+        cleanName: meta.cleanName,
+        poster: meta.poster,
+        type: resolveType(meta),
+        processing,
+      };
     }),
     videos: videos.map((video) => {
       const meta = metadata.getCached(catalog.metadataKeyFor(video));

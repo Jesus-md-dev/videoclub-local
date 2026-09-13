@@ -300,6 +300,13 @@ async function getStatus(video, audioIndex = null) {
   return status.get(key) || 'unknown';
 }
 
+// Igual que getStatus pero sin comprobar nada nuevo (para pintar el catálogo
+// al instante): la pista por defecto siempre usa `video.id` como clave, así
+// que no hace falta resolver de forma asíncrona.
+function peekStatus(video) {
+  return status.get(video.id) || 'unknown';
+}
+
 // Progreso de la conversión en curso (0-100, o null si aún no se puede
 // estimar) y el tiempo transcurrido, para mostrar una barra de carga real.
 async function getProgress(video, audioIndex = null) {
@@ -337,4 +344,4 @@ async function warmAll(videos) {
   }
 }
 
-module.exports = { ensureChecked, getStatus, getProgress, playableFile, warmAll, forcePriorityFor };
+module.exports = { ensureChecked, getStatus, peekStatus, getProgress, playableFile, warmAll, forcePriorityFor };

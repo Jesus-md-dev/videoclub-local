@@ -56,6 +56,7 @@ function VideoCard({ video, onRemove }) {
   return (
     <Link className="card" to={`/watch/${video.id}`}>
       {showProgress && <span className="badge">Continuar</span>}
+      {video.processing && <span className="badge badge-processing">Procesando…</span>}
       {onRemove && (
         <button
           className="card-remove"
@@ -97,6 +98,7 @@ function FolderCard({ folder, onOpen }) {
 
   return (
     <button className="card folder-card" onClick={() => onOpen(folder.path)}>
+      {folder.processing && <span className="badge badge-processing">Procesando…</span>}
       {posterSrc ? (
         <img
           className="poster"
