@@ -65,4 +65,70 @@ function getVideoById(id) {
   return byId.get(id);
 }
 
-module.exports = { scan, getCatalog, getVideoById };
+function toWebPath(osPath) {
+  return osPath.split(path.sep).join('/');
+}
+
+function toOsPath(webPath) {
+  return webPath.split('/').join(path.sep);
+}
+
+// Primer vídeo (recursivo, orden natural por ruta) dentro de una carpeta,
+// usado como carátula representativa de esa carpeta.
+function firstVideoIn(osFolderPath) {
+  const prefix = osFolderPath + path.sep;
+  let first = null;
+  for (const video of cache) {
+    if (!video.relativePath.startsWith(prefix)) continue;
+    if (!first || video.relativePath.localeCompare(first.relativePath, 'es', { numeric: true }) < 0) {
+      first = video;
+    }
+  }
+  return first;
+}
+
+// Lista el contenido directo (subcarpetas + vídeos) de una carpeta del
+// catálogo, sin aplanar el árbol completo. `webDir` usa '/' como separador
+// independientemente del sistema operativo.
+function listDir(webDir = '') {
+  const osDir = webDir ? toOsPath(webDir) : '';
+  const prefix = osDir ? osDir + path.sep : '';
+  const folderMap = new Map();
+  const videos = [];
+
+  for (const video of cache) {
+    if (prefix && !video.relativePath.startsWith(prefix)) continue;
+
+    const rest = prefix ? video.relativePath.slice(prefix.length) : video.relativePath;
+    const parts = rest.split(path.sep);
+
+    if (parts.length === 1) {
+      videos.push(video);
+    } else {
+      const name = parts[0];
+      if (!folderMap.has(name)) {
+        folderMap.set(name, prefix + name);
+      }
+    }
+  }
+
+  const folders = [...folderMap.entries()]
+    .map(([name, osPath]) => ({
+      name,
+      path: toWebPath(osPath),
+      thumbnailId: firstVideoIn(osPath)?.id ?? null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+
+  videos.sort((a, b) => a.title.localeCompare(b.title, 'es'));
+
+  let parent = null;
+  if (osDir) {
+    const dirname = path.dirname(osDir);
+    parent = dirname === '.' ? '' : toWebPath(dirname);
+  }
+
+  return { dir: webDir, parent, folders, videos };
+}
+
+module.exports = { scan, getCatalog, getVideoById, listDir };

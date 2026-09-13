@@ -27,6 +27,7 @@ export default function WatchPage() {
   const { id } = useParams();
   const [video, setVideo] = useState(null);
   const [error, setError] = useState(null);
+  const [ready, setReady] = useState(false);
   const playerRef = useRef(null);
 
   useEffect(() => {
@@ -45,8 +46,38 @@ export default function WatchPage() {
   }, [id]);
 
   useEffect(() => {
+    if (!video) return undefined;
+    let cancelled = false;
+    let timer;
+
+    const checkStatus = () => {
+      fetch(`/api/stream/${id}/status`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (cancelled) return;
+          if (data.status === 'ready' || data.status === 'compatible') {
+            setReady(true);
+          } else if (data.status === 'failed') {
+            setError('No se pudo preparar este vídeo para reproducirlo.');
+          } else {
+            timer = setTimeout(checkStatus, 3000);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) timer = setTimeout(checkStatus, 3000);
+        });
+    };
+
+    checkStatus();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [video, id]);
+
+  useEffect(() => {
     const player = playerRef.current;
-    if (!video || !player) return undefined;
+    if (!video || !ready || !player) return undefined;
 
     const saved = loadProgress(id);
     const onLoadedMetadata = () => {
@@ -78,7 +109,7 @@ export default function WatchPage() {
       clearInterval(interval);
       saveProgress(id, player);
     };
-  }, [video, id]);
+  }, [video, ready, id]);
 
   return (
     <>
@@ -90,7 +121,12 @@ export default function WatchPage() {
       </div>
       <div className="player-wrap">
         {error && <div className="error-box">{error}</div>}
-        {!error && video && (
+        {!error && video && !ready && (
+          <div className="error-box">
+            Preparando vídeo para este dispositivo... puede tardar unos minutos la primera vez.
+          </div>
+        )}
+        {!error && video && ready && (
           <video ref={playerRef} controls autoPlay src={`/api/stream/${id}`} />
         )}
       </div>

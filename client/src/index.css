@@ -149,6 +149,57 @@ main {
   background: var(--accent);
 }
 
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.crumb {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.crumb:hover {
+  color: var(--accent);
+}
+
+.crumb-sep {
+  color: var(--border);
+  margin: 0 2px;
+}
+
+.folder-grid {
+  margin-bottom: 28px;
+}
+
+.folder-card {
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+}
+
+.folder-badge {
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.folder-icon {
+  aspect-ratio: 2 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  background: linear-gradient(160deg, var(--bg-alt), var(--bg));
+}
+
 .empty-state {
   color: var(--text-dim);
   text-align: center;

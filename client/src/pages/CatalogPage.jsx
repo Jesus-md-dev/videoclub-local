@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 function progressFor(id) {
   try {
@@ -39,23 +39,101 @@ function VideoCard({ video }) {
   );
 }
 
+function FolderCard({ folder, onOpen }) {
+  return (
+    <button className="card folder-card" onClick={() => onOpen(folder.path)}>
+      <span className="badge folder-badge">📁 Carpeta</span>
+      {folder.thumbnailId ? (
+        <img
+          className="poster"
+          src={`/api/thumbnail/${folder.thumbnailId}`}
+          alt={folder.name}
+          loading="lazy"
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = '/placeholder.svg';
+          }}
+        />
+      ) : (
+        <div className="folder-icon">📁</div>
+      )}
+      <div className="card-info">
+        <p className="card-title">{folder.name}</p>
+      </div>
+    </button>
+  );
+}
+
+function Breadcrumb({ dir, onNavigate }) {
+  const segments = dir ? dir.split('/') : [];
+  return (
+    <div className="breadcrumb">
+      <button className="crumb" onClick={() => onNavigate('')}>
+        Inicio
+      </button>
+      {segments.map((segment, index) => {
+        const path = segments.slice(0, index + 1).join('/');
+        return (
+          <span key={path}>
+            <span className="crumb-sep">/</span>
+            <button className="crumb" onClick={() => onNavigate(path)}>
+              {segment}
+            </button>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function CatalogPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const dir = searchParams.get('dir') || '';
+  const term = searchParams.get('q') || '';
+
+  const [folders, setFolders] = useState([]);
   const [videos, setVideos] = useState([]);
+  const [allVideos, setAllVideos] = useState([]);
   const [error, setError] = useState(null);
-  const [term, setTerm] = useState('');
+
+  const searching = term.trim().length > 0;
 
   useEffect(() => {
+    if (searching) return;
+    setError(null);
+    fetch(`/api/videos/browse?dir=${encodeURIComponent(dir)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setFolders(data.folders);
+        setVideos(data.videos);
+      })
+      .catch(() => setError('No se pudo cargar el catálogo.'));
+  }, [dir, searching]);
+
+  useEffect(() => {
+    if (!searching) return;
+    setError(null);
     fetch('/api/videos')
       .then((res) => res.json())
-      .then(setVideos)
+      .then(setAllVideos)
       .catch(() => setError('No se pudo cargar el catálogo.'));
-  }, []);
+  }, [searching]);
 
   const filtered = useMemo(() => {
     const q = term.trim().toLowerCase();
-    if (!q) return videos;
-    return videos.filter((v) => v.title.toLowerCase().includes(q));
-  }, [videos, term]);
+    if (!q) return [];
+    return allVideos.filter((v) => v.title.toLowerCase().includes(q));
+  }, [allVideos, term]);
+
+  const goToDir = (newDir) => setSearchParams(newDir ? { dir: newDir } : {});
+  const handleSearch = (value) => {
+    if (value) setSearchParams({ q: value });
+    else setSearchParams(dir ? { dir } : {});
+  };
+
+  const list = searching ? filtered : videos;
+  const showFolders = !searching && folders.length > 0;
+  const isEmpty = !error && list.length === 0 && (searching || folders.length === 0);
 
   return (
     <>
@@ -69,22 +147,53 @@ export default function CatalogPage() {
           placeholder="Buscar título..."
           autoComplete="off"
           value={term}
-          onChange={(e) => setTerm(e.target.value)}
+          onChange={(e) => handleSearch(e.target.value)}
         />
       </header>
       <main>
-        <p className="section-title">Estanterías</p>
-        <div className="grid">
-          {filtered.map((video) => (
-            <VideoCard key={video.id} video={video} />
-          ))}
-        </div>
+        {!searching && <Breadcrumb dir={dir} onNavigate={goToDir} />}
+
+        {searching && (
+          <>
+            <p className="section-title">Resultados</p>
+            <div className="grid">
+              {list.map((video) => (
+                <VideoCard key={video.id} video={video} />
+              ))}
+            </div>
+          </>
+        )}
+
+        {!searching && (
+          <>
+            {showFolders && (
+              <>
+                <p className="section-title">{dir ? 'Carpetas' : 'Series'}</p>
+                <div className="grid folder-grid">
+                  {folders.map((folder) => (
+                    <FolderCard key={folder.path} folder={folder} onOpen={goToDir} />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {videos.length > 0 && (
+              <>
+                <p className="section-title">{dir ? 'Vídeos' : 'Películas'}</p>
+                <div className="grid">
+                  {videos.map((video) => (
+                    <VideoCard key={video.id} video={video} />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
         {error && <p className="empty-state">{error}</p>}
-        {!error && filtered.length === 0 && (
+        {isEmpty && (
           <p className="empty-state">
-            {videos.length === 0
-              ? 'No hay vídeos en el catálogo todavía.'
-              : 'No hay resultados para tu búsqueda.'}
+            {searching ? 'No hay resultados para tu búsqueda.' : 'Esta carpeta está vacía.'}
           </p>
         )}
       </main>

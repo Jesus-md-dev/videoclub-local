@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const catalog = require('../catalog');
 const { getVideosPath } = require('../config');
+const transcode = require('../transcode');
 
 const router = express.Router();
 
@@ -15,35 +16,10 @@ const MIME_TYPES = {
   '.m4v': 'video/x-m4v',
 };
 
-router.get('/stream/:id', (req, res) => {
-  const video = catalog.getVideoById(req.params.id);
-  if (!video) {
-    res.status(404).json({ error: 'Vídeo no encontrado' });
-    return;
-  }
-
-  const videosPath = getVideosPath();
-  const filePath = path.join(videosPath, video.relativePath);
-  const resolved = path.resolve(filePath);
-
-  // El id proviene del catálogo ya escaneado dentro de la carpeta configurada,
-  // pero se valida igualmente que la ruta resuelta no se haya salido de ella.
-  if (!resolved.startsWith(path.resolve(videosPath))) {
-    res.status(400).json({ error: 'Ruta inválida' });
-    return;
-  }
-
-  let stat;
-  try {
-    stat = fs.statSync(resolved);
-  } catch {
-    res.status(404).json({ error: 'Archivo no encontrado en disco' });
-    return;
-  }
-
+function sendFileWithRange(req, res, filePath, contentType) {
+  const stat = fs.statSync(filePath);
   const fileSize = stat.size;
   const range = req.headers.range;
-  const contentType = MIME_TYPES[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
 
   if (!range) {
     res.writeHead(200, {
@@ -51,7 +27,7 @@ router.get('/stream/:id', (req, res) => {
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes',
     });
-    fs.createReadStream(resolved).pipe(res);
+    fs.createReadStream(filePath).pipe(res);
     return;
   }
 
@@ -69,14 +45,68 @@ router.get('/stream/:id', (req, res) => {
     return;
   }
 
-  const chunkSize = end - start + 1;
   res.writeHead(206, {
     'Content-Range': `bytes ${start}-${end}/${fileSize}`,
     'Accept-Ranges': 'bytes',
-    'Content-Length': chunkSize,
+    'Content-Length': end - start + 1,
     'Content-Type': contentType,
   });
-  fs.createReadStream(resolved, { start, end }).pipe(res);
+  fs.createReadStream(filePath, { start, end }).pipe(res);
+}
+
+router.get('/stream/:id/status', async (req, res) => {
+  const video = catalog.getVideoById(req.params.id);
+  if (!video) {
+    res.status(404).json({ error: 'Vídeo no encontrado' });
+    return;
+  }
+  const status = await transcode.ensureChecked(video);
+  res.json({ status });
+});
+
+router.get('/stream/:id', (req, res) => {
+  const video = catalog.getVideoById(req.params.id);
+  if (!video) {
+    res.status(404).json({ error: 'Vídeo no encontrado' });
+    return;
+  }
+
+  const status = transcode.getStatus(video.id);
+
+  if (status === 'processing' || status === 'checking' || status === 'unknown') {
+    res.status(503).json({ error: 'El vídeo se está preparando', preparing: true });
+    return;
+  }
+  if (status === 'failed') {
+    res.status(500).json({ error: 'No se pudo preparar este vídeo para reproducirlo' });
+    return;
+  }
+
+  if (status === 'ready') {
+    const transcodedFile = transcode.playableFile(video.id);
+    sendFileWithRange(req, res, transcodedFile, 'video/mp4');
+    return;
+  }
+
+  // status === 'compatible': el original ya es reproducible tal cual.
+  const videosPath = getVideosPath();
+  const filePath = path.join(videosPath, video.relativePath);
+  const resolved = path.resolve(filePath);
+
+  // El id proviene del catálogo ya escaneado dentro de la carpeta configurada,
+  // pero se valida igualmente que la ruta resuelta no se haya salido de ella.
+  if (!resolved.startsWith(path.resolve(videosPath))) {
+    res.status(400).json({ error: 'Ruta inválida' });
+    return;
+  }
+
+  if (!fs.existsSync(resolved)) {
+    res.status(404).json({ error: 'Archivo no encontrado en disco' });
+    return;
+  }
+
+  const contentType = MIME_TYPES[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
+  sendFileWithRange(req, res, resolved, contentType);
 });
 
 module.exports = router;

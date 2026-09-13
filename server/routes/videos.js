@@ -4,15 +4,25 @@ const thumbnails = require('../thumbnails');
 
 const router = express.Router();
 
-router.get('/videos', (req, res) => {
-  const videos = catalog.getCatalog().map((video) => ({
+function toPublicVideo(video) {
+  return {
     id: video.id,
     title: video.title,
     size: video.size,
     modifiedAt: video.modifiedAt,
     hasThumbnail: thumbnails.hasThumbnail(video.id),
-  }));
+  };
+}
+
+router.get('/videos', (req, res) => {
+  const videos = catalog.getCatalog().map(toPublicVideo);
   res.json(videos);
+});
+
+router.get('/videos/browse', (req, res) => {
+  const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
+  const { parent, folders, videos } = catalog.listDir(dir);
+  res.json({ dir, parent, folders, videos: videos.map(toPublicVideo) });
 });
 
 router.post('/scan', async (req, res) => {
