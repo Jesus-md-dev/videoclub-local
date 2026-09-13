@@ -33,8 +33,16 @@ const GENERIC_FOLDER_NAMES = new Set([
   'vose', 'dual', 'japones', 'japonés', 'ingles', 'inglés',
 ]);
 
+// Subcarpetas por arco/temporada/tanda de episodios dentro de una misma obra
+// (ej. "[442-489] Thriller Bark", "Temporada 2", "Season 3", "Arc 5"): no son
+// el nombre de la obra, sino una subdivisión suya, así que también se tratan
+// como genéricas para que la agrupación siga subiendo hasta el nombre real.
+const RANGE_OR_SEASON_PATTERN =
+  /^\[?\(?\s*\d+\s*[-–]\s*\d+\s*\)?\]?(\s|$)|^(temporada|season|arco|arc|saga|cour|parte|part|volumen|vol)\.?\s*\d+(\s|$)/i;
+
 function isGenericFolderName(name) {
-  return GENERIC_FOLDER_NAMES.has(name.trim().toLowerCase());
+  const clean = name.trim().toLowerCase();
+  return GENERIC_FOLDER_NAMES.has(clean) || RANGE_OR_SEASON_PATTERN.test(clean);
 }
 
 // Clave de agrupación para un vídeo: el nombre de la carpeta contenedora más
