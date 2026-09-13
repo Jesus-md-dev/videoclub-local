@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import VideoControls from '../components/VideoControls';
 
 function progressKey(id) {
   return `progress:${id}`;
@@ -55,6 +56,7 @@ export default function WatchPage() {
   const [forcing, setForcing] = useState(false);
   const [forced, setForced] = useState(false);
   const playerRef = useRef(null);
+  const shellRef = useRef(null);
   const resumeTimeRef = useRef(null);
 
   useEffect(() => {
@@ -313,17 +315,33 @@ export default function WatchPage() {
         )}
         {!error && video && ready && (
           <div className="player-column">
-            <video key={playbackKey} ref={playerRef} controls autoPlay src={streamSrc}>
-              {tracks.subtitles.map((track) => (
-                <track
-                  key={track.index}
-                  kind="subtitles"
-                  src={`/api/subtitle/${id}/${track.index}`}
-                  srcLang={track.language || 'und'}
-                  label={trackLabel(track)}
-                />
-              ))}
-            </video>
+            <div className="player-shell" ref={shellRef}>
+              <video
+                key={playbackKey}
+                ref={playerRef}
+                autoPlay
+                playsInline
+                src={streamSrc}
+                onClick={(e) => (e.currentTarget.paused ? e.currentTarget.play() : e.currentTarget.pause())}
+              >
+                {tracks.subtitles.map((track) => (
+                  <track
+                    key={track.index}
+                    kind="subtitles"
+                    src={`/api/subtitle/${id}/${track.index}`}
+                    srcLang={track.language || 'und'}
+                    label={trackLabel(track)}
+                  />
+                ))}
+              </video>
+              <VideoControls
+                key={playbackKey}
+                videoRef={playerRef}
+                shellRef={shellRef}
+                id={id}
+                subtitleTracks={tracks.subtitles}
+              />
+            </div>
             {stuck && (
               <div className="stall-banner">
                 <span>La reproducción parece atascada.</span>
