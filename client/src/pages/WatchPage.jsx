@@ -114,11 +114,6 @@ export default function WatchPage() {
     return () => clearTimeout(timer);
   }, [autoAdvanceIn, nextEpisodeId, navigate]);
 
-  // En modo raw, el servidor ignora la pista de audio (sirve el archivo tal
-  // cual), así que cambiarla no debe volver a comprobar el estado del vídeo
-  // ni recargarlo: solo importa si se entra/sale de modo raw.
-  const statusDep = rawMode ? 'raw' : audioIndex;
-
   useEffect(() => {
     if (!video) return undefined;
     let cancelled = false;
@@ -127,11 +122,7 @@ export default function WatchPage() {
     setPrepProgress(null);
 
     const params = new URLSearchParams();
-    // En modo raw el servidor sirve el archivo tal cual, ignorando la pista
-    // de audio (esa selección se hace en el navegador vía audioTracks, ver
-    // más abajo); no se incluye aquí para que cambiar de idioma no dispare
-    // una nueva comprobación/recarga del vídeo.
-    if (audioIndex != null && !rawMode) params.set('audio', audioIndex);
+    if (audioIndex != null) params.set('audio', audioIndex);
     if (rawMode) params.set('raw', '1');
     const query = params.toString();
     const streamUrl = `/api/stream/${id}/status${query ? `?${query}` : ''}`;
@@ -160,11 +151,7 @@ export default function WatchPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-    // En modo raw, cambiar de pista de audio no debe re-disparar esta
-    // comprobación (se gestiona aparte con audioTracks nativo): se usa
-    // `statusDep` en vez de audioIndex/rawMode por separado.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [video, id, statusDep]);
+  }, [video, id, audioIndex, rawMode]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -178,7 +165,6 @@ export default function WatchPage() {
       } else if (saved && saved.ratio < 0.95) {
         player.currentTime = saved.time;
       }
-      if (rawMode) applyNativeAudioTrack(audioIndex);
     };
     const onPause = () => saveProgress(id, player);
     const onEnded = () => {
@@ -251,33 +237,11 @@ export default function WatchPage() {
     };
   }, [video, ready, id, playbackKey, nextEpisodeId]);
 
-  // En modo raw no hay recodificación por pista: se cambia de idioma
-  // activando/desactivando las pistas embebidas del propio <video> con la
-  // API nativa audioTracks, sin recargar el archivo ni perder la posición.
-  // Depende de que el navegador exponga varias audioTracks para el
-  // contenedor (soportado en Chrome/Edge para mp4; no todos los
-  // navegadores/contenedores lo permiten).
-  const applyNativeAudioTrack = (streamIndex) => {
-    const player = playerRef.current;
-    if (!player?.audioTracks) return;
-    const target = streamIndex == null ? tracks.audio.find((t) => t.default) || tracks.audio[0] : tracks.audio.find((t) => t.index === streamIndex);
-    const targetPos = target ? tracks.audio.indexOf(target) : -1;
-    for (let i = 0; i < player.audioTracks.length; i += 1) {
-      player.audioTracks[i].enabled = i === targetPos;
-    }
-  };
-
   const handleAudioChange = (e) => {
     const value = e.target.value;
-    const numValue = value === '' ? null : Number(value);
-    if (rawMode) {
-      setAudioIndex(numValue);
-      applyNativeAudioTrack(numValue);
-      return;
-    }
     const player = playerRef.current;
     resumeTimeRef.current = player ? player.currentTime : null;
-    setAudioIndex(numValue);
+    setAudioIndex(value === '' ? null : Number(value));
   };
 
   const handleForcePriority = () => {
@@ -298,7 +262,7 @@ export default function WatchPage() {
   };
 
   const streamParams = new URLSearchParams();
-  if (audioIndex != null && !rawMode) streamParams.set('audio', audioIndex);
+  if (audioIndex != null) streamParams.set('audio', audioIndex);
   if (rawMode) streamParams.set('raw', '1');
   const streamQuery = streamParams.toString();
   const streamSrc = `/api/stream/${id}${streamQuery ? `?${streamQuery}` : ''}`;
@@ -323,12 +287,7 @@ export default function WatchPage() {
           </div>
         )}
         {tracks.audio.length > 1 && (
-          <select
-            className="track-select"
-            value={audioIndex ?? ''}
-            onChange={handleAudioChange}
-            title={rawMode ? 'En formato original, depende de que el navegador soporte varias pistas de audio.' : undefined}
-          >
+          <select className="track-select" value={audioIndex ?? ''} onChange={handleAudioChange}>
             {tracks.audio.map((track) => (
               <option key={track.index} value={track.index}>
                 Audio: {trackLabel(track)}
@@ -342,7 +301,7 @@ export default function WatchPage() {
         {!error && video && !ready && (
           <div className="prep-box">
             <div className="spinner" />
-            <p>Preparando vídeo para este dispositivo...</p>
+            <p>{rawMode ? 'Cambiando de idioma...' : 'Preparando vídeo para este dispositivo...'}</p>
             {prepProgress?.percent != null ? (
               <>
                 <div className="prep-bar">
@@ -353,19 +312,27 @@ export default function WatchPage() {
                 </p>
               </>
             ) : (
-              <p className="prep-detail">Analizando el vídeo, puede tardar unos minutos la primera vez...</p>
+              <p className="prep-detail">
+                {rawMode
+                  ? 'Preparando esa pista de audio, no hace falta convertir el vídeo entero...'
+                  : 'Analizando el vídeo, puede tardar unos minutos la primera vez...'}
+              </p>
             )}
-            {forced ? (
+            {!rawMode && (forced ? (
               <p className="prep-detail">Priorizado. Si había otra conversión en marcha, se ha interrumpido para dar paso a esta.</p>
             ) : (
               <button onClick={handleForcePriority} disabled={forcing}>
                 {forcing ? 'Priorizando...' : 'Forzar prioridad'}
               </button>
+            ))}
+            {!rawMode && (
+              <>
+                <button className="raw-mode-btn" onClick={() => setRawMode(true)}>
+                  Reproducir sin convertir
+                </button>
+                <p className="prep-detail">Formato original: puede no funcionar en este dispositivo/navegador.</p>
+              </>
             )}
-            <button className="raw-mode-btn" onClick={() => setRawMode(true)}>
-              Reproducir sin convertir
-            </button>
-            <p className="prep-detail">Formato original: puede no funcionar en este dispositivo/navegador.</p>
           </div>
         )}
         {!error && video && ready && (

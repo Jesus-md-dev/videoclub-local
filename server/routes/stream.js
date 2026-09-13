@@ -117,11 +117,27 @@ router.get('/stream/:id/status', async (req, res) => {
     res.status(404).json({ error: 'Vídeo no encontrado' });
     return;
   }
+  const audioIndex = parseAudioIndex(req);
+
   if (isRawRequest(req)) {
-    res.json({ status: 'compatible', progress: null });
+    // El archivo original se sirve tal cual (pista de audio por defecto).
+    // Si se pide un idioma distinto, la mayoría de navegadores no permiten
+    // elegir entre las demás pistas embebidas de un vídeo servido así, así
+    // que se prepara un remux rápido (solo copia, sin recodificar) con
+    // únicamente esa pista de audio.
+    const remux = await transcode.ensureRawAudio(video, audioIndex);
+    if (remux === 'original' || remux === 'ready') {
+      res.json({ status: 'compatible', progress: null });
+      return;
+    }
+    if (remux === 'failed') {
+      res.json({ status: 'failed', progress: null });
+      return;
+    }
+    res.json({ status: 'processing', progress: transcode.rawAudioProgress(video, audioIndex) });
     return;
   }
-  const audioIndex = parseAudioIndex(req);
+
   // 'high': esto lo pide un usuario viendo el reproductor ahora mismo, así
   // que adelanta al precalentamiento en segundo plano en la cola de ffmpeg.
   const status = await transcode.ensureChecked(video, audioIndex, 'high');
@@ -147,12 +163,26 @@ router.get('/stream/:id', async (req, res) => {
     return;
   }
 
+  const audioIndex = parseAudioIndex(req);
+
   if (isRawRequest(req)) {
+    const remux = await transcode.ensureRawAudio(video, audioIndex);
+    if (remux === 'ready') {
+      const file = transcode.rawAudioFile(video, audioIndex);
+      const contentType = MIME_TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
+      sendFileWithRange(req, res, file, contentType);
+      return;
+    }
+    if (remux === 'processing' || remux === 'checking') {
+      res.status(503).json({ error: 'Cambiando de idioma, un momento', preparing: true });
+      return;
+    }
+    // 'original' (mismo idioma que el de por defecto) o 'failed' (el remux
+    // ha fallado): se sirve el archivo tal cual, con su audio por defecto.
     serveOriginal(req, res, video);
     return;
   }
 
-  const audioIndex = parseAudioIndex(req);
   const status = await transcode.getStatus(video, audioIndex);
 
   if (status === 'processing' || status === 'checking' || status === 'unknown') {

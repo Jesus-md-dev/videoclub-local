@@ -15,9 +15,18 @@ const status = new Map();
 const progress = new Map(); // key -> { percent: 0-100 | null, startedAt: number }
 const defaultAudioCache = new Map(); // video.id -> índice de la pista de audio por defecto
 
-function outputFile(key) {
-  return path.join(TRANSCODED_PATH, `${key.replace('#', '__')}.mp4`);
+function outputFile(key, ext = '.mp4') {
+  return path.join(TRANSCODED_PATH, `${key.replace('#', '__')}${ext}`);
 }
+
+const CONTAINER_FORMATS = {
+  '.mkv': 'matroska',
+  '.mp4': 'mp4',
+  '.m4v': 'mp4',
+  '.avi': 'avi',
+  '.mov': 'mov',
+  '.webm': 'webm',
+};
 
 async function defaultAudioIndex(video) {
   if (defaultAudioCache.has(video.id)) return defaultAudioCache.get(video.id);
@@ -73,14 +82,16 @@ function isHdrSource(videoStream) {
   return transfer === 'smpte2084' || transfer === 'arib-std-b67';
 }
 
-function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex, hdr }, useGpu) {
+function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex, hdr }, useGpu, format = 'mp4') {
   const outputOptions = [
     '-map 0:v:0',
     audioMapIndex != null ? `-map 0:${audioMapIndex}` : '-map 0:a:0?',
     `-c:v ${videoCopy ? 'copy' : useGpu ? 'h264_nvenc' : 'libx264'}`,
     `-c:a ${audioCopy ? 'copy' : 'aac'}`,
-    '-movflags +faststart',
   ];
+  // +faststart es una opción propia del muxer mov/mp4; con otros
+  // contenedores (matroska, etc.) ffmpeg la rechaza.
+  if (format === 'mp4') outputOptions.push('-movflags +faststart');
   if (!videoCopy) {
     if (hdr) {
       outputOptions.push(
@@ -100,7 +111,7 @@ function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex, hdr }, useGpu
 // interrumpirla a propósito desde forcePriority().
 let activeJob = null; // { key, command }
 
-function runOnce(inputPath, tmpOutput, key, opts, useGpu) {
+function runOnce(inputPath, tmpOutput, key, opts, useGpu, format = 'mp4') {
   return new Promise((resolve, reject) => {
     progress.set(key, { percent: null, startedAt: Date.now() });
 
@@ -113,8 +124,8 @@ function runOnce(inputPath, tmpOutput, key, opts, useGpu) {
       command.inputOptions(['-hwaccel cuda']);
     }
     command
-      .outputOptions(buildOutputOptions(opts, useGpu))
-      .format('mp4')
+      .outputOptions(buildOutputOptions(opts, useGpu, format))
+      .format(format)
       .on('progress', (p) => {
         if (typeof p.percent === 'number' && !Number.isNaN(p.percent)) {
           const entry = progress.get(key);
@@ -146,11 +157,13 @@ function runOnce(inputPath, tmpOutput, key, opts, useGpu) {
 
 async function runFfmpegNow(inputPath, key, opts) {
   fs.mkdirSync(TRANSCODED_PATH, { recursive: true });
-  const tmpOutput = `${outputFile(key)}.tmp.mp4`;
+  const ext = opts.outputExt || '.mp4';
+  const format = opts.outputFormat || 'mp4';
+  const tmpOutput = `${outputFile(key, ext)}.tmp${ext}`;
   const useGpu = !opts.videoCopy && (await checkGpuAvailable());
 
   try {
-    await runOnce(inputPath, tmpOutput, key, opts, useGpu);
+    await runOnce(inputPath, tmpOutput, key, opts, useGpu, format);
   } catch (err) {
     fs.rm(tmpOutput, { force: true }, () => {});
     if (err.interrupted) throw err;
@@ -158,10 +171,10 @@ async function runFfmpegNow(inputPath, key, opts) {
     // La GPU ha fallado para este archivo en concreto (a menudo por tener ya
     // otra sesión NVENC abierta): reintenta con CPU en vez de fallar del todo.
     console.warn(`Fallo con GPU, reintentando con CPU: ${err.message}`);
-    await runOnce(inputPath, tmpOutput, key, opts, false);
+    await runOnce(inputPath, tmpOutput, key, opts, false, format);
   }
 
-  fs.renameSync(tmpOutput, outputFile(key));
+  fs.renameSync(tmpOutput, outputFile(key, ext));
 }
 
 // Cola global con dos carriles: como mucho una conversión de ffmpeg a la
@@ -307,6 +320,76 @@ function peekStatus(video) {
   return status.get(video.id) || 'unknown';
 }
 
+// En modo "sin convertir" (?raw=1) se sirve el archivo tal cual, así que el
+// navegador solo reproduce la pista de audio que trae por defecto: cambiar
+// de idioma no tiene ningún efecto (la mayoría de navegadores no exponen las
+// demás pistas embebidas de un contenedor como .mkv para elegir entre
+// ellas). Para que el selector de idioma funcione también en este modo, se
+// hace un remux rápido (solo copia, sin recodificar nada) que se queda
+// únicamente con la pista de audio elegida.
+function rawAudioKey(video, audioIndex) {
+  return `${video.id}__rawaudio_a${audioIndex}`;
+}
+
+function rawAudioExt(video) {
+  return path.extname(video.relativePath).toLowerCase() || '.mkv';
+}
+
+async function ensureRawAudio(video, audioIndex) {
+  const defaultAudio = await defaultAudioIndex(video);
+  const effectiveAudio = audioIndex != null ? Number(audioIndex) : defaultAudio;
+  if (effectiveAudio === defaultAudio) return 'original';
+
+  const key = rawAudioKey(video, effectiveAudio);
+  const current = status.get(key);
+  if (current) return current;
+
+  const ext = rawAudioExt(video);
+  if (fs.existsSync(outputFile(key, ext))) {
+    status.set(key, 'ready');
+    return 'ready';
+  }
+
+  status.set(key, 'processing');
+  runFfmpeg(
+    inputPathFor(video),
+    key,
+    {
+      videoCopy: true,
+      audioCopy: true,
+      audioMapIndex: effectiveAudio,
+      hdr: false,
+      outputExt: ext,
+      outputFormat: CONTAINER_FORMATS[ext] || 'matroska',
+    },
+    'high'
+  )
+    .then(() => status.set(key, 'ready'))
+    .catch((err) => {
+      if (err.interrupted) {
+        status.delete(key);
+        return;
+      }
+      console.warn(`No se pudo cambiar de idioma (remux) para "${video.title}": ${err.message}`);
+      status.set(key, 'failed');
+    });
+
+  return 'processing';
+}
+
+function rawAudioProgress(video, audioIndex) {
+  const key = rawAudioKey(video, Number(audioIndex));
+  const entry = progress.get(key);
+  if (!entry) return null;
+  return { percent: entry.percent, elapsedMs: Date.now() - entry.startedAt };
+}
+
+function rawAudioFile(video, audioIndex) {
+  const key = rawAudioKey(video, Number(audioIndex));
+  const file = outputFile(key, rawAudioExt(video));
+  return fs.existsSync(file) ? file : null;
+}
+
 // Progreso de la conversión en curso (0-100, o null si aún no se puede
 // estimar) y el tiempo transcurrido, para mostrar una barra de carga real.
 async function getProgress(video, audioIndex = null) {
@@ -344,4 +427,15 @@ async function warmAll(videos) {
   }
 }
 
-module.exports = { ensureChecked, getStatus, peekStatus, getProgress, playableFile, warmAll, forcePriorityFor };
+module.exports = {
+  ensureChecked,
+  getStatus,
+  peekStatus,
+  getProgress,
+  playableFile,
+  warmAll,
+  forcePriorityFor,
+  ensureRawAudio,
+  rawAudioProgress,
+  rawAudioFile,
+};
