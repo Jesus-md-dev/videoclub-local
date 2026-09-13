@@ -9,6 +9,16 @@ const COMPATIBLE_VIDEO_CODECS = ['h264'];
 const COMPATIBLE_AUDIO_CODECS = ['aac', 'mp3'];
 const COMPATIBLE_CONTAINERS = ['.mp4', '.m4v'];
 
+// H.264 de 10 bits ("Hi10p"/"High 10") es un caso especial molesto: muchos
+// reproductores por hardware (sobre todo TVs/palos de streaming como Fire
+// TV) no lo aceptan como H.264 normal, así que caen a descodificación por
+// software y eso es justo lo que provoca reproducción lenta/con tirones.
+// Antes solo se miraba el nombre del códec, no la profundidad de bits, así
+// que estos archivos se servían "tal cual" en vez de convertirse a 8 bits.
+function isTenBit(videoStream) {
+  return Boolean(videoStream?.pix_fmt?.includes('10')) || videoStream?.profile === 'High 10';
+}
+
 // Estado por clave ('<id>' para la pista de audio por defecto, o '<id>#a<index>'
 // para una pista de audio concreta): 'checking' | 'compatible' | 'processing' | 'ready' | 'failed'
 const status = new Map();
@@ -106,9 +116,14 @@ async function resolveKey(video, audioIndex) {
 // equipo probando una codificación mínima; si algo falla (sin GPU NVIDIA,
 // controlador antiguo, etc.) se usa libx264 (CPU) para todo, sin más aviso.
 let gpuAvailable = null;
+let gpuCheckPromise = null;
 function checkGpuAvailable() {
   if (gpuAvailable !== null) return Promise.resolve(gpuAvailable);
-  return new Promise((resolve) => {
+  // Con varias conversiones arrancando casi a la vez al iniciar el
+  // servidor, sin esto cada una dispararía su propia prueba de GPU en
+  // paralelo; se comparte la misma promesa para que solo se pruebe una vez.
+  if (gpuCheckPromise) return gpuCheckPromise;
+  gpuCheckPromise = new Promise((resolve) => {
     fs.mkdirSync(TRANSCODED_PATH, { recursive: true });
     const checkFile = path.join(TRANSCODED_PATH, '.gpu-check.mp4');
     ffmpeg()
@@ -131,6 +146,7 @@ function checkGpuAvailable() {
       })
       .save(checkFile);
   });
+  return gpuCheckPromise;
 }
 
 // PQ (HDR10) o HLG: sin esto, un vídeo HDR recodificado a 8 bits SDR sale
@@ -140,7 +156,21 @@ function isHdrSource(videoStream) {
   return transfer === 'smpte2084' || transfer === 'arib-std-b67';
 }
 
-function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex, hdr }, useGpu, format = 'mp4') {
+// Un VBR sin techo puede meter picos de bitrate muy altos en escenas
+// complejas; con un dispositivo de decodificación floja o una red Wi-Fi de
+// por medio (Fire TV, sobre todo), eso es justo lo que provoca que se quede
+// esperando datos/tirones, aunque la media del archivo sea razonable. Se
+// pone un techo (maxrate/bufsize) según la resolución de origen, generoso
+// pero acotado, en vez de dejarlo sin límite.
+function bitrateCapFor(sourceHeight) {
+  if (!sourceHeight || sourceHeight <= 480) return { maxrate: '2500k', bufsize: '5000k' };
+  if (sourceHeight <= 720) return { maxrate: '4500k', bufsize: '9000k' };
+  if (sourceHeight <= 1080) return { maxrate: '8000k', bufsize: '16000k' };
+  if (sourceHeight <= 1440) return { maxrate: '12000k', bufsize: '24000k' };
+  return { maxrate: '20000k', bufsize: '40000k' };
+}
+
+function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex, hdr, sourceHeight }, useGpu, format = 'mp4') {
   const outputOptions = [
     '-map 0:v:0',
     audioMapIndex != null ? `-map 0:${audioMapIndex}` : '-map 0:a:0?',
@@ -160,16 +190,34 @@ function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex, hdr }, useGpu
       // h264_nvenc no codifica H.264 en 10 bits.
       outputOptions.push('-pix_fmt yuv420p');
     }
-    outputOptions.push(...(useGpu ? ['-preset p4', '-rc vbr', '-cq 23'] : ['-preset veryfast', '-crf 23']));
+    // p2 (rápido) en vez de p4 (medio): esto es una conversión de
+    // compatibilidad puntual para reproducir en el dispositivo, no un
+    // archivo para archivar, así que merece la pena priorizar velocidad
+    // sobre exprimir la máxima calidad/tamaño por bit.
+    if (useGpu) {
+      const { maxrate, bufsize } = bitrateCapFor(sourceHeight);
+      outputOptions.push('-preset p2', '-rc vbr', '-cq 23', `-maxrate ${maxrate}`, `-bufsize ${bufsize}`);
+    } else {
+      outputOptions.push('-preset veryfast', '-crf 23');
+    }
   }
   return outputOptions;
 }
 
-// La conversión de ffmpeg actualmente en marcha (si hay alguna), para poder
-// interrumpirla a propósito desde forcePriority().
-let activeJob = null; // { key, command, meta }
+// Los drivers actuales permiten varias sesiones NVENC a la vez en GPUs de
+// consumo (antes 3, ahora bastantes más en tarjetas/drivers recientes), así
+// que en vez de convertir de una en una se aprovechan varias a la vez para
+// vaciar la cola mucho más rápido en conjunto. Un valor conservador: si la
+// GPU concreta no aguanta tantas sesiones, cada trabajo cae solo a CPU para
+// ese archivo (ver el "catch" de runFfmpegNow), no se rompe nada.
+const MAX_CONCURRENT_JOBS = 3;
 
-function runOnce(inputPath, tmpOutput, key, opts, useGpu, format = 'mp4', meta = null) {
+// Los trabajos de ffmpeg en marcha ahora mismo (puede haber varios a la
+// vez), por clave, para poder interrumpir uno en concreto desde
+// forcePriority().
+const activeJobs = new Map(); // key -> { key, command, interrupted, meta, priority }
+
+function runOnce(inputPath, tmpOutput, key, opts, useGpu, format = 'mp4', meta = null, priority = 'low') {
   return new Promise((resolve, reject) => {
     progress.set(key, { percent: null, startedAt: Date.now() });
 
@@ -192,8 +240,8 @@ function runOnce(inputPath, tmpOutput, key, opts, useGpu, format = 'mp4', meta =
       })
       .on('error', (err) => {
         progress.delete(key);
-        const interrupted = activeJob?.key === key && activeJob.interrupted;
-        activeJob = null;
+        const interrupted = activeJobs.get(key)?.interrupted;
+        activeJobs.delete(key);
         if (interrupted) {
           const tagged = new Error('Interrumpido para priorizar otro vídeo');
           tagged.interrupted = true;
@@ -204,16 +252,16 @@ function runOnce(inputPath, tmpOutput, key, opts, useGpu, format = 'mp4', meta =
       })
       .on('end', () => {
         progress.delete(key);
-        activeJob = null;
+        activeJobs.delete(key);
         resolve();
       });
 
-    activeJob = { key, command, interrupted: false, meta };
+    activeJobs.set(key, { key, command, interrupted: false, meta, priority });
     command.save(tmpOutput);
   });
 }
 
-async function runFfmpegNow(inputPath, key, opts, meta) {
+async function runFfmpegNow(inputPath, key, opts, meta, priority) {
   fs.mkdirSync(TRANSCODED_PATH, { recursive: true });
   const ext = opts.outputExt || '.mp4';
   const format = opts.outputFormat || 'mp4';
@@ -221,72 +269,88 @@ async function runFfmpegNow(inputPath, key, opts, meta) {
   const useGpu = !opts.videoCopy && (await checkGpuAvailable());
 
   try {
-    await runOnce(inputPath, tmpOutput, key, opts, useGpu, format, meta);
+    await runOnce(inputPath, tmpOutput, key, opts, useGpu, format, meta, priority);
   } catch (err) {
     fs.rm(tmpOutput, { force: true }, () => {});
     if (err.interrupted) throw err;
     if (!useGpu) throw err;
     // La GPU ha fallado para este archivo en concreto (a menudo por tener ya
-    // otra sesión NVENC abierta): reintenta con CPU en vez de fallar del todo.
+    // demasiadas sesiones NVENC abiertas a la vez): reintenta con CPU en vez
+    // de fallar del todo.
     console.warn(`Fallo con GPU, reintentando con CPU: ${err.message}`);
-    await runOnce(inputPath, tmpOutput, key, opts, false, format, meta);
+    await runOnce(inputPath, tmpOutput, key, opts, false, format, meta, priority);
   }
 
   fs.renameSync(tmpOutput, outputFile(key, ext));
 }
 
-// Cola global con dos carriles: como mucho una conversión de ffmpeg a la
-// vez (para no agotar las sesiones NVENC de la GPU ni saturar CPU/disco),
-// pero lo que el usuario está pidiendo ver AHORA ("high") adelanta a lo que
-// el precalentamiento en segundo plano ("low") aún no ha empezado. Si ya
-// hay una conversión en marcha, sigue su curso salvo que se pida
-// explícitamente interrumpirla con forcePriority().
+// Cola con dos carriles: lo que el usuario está pidiendo ver AHORA ("high")
+// adelanta a lo que el precalentamiento en segundo plano ("low") aún no ha
+// empezado. Hasta MAX_CONCURRENT_JOBS conversiones a la vez en vez de una
+// sola; si se pide interrumpir alguna con forcePriority(), sigue su curso
+// salvo que haga falta el hueco.
 const ffmpegHighQueue = [];
 const ffmpegLowQueue = [];
-let ffmpegDraining = false;
 
-async function drainFfmpegQueue() {
-  if (ffmpegDraining) return;
-  ffmpegDraining = true;
-  while (ffmpegHighQueue.length || ffmpegLowQueue.length) {
+function drainFfmpegQueue() {
+  while (activeJobs.size < MAX_CONCURRENT_JOBS && (ffmpegHighQueue.length || ffmpegLowQueue.length)) {
     const task = ffmpegHighQueue.length ? ffmpegHighQueue.shift() : ffmpegLowQueue.shift();
-    // eslint-disable-next-line no-await-in-loop
-    await task.run();
+    task.run().finally(() => drainFfmpegQueue());
   }
-  ffmpegDraining = false;
 }
 
 function runFfmpeg(inputPath, key, opts, priority = 'low', meta = null) {
   return new Promise((resolve, reject) => {
-    const task = { key, meta, run: () => runFfmpegNow(inputPath, key, opts, meta).then(resolve, reject) };
+    const task = {
+      key,
+      meta,
+      priority,
+      run: () => runFfmpegNow(inputPath, key, opts, meta, priority).then(resolve, reject),
+    };
     (priority === 'high' ? ffmpegHighQueue : ffmpegLowQueue).push(task);
     drainFfmpegQueue();
   });
 }
 
-// Interrumpe la conversión en marcha (si es de otro vídeo) y adelanta esta
-// clave al principio de la cola, para que le toque el turno justo después.
+// Adelanta esta clave para que empiece cuanto antes: si ya hay un hueco
+// libre, basta con ponerla la primera de la cola alta. Si no, se interrumpe
+// un trabajo activo de precalentamiento en segundo plano (nunca uno que
+// otro dispositivo esté viendo ahora mismo) para hacerle sitio.
 function forcePriority(key) {
-  if (activeJob && activeJob.key !== key) {
-    activeJob.interrupted = true;
-    activeJob.command.kill('SIGKILL');
-  }
+  if (activeJobs.has(key)) return true;
 
+  // >= 0, no > 0: si ya está el primero de la cola alta pero aún no ha
+  // arrancado (todos los huecos ocupados), sigue haciendo falta comprobar
+  // más abajo si hay que interrumpir algo para hacerle sitio ya.
   const highIdx = ffmpegHighQueue.findIndex((t) => t.key === key);
-  if (highIdx > 0) {
-    const [task] = ffmpegHighQueue.splice(highIdx, 1);
-    ffmpegHighQueue.unshift(task);
-    return true;
+  if (highIdx >= 0) {
+    if (highIdx > 0) {
+      const [task] = ffmpegHighQueue.splice(highIdx, 1);
+      ffmpegHighQueue.unshift(task);
+    }
+  } else {
+    const lowIdx = ffmpegLowQueue.findIndex((t) => t.key === key);
+    if (lowIdx >= 0) {
+      const [task] = ffmpegLowQueue.splice(lowIdx, 1);
+      ffmpegHighQueue.unshift(task);
+    } else {
+      return false;
+    }
   }
 
-  const lowIdx = ffmpegLowQueue.findIndex((t) => t.key === key);
-  if (lowIdx >= 0) {
-    const [task] = ffmpegLowQueue.splice(lowIdx, 1);
-    ffmpegHighQueue.unshift(task);
-    return true;
+  if (activeJobs.size >= MAX_CONCURRENT_JOBS) {
+    const victim = [...activeJobs.values()].find((job) => job.priority === 'low');
+    if (victim) {
+      victim.interrupted = true;
+      victim.command.kill('SIGKILL');
+    }
+    // Si todos los huecos los ocupan otros usuarios viendo algo ahora mismo,
+    // no se interrumpe a nadie: esta clave ya está la primera de la cola y
+    // arrancará en cuanto se libere el primer hueco.
   }
 
-  return Boolean(activeJob) && activeJob.key === key;
+  drainFfmpegQueue();
+  return true;
 }
 
 async function ensureChecked(video, audioIndex = null, priority = 'low') {
@@ -334,7 +398,8 @@ async function ensureChecked(video, audioIndex = null, priority = 'low') {
   const videoStream = info.streams.find((s) => s.codec_type === 'video');
   const audioStream = info.streams.find((s) => s.index === effectiveAudio);
 
-  const videoOk = Boolean(videoStream) && COMPATIBLE_VIDEO_CODECS.includes(videoStream.codec_name);
+  const videoOk =
+    Boolean(videoStream) && COMPATIBLE_VIDEO_CODECS.includes(videoStream.codec_name) && !isTenBit(videoStream);
   const audioOk = !audioStream || COMPATIBLE_AUDIO_CODECS.includes(audioStream.codec_name);
   const containerOk = COMPATIBLE_CONTAINERS.includes(ext);
 
@@ -352,6 +417,7 @@ async function ensureChecked(video, audioIndex = null, priority = 'low') {
       audioCopy: audioOk,
       audioMapIndex: useDefault ? null : effectiveAudio,
       hdr: isHdrSource(videoStream),
+      sourceHeight: videoStream?.height || null,
     },
     priority,
     { id: video.id, title: video.title, size: video.size }
@@ -395,15 +461,15 @@ function peekStatus(video) {
   return status.get(video.id) || 'unknown';
 }
 
-// Para el catálogo: distingue entre "convirtiéndose ahora mismo" (el único
-// trabajo de ffmpeg activo) y "en cola, pendiente de conversión" (ya se sabe
-// que la necesita, pero le toca esperar su turno porque solo hay una
-// conversión a la vez). 'unknown'/'checking' significa que aún no se sabe
-// (warmAll no ha llegado a comprobarlo todavía).
+// Para el catálogo: distingue entre "convirtiéndose ahora mismo" (uno de los
+// trabajos de ffmpeg activos, puede haber varios a la vez) y "en cola,
+// pendiente de conversión" (ya se sabe que la necesita, pero le toca esperar
+// su turno porque ya están ocupados todos los huecos). 'unknown'/'checking'
+// significa que aún no se sabe (warmAll no ha llegado a comprobarlo todavía).
 function peekProcessingState(video) {
   const key = video.id;
   if (status.get(key) !== 'processing') return null;
-  return activeJob && activeJob.key === key ? 'active' : 'queued';
+  return activeJobs.has(key) ? 'active' : 'queued';
 }
 
 // Porcentaje (0-100) de la conversión en curso ahora mismo para esta pista
@@ -415,16 +481,15 @@ function peekProgressPercent(video) {
 }
 
 // Foto instantánea de la cola de conversión real (para una página de
-// estado): el trabajo activo ahora mismo y el resto en el orden exacto en
-// que les tocará su turno (alta prioridad primero, luego baja).
+// estado): los trabajos activos ahora mismo (puede haber varios a la vez) y
+// el resto en el orden exacto en que les tocará su turno (alta prioridad
+// primero, luego baja).
 function getQueueSnapshot() {
-  const active = activeJob
-    ? {
-        key: activeJob.key,
-        ...activeJob.meta,
-        percent: progress.get(activeJob.key)?.percent ?? null,
-      }
-    : null;
+  const active = [...activeJobs.values()].map((job) => ({
+    key: job.key,
+    ...job.meta,
+    percent: progress.get(job.key)?.percent ?? null,
+  }));
   const queued = [...ffmpegHighQueue, ...ffmpegLowQueue].map((task, index) => ({
     key: task.key,
     ...task.meta,
@@ -567,4 +632,5 @@ module.exports = {
   rawAudioFile,
   getQueueSnapshot,
   getFailedKeys,
+  MAX_CONCURRENT_JOBS,
 };

@@ -78,20 +78,22 @@ export default function QueuePage() {
             </div>
 
             <p className="hint">
-              Sin forzar prioridad manualmente sobre ningún vídeo, se procesan primero los
-              archivos más ligeros.
+              Hasta {data.maxConcurrent} conversiones a la vez; sin forzar prioridad
+              manualmente sobre ningún vídeo, se procesan primero los archivos más ligeros.
             </p>
 
-            {data.active ? (
+            {data.active.length > 0 ? (
               <>
-                <p className="section-title">Convirtiéndose ahora</p>
+                <p className="section-title">Convirtiéndose ahora ({data.active.length})</p>
                 <div className="queue-list">
-                  <div className="queue-row queue-row-active">
-                    <span className="queue-title">{data.active.title}</span>
-                    <span className="queue-meta">
-                      {formatSize(data.active.size)} · {data.active.percent ?? 0}%
-                    </span>
-                  </div>
+                  {data.active.map((item) => (
+                    <div className="queue-row queue-row-active" key={item.key}>
+                      <span className="queue-title">{item.title}</span>
+                      <span className="queue-meta">
+                        {formatSize(item.size)} · {item.percent ?? 0}%
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </>
             ) : (

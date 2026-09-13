@@ -38,7 +38,7 @@ router.get('/queue', (req, res) => {
     })
     .slice(0, 200);
 
-  res.json({ summary, active, queued, failed });
+  res.json({ summary, active, queued, failed, maxConcurrent: transcode.MAX_CONCURRENT_JOBS });
 });
 
 module.exports = router;
