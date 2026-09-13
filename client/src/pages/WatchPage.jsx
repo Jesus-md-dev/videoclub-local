@@ -127,18 +127,38 @@ export default function WatchPage() {
       );
     };
 
-    // Si la reproducción se queda esperando datos y no se recupera sola en
-    // un rato, se ofrece un botón para reintentar sin recargar la página.
+    // Si la reproducción se queda esperando datos, se reintenta sola una vez
+    // (útil para cortes de red puntuales); si vuelve a atascarse, se ofrece
+    // el botón manual en vez de reintentar en bucle sin avisar.
     let stallTimer;
+    let autoRetried = false;
+    const doRetry = () => {
+      resumeTimeRef.current = player.currentTime;
+      setPlaybackKey((k) => k + 1);
+    };
     const onWaiting = () => {
       clearTimeout(stallTimer);
-      stallTimer = setTimeout(() => setStuck(true), 15000);
+      stallTimer = setTimeout(() => {
+        if (!autoRetried) {
+          autoRetried = true;
+          doRetry();
+        } else {
+          setStuck(true);
+        }
+      }, 15000);
     };
     const clearStall = () => {
       clearTimeout(stallTimer);
       setStuck(false);
     };
-    const onError = () => setStuck(true);
+    const onError = () => {
+      if (!autoRetried) {
+        autoRetried = true;
+        doRetry();
+      } else {
+        setStuck(true);
+      }
+    };
 
     player.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
     player.addEventListener('pause', onPause);
