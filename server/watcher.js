@@ -2,6 +2,7 @@ const fs = require('fs');
 const catalog = require('./catalog');
 const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
+const transcode = require('./transcode');
 const { getVideosPath } = require('./config');
 
 const DEBOUNCE_MS = 8000;
@@ -15,6 +16,7 @@ function rescan() {
     console.log(`Catálogo actualizado automáticamente: ${videos.length} vídeo(s)`);
     thumbnails.generateMissingThumbnails(videos);
     metadata.warmAll(catalog.getAllGroupKeys());
+    transcode.warmAll(videos);
   } catch (err) {
     console.error(`Error al reescanear automáticamente: ${err.message}`);
   }

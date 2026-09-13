@@ -149,4 +149,26 @@ async function playableFile(video, audioIndex = null) {
   return fs.existsSync(file) ? file : null;
 }
 
-module.exports = { ensureChecked, getStatus, getProgress, playableFile };
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Precalienta en segundo plano los vídeos que necesiten conversión (pista de
+// audio por defecto), de uno en uno para no saturar la CPU con varios
+// ffmpeg a la vez. Así, cuando el usuario le da a play, muchos ya están
+// listos en vez de tener que esperar la conversión en ese momento.
+async function warmAll(videos) {
+  for (const video of videos) {
+    // eslint-disable-next-line no-await-in-loop
+    const initial = await ensureChecked(video);
+    if (initial === 'processing') {
+      // eslint-disable-next-line no-await-in-loop
+      while ((await getStatus(video)) === 'processing') {
+        // eslint-disable-next-line no-await-in-loop
+        await wait(2000);
+      }
+    }
+  }
+}
+
+module.exports = { ensureChecked, getStatus, getProgress, playableFile, warmAll };

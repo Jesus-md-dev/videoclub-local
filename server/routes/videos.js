@@ -2,6 +2,7 @@ const express = require('express');
 const catalog = require('../catalog');
 const thumbnails = require('../thumbnails');
 const metadata = require('../metadata');
+const transcode = require('../transcode');
 
 const router = express.Router();
 
@@ -51,6 +52,7 @@ router.post('/scan', async (req, res) => {
     // Generar carátulas y precalentar géneros en segundo plano, sin bloquear la respuesta.
     thumbnails.generateMissingThumbnails(videos);
     metadata.warmAll(catalog.getAllGroupKeys());
+    transcode.warmAll(videos);
     res.json({ count: videos.length });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -3,6 +3,7 @@ const { getVideosPath, setVideosPath } = require('../config');
 const catalog = require('../catalog');
 const thumbnails = require('../thumbnails');
 const metadata = require('../metadata');
+const transcode = require('../transcode');
 const watcher = require('../watcher');
 
 const router = express.Router();
@@ -31,6 +32,7 @@ router.post('/settings', async (req, res) => {
     const videos = catalog.scan();
     thumbnails.generateMissingThumbnails(videos);
     metadata.warmAll(catalog.getAllGroupKeys());
+    transcode.warmAll(videos);
     watcher.start();
     res.json({ videosPath: getVideosPath(), count: videos.length });
   } catch (err) {
