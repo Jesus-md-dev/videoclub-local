@@ -546,4 +546,84 @@ function allGenres() {
   return [...set].sort((a, b) => a.localeCompare(b, 'es'));
 }
 
-module.exports = { getMetadata, getCached, warmAll, allGenres };
+// Olvida lo que hubiera en caché para esta clave y lo vuelve a buscar ya
+// mismo. Antes, corregir una carátula/género mal encontrado exigía parar el
+// servidor, editar data/metadata.json a mano y reiniciar (el proceso en
+// marcha nunca se enteraba de un cambio hecho solo en el archivo): con esto
+// se puede corregir en caliente, sin reiniciar nada.
+async function refreshMetadata(key) {
+  delete cache[key];
+  pending.delete(key);
+  return getMetadata(key, 'high');
+}
+
+// Para cuando la búsqueda automática no encuentra la ficha correcta (título
+// ambiguo, temporada con carátula distinta a la del show...): se fija a
+// mano a partir de un id de TMDB conocido, sin pasar por la búsqueda.
+async function overrideFromTmdb(key, { tmdbType, tmdbId, season } = {}) {
+  if (!TMDB_API_KEY) throw new Error('TMDB_API_KEY no configurada en .env');
+  if (!tmdbType || !tmdbId) throw new Error('Faltan "tmdbType" ("tv" o "movie") y "tmdbId"');
+
+  let entry;
+  if (tmdbType === 'movie') {
+    const res = await throttledFetch(
+      `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`,
+      undefined,
+      350,
+      'high'
+    );
+    if (!res.ok) throw new Error(`TMDB respondió ${res.status}`);
+    const m = await res.json();
+    entry = {
+      genres: normalizeGenres((m.genres || []).map((g) => g.name)),
+      year: m.release_date ? m.release_date.slice(0, 4) : null,
+      type: 'movie',
+      cleanName: m.title || null,
+      poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
+    };
+  } else if (tmdbType === 'tv') {
+    const res = await throttledFetch(
+      `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`,
+      undefined,
+      350,
+      'high'
+    );
+    if (!res.ok) throw new Error(`TMDB respondió ${res.status}`);
+    const t = await res.json();
+    const genreIds = (t.genres || []).map((g) => g.id);
+    const isAnime = genreIds.includes(TMDB_ANIME_GENRE_ID) && (t.origin_country || []).includes('JP');
+    let poster = t.poster_path ? `https://image.tmdb.org/t/p/w500${t.poster_path}` : null;
+
+    // Una temporada concreta puede tener su propia carátula distinta a la
+    // del show en general (justo el caso de ".hack//Sign" temporada 1).
+    if (season != null) {
+      const seasonRes = await throttledFetch(
+        `https://api.themoviedb.org/3/tv/${tmdbId}/season/${season}?api_key=${TMDB_API_KEY}&language=es-ES`,
+        undefined,
+        350,
+        'high'
+      );
+      if (seasonRes.ok) {
+        const s = await seasonRes.json();
+        if (s.poster_path) poster = `https://image.tmdb.org/t/p/w500${s.poster_path}`;
+      }
+    }
+
+    entry = {
+      genres: normalizeGenres([...(t.genres || []).map((g) => g.name), ...(isAnime ? ['anime'] : [])]),
+      year: t.first_air_date ? t.first_air_date.slice(0, 4) : null,
+      type: isAnime ? 'anime' : 'tv',
+      cleanName: t.name || null,
+      poster,
+    };
+  } else {
+    throw new Error('"tmdbType" debe ser "tv" o "movie"');
+  }
+
+  cache[key] = entry;
+  pending.delete(key);
+  saveCache();
+  return entry;
+}
+
+module.exports = { getMetadata, getCached, warmAll, allGenres, refreshMetadata, overrideFromTmdb };
