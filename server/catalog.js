@@ -138,6 +138,9 @@ function listDir(webDir = '') {
 const GENERIC_FOLDER_NAMES = new Set([
   'anime', 'peliculas', 'películas', 'pelis', 'series', 'movies', 'movie',
   'tv', 'shows', 'videos', 'video', 'films', 'film', 'dorama', 'doramas',
+  // Variantes de idioma/audio, habituales como subcarpeta dentro de una categoría.
+  'castellano', 'español', 'espanol', 'latino', 'subtitulado', 'subtitulados',
+  'vose', 'dual', 'japones', 'japonés', 'ingles', 'inglés',
 ]);
 
 function isGenericFolderName(name) {
