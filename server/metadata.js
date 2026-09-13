@@ -310,7 +310,16 @@ async function fetchTmdbTv(query, priority, year) {
   );
   if (!res.ok) throw new Error(`TMDB respondió ${res.status}`);
   const data = await res.json();
-  const match = data.results?.[0];
+  const results = data.results || [];
+  // El primer resultado no siempre es el correcto: p.ej. "Blood +" devolvía
+  // "True Blood" primero y el anime real "Blood+" segundo. Entre los
+  // primeros resultados, se prefiere uno con origen Japón + género
+  // Animación (probablemente el anime real) antes que quedarse sin más con
+  // el primero a ciegas.
+  const animeMatch = results
+    .slice(0, 5)
+    .find((r) => (r.genre_ids || []).includes(TMDB_ANIME_GENRE_ID) && (r.origin_country || []).includes('JP'));
+  const match = animeMatch || results[0];
   if (!match && year) return fetchTmdbTv(query, priority, null);
   if (!match) return null;
   const genreMap = await tmdbGenreMap('tv', priority);
