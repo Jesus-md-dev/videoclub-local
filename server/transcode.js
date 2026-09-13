@@ -1,10 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { ffmpeg, getMediaInfo, inputPathFor } = require('./mediaInfo');
-const { DATA_PATH } = require('./config');
+const { TRANSCODED_PATH } = require('./config');
 const { runLimited } = require('./ffmpeg-limiter');
-
-const TRANSCODED_PATH = path.join(DATA_PATH, 'transcoded');
 
 const COMPATIBLE_VIDEO_CODECS = ['h264'];
 const COMPATIBLE_AUDIO_CODECS = ['aac', 'mp3'];

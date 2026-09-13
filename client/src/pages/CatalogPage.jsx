@@ -74,6 +74,11 @@ function FolderCard({ folder, onOpen }) {
   const posterSrc = folder.poster || (folder.thumbnailId ? `/api/thumbnail/${folder.thumbnailId}` : null);
   const displayName = folder.cleanName || folder.name;
   const processingLabel = processingBadgeLabel(folder.processingState, folder.processingPercent);
+  // Fracción de episodios ya vistos de la serie completa (no del episodio
+  // suelto, eso ya lo cubre "Continuar viendo"); null si no hay perfil
+  // activo, o si aún no se ha empezado ninguno.
+  const seriesProgress = folder.seriesProgress;
+  const showSeriesProgress = seriesProgress && seriesProgress.watched > 0;
 
   return (
     <button className="card folder-card" onClick={() => onOpen(folder.path)}>
@@ -93,6 +98,11 @@ function FolderCard({ folder, onOpen }) {
         />
       ) : (
         <div className="folder-icon">📁</div>
+      )}
+      {showSeriesProgress && (
+        <div className="progress-bar" title={`${seriesProgress.watched} de ${seriesProgress.total} episodios vistos`}>
+          <div style={{ width: `${Math.round(seriesProgress.ratio * 100)}%` }} />
+        </div>
       )}
       <div className="card-info">
         <p className="card-title">{displayName}</p>
@@ -166,6 +176,8 @@ export default function CatalogPage() {
       .catch(() => {});
   }, []);
 
+  const profileId = getActiveProfileId();
+
   useEffect(() => {
     if (searching) return undefined;
     setError(null);
@@ -176,7 +188,9 @@ export default function CatalogPage() {
     // pocos segundos para que el porcentaje avance solo en la lista; en
     // cuanto no quede nada procesándose, deja de sondear.
     const load = () => {
-      fetch(`/api/videos/browse?dir=${encodeURIComponent(dir)}`)
+      const params = new URLSearchParams({ dir });
+      if (profileId) params.set('profileId', profileId);
+      fetch(`/api/videos/browse?${params.toString()}`)
         .then((res) => res.json())
         .then((data) => {
           if (cancelled) return;
@@ -196,7 +210,7 @@ export default function CatalogPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [dir, searching]);
+  }, [dir, searching, profileId]);
 
   useEffect(() => {
     // Se usa tanto para la búsqueda global como para "Continuar viendo".
@@ -208,7 +222,6 @@ export default function CatalogPage() {
       });
   }, []);
 
-  const profileId = getActiveProfileId();
   const [progressMap, setProgressMap] = useState({});
 
   useEffect(() => {

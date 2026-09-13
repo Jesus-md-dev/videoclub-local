@@ -8,6 +8,12 @@ const HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 3443;
 const DATA_PATH = path.join(__dirname, '..', 'data');
 const THUMBNAILS_PATH = path.join(DATA_PATH, 'thumbnails');
 const SETTINGS_FILE = path.join(DATA_PATH, 'settings.json');
+// Los vídeos ya convertidos pueden ocupar mucho (decenas/cientos de GB):
+// por defecto viven dentro de data/, pero se puede mover a otro disco con
+// más sitio libre sin tocar los archivos originales de la biblioteca.
+const TRANSCODED_PATH = process.env.TRANSCODED_PATH
+  ? path.resolve(process.env.TRANSCODED_PATH)
+  : path.join(DATA_PATH, 'transcoded');
 
 const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.webm', '.mov', '.m4v'];
 
@@ -48,6 +54,7 @@ module.exports = {
   HTTPS_PORT,
   DATA_PATH,
   THUMBNAILS_PATH,
+  TRANSCODED_PATH,
   VIDEO_EXTENSIONS,
   getVideosPath,
   setVideosPath,

@@ -3,6 +3,7 @@ const catalog = require('../catalog');
 const thumbnails = require('../thumbnails');
 const metadata = require('../metadata');
 const transcode = require('../transcode');
+const profiles = require('../profiles');
 
 const router = express.Router();
 
@@ -49,9 +50,21 @@ router.get('/videos', (req, res) => {
   res.json(videos);
 });
 
+// Fracción (0-1) de episodios ya vistos (>=95%) de una carpeta de serie,
+// para pintar una barra de progreso de la serie completa en su carátula
+// (no solo del episodio suelto, como "Continuar viendo"). null si no hay
+// perfil activo o la carpeta no tiene vídeos.
+function seriesProgressFor(videosInFolder, profileProgress) {
+  if (!profileProgress || videosInFolder.length === 0) return null;
+  const watched = videosInFolder.filter((v) => (profileProgress[v.id]?.ratio || 0) >= 0.95).length;
+  return { ratio: watched / videosInFolder.length, watched, total: videosInFolder.length };
+}
+
 router.get('/videos/browse', (req, res) => {
   const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
   const { parent, folders, videos } = catalog.listDir(dir);
+  const profileId = typeof req.query.profileId === 'string' ? req.query.profileId : null;
+  const profileProgress = profileId && profiles.profileExists(profileId) ? profiles.getProgress(profileId) : null;
 
   // Metadatos ya cacheados (si los hay); nunca bloquea esperando a fuentes
   // externas, así el catálogo carga al instante aunque haya miles de vídeos.
@@ -60,7 +73,8 @@ router.get('/videos/browse', (req, res) => {
     parent,
     folders: folders.map((folder) => {
       const meta = metadata.getCached(folder.name);
-      const { processingState, processingPercent } = folderProcessingState(catalog.listDir(folder.path).videos);
+      const folderVideos = catalog.listDir(folder.path).videos;
+      const { processingState, processingPercent } = folderProcessingState(folderVideos);
       return {
         ...folder,
         genres: meta.genres,
@@ -69,6 +83,7 @@ router.get('/videos/browse', (req, res) => {
         type: resolveType(meta),
         processingState,
         processingPercent,
+        seriesProgress: seriesProgressFor(folderVideos, profileProgress),
       };
     }),
     videos: videos.map((video) => {
