@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import FolderBrowser from '../components/FolderBrowser';
 
 export default function ConfigPage() {
   const [videosPath, setVideosPath] = useState('');
   const [message, setMessage] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -53,14 +55,19 @@ export default function ConfigPage() {
       <div className="config-wrap">
         <p className="section-title">Configuración</p>
         <label htmlFor="videosPath">Carpeta de vídeos (ruta absoluta en el servidor)</label>
-        <input
-          type="text"
-          id="videosPath"
-          placeholder="C:\Users\tu_usuario\Videos"
-          autoComplete="off"
-          value={videosPath}
-          onChange={(e) => setVideosPath(e.target.value)}
-        />
+        <div className="path-row">
+          <input
+            type="text"
+            id="videosPath"
+            placeholder="C:\Users\tu_usuario\Videos"
+            autoComplete="off"
+            value={videosPath}
+            onChange={(e) => setVideosPath(e.target.value)}
+          />
+          <button type="button" className="secondary" onClick={() => setBrowsing(true)}>
+            Examinar...
+          </button>
+        </div>
         <p className="hint">
           Debe ser una ruta accesible desde el equipo donde corre el servidor. Al guardar, se
           vuelve a escanear el catálogo y se generan las carátulas que falten.
@@ -72,6 +79,16 @@ export default function ConfigPage() {
           <p className={`config-message ${message.ok ? 'ok' : 'error'}`}>{message.text}</p>
         )}
       </div>
+      {browsing && (
+        <FolderBrowser
+          startPath={videosPath}
+          onClose={() => setBrowsing(false)}
+          onSelect={(selectedPath) => {
+            setVideosPath(selectedPath);
+            setBrowsing(false);
+          }}
+        />
+      )}
     </>
   );
 }

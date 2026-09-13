@@ -275,3 +275,91 @@ video {
   font-size: 13px;
   margin: -8px 0 20px;
 }
+
+.path-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.path-row input[type='text'] {
+  flex: 1;
+}
+
+.config-wrap button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 2px solid var(--border);
+  white-space: nowrap;
+}
+
+.config-wrap button.secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: transparent;
+}
+
+.browser-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+.browser-modal {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+.browser-current {
+  font-size: 13px;
+  color: var(--text-dim);
+  word-break: break-all;
+  margin: 0 0 12px;
+}
+
+.browser-list {
+  overflow-y: auto;
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+  min-height: 200px;
+}
+
+.browser-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.browser-item:hover {
+  background: rgba(230, 57, 70, 0.15);
+  color: var(--accent-glow);
+}
+
+.browser-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
