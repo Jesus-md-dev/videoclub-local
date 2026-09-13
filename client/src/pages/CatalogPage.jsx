@@ -10,6 +10,26 @@ function progressFor(id) {
   }
 }
 
+// IDs con progreso guardado (ni recién empezados ni ya terminados),
+// ordenados por lo visto más recientemente.
+function continueWatchingIds() {
+  const entries = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key?.startsWith('progress:')) continue;
+    try {
+      const data = JSON.parse(localStorage.getItem(key));
+      if (data.ratio > 0.02 && data.ratio < 0.95) {
+        entries.push({ id: key.slice('progress:'.length), updatedAt: data.updatedAt || 0 });
+      }
+    } catch {
+      // entrada corrupta, se ignora
+    }
+  }
+  entries.sort((a, b) => b.updatedAt - a.updatedAt);
+  return entries.map((e) => e.id);
+}
+
 function VideoCard({ video }) {
   const progress = progressFor(video.id);
   const showProgress = progress && progress.ratio < 0.95;
@@ -148,19 +168,29 @@ export default function CatalogPage() {
   }, [dir, searching]);
 
   useEffect(() => {
-    if (!searching) return;
-    setError(null);
+    // Se usa tanto para la búsqueda global como para "Continuar viendo".
     fetch('/api/videos')
       .then((res) => res.json())
       .then(setAllVideos)
-      .catch(() => setError('No se pudo cargar el catálogo.'));
-  }, [searching]);
+      .catch(() => {
+        if (searching) setError('No se pudo cargar el catálogo.');
+      });
+  }, []);
 
   const filtered = useMemo(() => {
     const q = term.trim().toLowerCase();
     if (!q) return [];
     return allVideos.filter((v) => v.title.toLowerCase().includes(q));
   }, [allVideos, term]);
+
+  const continueWatching = useMemo(() => {
+    if (searching || dir || allVideos.length === 0) return [];
+    const byId = new Map(allVideos.map((v) => [v.id, v]));
+    return continueWatchingIds()
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .slice(0, 12);
+  }, [allVideos, searching, dir]);
 
   const goToDir = (newDir) => setSearchParams(newDir ? { dir: newDir } : {});
   const handleSearch = (value) => {
@@ -213,6 +243,17 @@ export default function CatalogPage() {
 
         {!searching && (
           <>
+            {continueWatching.length > 0 && (
+              <>
+                <p className="section-title">Continuar viendo</p>
+                <div className="grid">
+                  {continueWatching.map((video) => (
+                    <VideoCard key={video.id} video={video} />
+                  ))}
+                </div>
+              </>
+            )}
+
             {visibleVideos.length > 0 && (
               <>
                 <p className="section-title">{dir ? 'Vídeos' : 'Películas'}</p>
