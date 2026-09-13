@@ -27,11 +27,23 @@ function trackLabel(track) {
   return track.languageLabel || track.title || `Pista ${track.index}`;
 }
 
+function formatRemaining(progress) {
+  if (!progress || !progress.percent) return null;
+  const { percent, elapsedMs } = progress;
+  const totalEstimate = elapsedMs / (percent / 100);
+  const remainingSec = Math.max(0, Math.round((totalEstimate - elapsedMs) / 1000));
+  if (remainingSec < 60) return `~${remainingSec}s restantes`;
+  const minutes = Math.floor(remainingSec / 60);
+  const seconds = remainingSec % 60;
+  return `~${minutes}m ${seconds}s restantes`;
+}
+
 export default function WatchPage() {
   const { id } = useParams();
   const [video, setVideo] = useState(null);
   const [error, setError] = useState(null);
   const [ready, setReady] = useState(false);
+  const [prepProgress, setPrepProgress] = useState(null);
   const [tracks, setTracks] = useState({ audio: [], subtitles: [] });
   const [audioIndex, setAudioIndex] = useState(null);
   const [playbackKey, setPlaybackKey] = useState(0);
@@ -64,6 +76,7 @@ export default function WatchPage() {
     let cancelled = false;
     let timer;
     setReady(false);
+    setPrepProgress(null);
 
     const streamUrl = `/api/stream/${id}/status${audioIndex != null ? `?audio=${audioIndex}` : ''}`;
 
@@ -77,7 +90,8 @@ export default function WatchPage() {
           } else if (data.status === 'failed') {
             setError('No se pudo preparar este vídeo para reproducirlo.');
           } else {
-            timer = setTimeout(checkStatus, 3000);
+            setPrepProgress(data.progress || null);
+            timer = setTimeout(checkStatus, 2000);
           }
         })
         .catch(() => {
@@ -191,8 +205,21 @@ export default function WatchPage() {
       <div className="player-wrap">
         {error && <div className="error-box">{error}</div>}
         {!error && video && !ready && (
-          <div className="error-box">
-            Preparando vídeo para este dispositivo... puede tardar unos minutos la primera vez.
+          <div className="prep-box">
+            <div className="spinner" />
+            <p>Preparando vídeo para este dispositivo...</p>
+            {prepProgress?.percent != null ? (
+              <>
+                <div className="prep-bar">
+                  <div style={{ width: `${prepProgress.percent}%` }} />
+                </div>
+                <p className="prep-detail">
+                  {prepProgress.percent}%{formatRemaining(prepProgress) ? ` · ${formatRemaining(prepProgress)}` : ''}
+                </p>
+              </>
+            ) : (
+              <p className="prep-detail">Analizando el vídeo, puede tardar unos minutos la primera vez...</p>
+            )}
           </div>
         )}
         {!error && video && ready && (

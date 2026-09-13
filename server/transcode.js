@@ -12,6 +12,7 @@ const COMPATIBLE_CONTAINERS = ['.mp4', '.m4v'];
 // Estado por clave ('<id>' para la pista de audio por defecto, o '<id>#a<index>'
 // para una pista de audio concreta): 'checking' | 'compatible' | 'processing' | 'ready' | 'failed'
 const status = new Map();
+const progress = new Map(); // key -> { percent: 0-100 | null, startedAt: number }
 const defaultAudioCache = new Map(); // video.id -> índice de la pista de audio por defecto
 
 function outputFile(key) {
@@ -26,6 +27,12 @@ async function defaultAudioIndex(video) {
   const index = chosen ? chosen.index : null;
   defaultAudioCache.set(video.id, index);
   return index;
+}
+
+async function resolveKey(video, audioIndex) {
+  const defaultAudio = await defaultAudioIndex(video);
+  const effectiveAudio = audioIndex != null ? Number(audioIndex) : defaultAudio;
+  return effectiveAudio === defaultAudio ? video.id : `${video.id}#a${effectiveAudio}`;
 }
 
 function runFfmpeg(inputPath, key, { videoCopy, audioCopy, audioMapIndex }) {
@@ -44,14 +51,24 @@ function runFfmpeg(inputPath, key, { videoCopy, audioCopy, audioMapIndex }) {
       outputOptions.push('-preset veryfast', '-crf 23');
     }
 
+    progress.set(key, { percent: null, startedAt: Date.now() });
+
     ffmpeg(inputPath)
       .outputOptions(outputOptions)
       .format('mp4')
+      .on('progress', (p) => {
+        if (typeof p.percent === 'number' && !Number.isNaN(p.percent)) {
+          const entry = progress.get(key);
+          progress.set(key, { ...entry, percent: Math.min(99, Math.max(0, Math.round(p.percent))) });
+        }
+      })
       .on('error', (err) => {
+        progress.delete(key);
         fs.rm(tmpOutput, { force: true }, () => {});
         reject(err);
       })
       .on('end', () => {
+        progress.delete(key);
         fs.renameSync(tmpOutput, outputFile(key));
         resolve();
       })
@@ -113,18 +130,23 @@ async function ensureChecked(video, audioIndex = null) {
 }
 
 async function getStatus(video, audioIndex = null) {
-  const defaultAudio = await defaultAudioIndex(video);
-  const effectiveAudio = audioIndex != null ? Number(audioIndex) : defaultAudio;
-  const key = effectiveAudio === defaultAudio ? video.id : `${video.id}#a${effectiveAudio}`;
+  const key = await resolveKey(video, audioIndex);
   return status.get(key) || 'unknown';
 }
 
+// Progreso de la conversión en curso (0-100, o null si aún no se puede
+// estimar) y el tiempo transcurrido, para mostrar una barra de carga real.
+async function getProgress(video, audioIndex = null) {
+  const key = await resolveKey(video, audioIndex);
+  const entry = progress.get(key);
+  if (!entry) return null;
+  return { percent: entry.percent, elapsedMs: Date.now() - entry.startedAt };
+}
+
 async function playableFile(video, audioIndex = null) {
-  const defaultAudio = await defaultAudioIndex(video);
-  const effectiveAudio = audioIndex != null ? Number(audioIndex) : defaultAudio;
-  const key = effectiveAudio === defaultAudio ? video.id : `${video.id}#a${effectiveAudio}`;
+  const key = await resolveKey(video, audioIndex);
   const file = outputFile(key);
   return fs.existsSync(file) ? file : null;
 }
 
-module.exports = { ensureChecked, getStatus, playableFile };
+module.exports = { ensureChecked, getStatus, getProgress, playableFile };

@@ -92,8 +92,10 @@ router.get('/stream/:id/status', async (req, res) => {
     res.status(404).json({ error: 'Vídeo no encontrado' });
     return;
   }
-  const status = await transcode.ensureChecked(video, parseAudioIndex(req));
-  res.json({ status });
+  const audioIndex = parseAudioIndex(req);
+  const status = await transcode.ensureChecked(video, audioIndex);
+  const progress = status === 'processing' ? await transcode.getProgress(video, audioIndex) : null;
+  res.json({ status, progress });
 });
 
 router.get('/stream/:id', async (req, res) => {
