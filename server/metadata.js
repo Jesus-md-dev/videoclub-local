@@ -297,6 +297,38 @@ async function fetchTmdbMovie(query, priority, year) {
   };
 }
 
+const TMDB_ANIME_GENRE_ID = 16; // "Animación" en la lista de géneros de TMDB
+
+async function fetchTmdbTv(query, priority, year) {
+  if (!TMDB_API_KEY) return null;
+  const yearParam = year ? `&first_air_date_year=${year}` : '';
+  const res = await throttledFetch(
+    `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}${yearParam}`,
+    undefined,
+    350,
+    priority
+  );
+  if (!res.ok) throw new Error(`TMDB respondió ${res.status}`);
+  const data = await res.json();
+  const match = data.results?.[0];
+  if (!match && year) return fetchTmdbTv(query, priority, null);
+  if (!match) return null;
+  const genreMap = await tmdbGenreMap('tv', priority);
+  const genres = normalizeGenres((match.genre_ids || []).map((id) => genreMap.get(id)).filter(Boolean));
+  // TMDB no tiene una etiqueta "anime" propia: se usa animación + origen en
+  // Japón como señal (evita depender de Jikan, que ha estado caído con
+  // frecuencia, para esta clasificación).
+  const isAnime = (match.genre_ids || []).includes(TMDB_ANIME_GENRE_ID) && (match.origin_country || []).includes('JP');
+  if (isAnime && !genres.includes('Anime')) genres.push('Anime');
+  return {
+    genres: normalizeGenres(genres),
+    year: match.first_air_date ? match.first_air_date.slice(0, 4) : null,
+    type: isAnime ? 'anime' : 'tv',
+    cleanName: match.name || null,
+    poster: match.poster_path ? `https://image.tmdb.org/t/p/w500${match.poster_path}` : null,
+  };
+}
+
 const WIKIDATA_HEADERS = { 'User-Agent': 'videoclub-local/1.0 (uso personal, sin fines comerciales)' };
 const FILM_DESCRIPTION_HINTS = ['film', 'movie'];
 
@@ -371,28 +403,43 @@ async function fetchWikidataFilm(query, priority) {
   return { genres: normalizeGenres(rawGenres), year, type: 'movie', cleanName, poster };
 }
 
-// Prueba las fuentes en un orden fijo y se queda con la primera que
-// encuentre géneros reales; no asume de antemano si es serie o película
-// (eso lo decide el propio resultado de la búsqueda, no la estructura de
-// carpetas/archivos en disco).
-//
-// TVmaze indexa muchos animes como series de TV normales, y solo a veces
-// los etiqueta también con el género "Anime" — por eso, salvo que ya venga
-// con esa etiqueta, se comprueba también en Jikan (específico de anime)
-// para no clasificar mal algo que sí lo es.
+// TMDB siempre primero (tanto TV/anime como película): su búsqueda es
+// mucho más precisa que la de TVmaze, que varias veces ha encontrado un
+// título homónimo sin relación (p.ej. "Nadie" -> "Tú o nadie", o "Monster"
+// -> otra serie de 2017 en vez del anime de 2004). Si no hay clave TMDB
+// configurada, o TMDB no encuentra nada, se cae al respaldo antiguo
+// (TVmaze + Jikan para anime, Wikidata para película).
 async function fetchBest(query, priority, year) {
-  // Si el nombre trae año (habitual en películas de esta biblioteca, no en
-  // carpetas de serie/anime), se prueba primero en TMDB con ese año como
-  // filtro: mucho más preciso que la búsqueda difusa de TVmaze (que a
-  // veces encuentra una serie sin relación con el mismo nombre, p.ej.
-  // "Nadie" -> "Tú o nadie") y evita depender de Jikan para algo que casi
-  // seguro ya es una película. No afecta a la comprobación de anime de
-  // series/carpetas, que casi nunca llevan año en el nombre.
-  if (year) {
-    const tmdbMovieByYear = await fetchTmdbMovie(query, priority, year);
-    if (tmdbMovieByYear && tmdbMovieByYear.genres.length) return tmdbMovieByYear;
+  // Un fallo puntual de TMDB (rate-limit, caída momentánea) no debe
+  // bloquear todo lo demás: se cae al respaldo antiguo igual que si no
+  // hubiera encontrado nada, en vez de propagar el error.
+  //
+  // El orden entre TV y película de TMDB depende de si el nombre trae año:
+  // eso es lo que distingue una película (p.ej. "Nadie (2021)") de una
+  // carpeta de serie/anime (casi nunca lleva año, p.ej. "One Piece") en
+  // esta biblioteca. Probarlas en el orden equivocado es justo lo que hizo
+  // que "Nadie" encontrase antes una serie sin relación ("Tierra de
+  // nadie") que la película real.
+  let tmdbTv = null;
+  let tmdbMovie = null;
+  try {
+    if (year) {
+      tmdbMovie = await fetchTmdbMovie(query, priority, year);
+      if (tmdbMovie && tmdbMovie.genres.length) return tmdbMovie;
+      tmdbTv = await fetchTmdbTv(query, priority, year);
+      if (tmdbTv && tmdbTv.genres.length) return tmdbTv;
+    } else {
+      tmdbTv = await fetchTmdbTv(query, priority, year);
+      if (tmdbTv && tmdbTv.genres.length) return tmdbTv;
+      tmdbMovie = await fetchTmdbMovie(query, priority, year);
+      if (tmdbMovie && tmdbMovie.genres.length) return tmdbMovie;
+    }
+  } catch (err) {
+    console.warn(`TMDB falló para "${query}", usando el respaldo: ${err.message}`);
   }
 
+  // A partir de aquí, el respaldo de siempre: sin clave TMDB configurada,
+  // TMDB falló, o no ha encontrado nada para esta consulta.
   const tv = await fetchTvMaze(query, priority);
   if (tv && tv.genres.includes('Anime')) return tv;
 
@@ -403,7 +450,7 @@ async function fetchBest(query, priority, year) {
   // sí es anime solo porque Jikan estaba caído en ese momento. Pero si no
   // hay nada de TVmaze que arriesgar (típicamente una película: Jikan no
   // pinta nada ahí de todos modos), un fallo de Jikan no debe bloquear las
-  // demás fuentes (TMDB/Wikidata) — Jikan caído no puede tumbar también la
+  // demás fuentes (Wikidata) — Jikan caído no puede tumbar también la
   // búsqueda de películas.
   let anime = null;
   try {
@@ -427,16 +474,10 @@ async function fetchBest(query, priority, year) {
 
   if (tv && tv.genres.length) return tv;
 
-  // TMDB primero: búsqueda mucho más fiable que Wikidata para películas
-  // (Wikidata, con títulos ambiguos, a veces acertaba con la entidad
-  // equivocada). Si no hay clave de TMDB configurada, se salta sin más.
-  const tmdbMovie = await fetchTmdbMovie(query, priority, year);
-  if (tmdbMovie && tmdbMovie.genres.length) return tmdbMovie;
-
   const movie = await fetchWikidataFilm(query, priority);
   if (movie && movie.genres.length) return movie;
 
-  return tv || tmdbMovie || movie || anime || null;
+  return tv || tmdbMovie || tmdbTv || movie || anime || null;
 }
 
 // Devuelve los metadatos (géneros, año, tipo) para una clave (nombre de
