@@ -51,6 +51,32 @@ function cleanupStaleTmpFiles() {
 }
 cleanupStaleTmpFiles();
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Un archivo puede fallar en ffprobe de forma transitoria (bloqueado un
+// instante por el antivirus, otro proceso leyéndolo a la vez, un recurso de
+// red que tarda en responder...), no solo por estar realmente corrupto.
+// Reintentar unas pocas veces con espera evita marcar como "fallido" para
+// siempre algo que un segundo después ya se puede leer sin problema.
+async function getMediaInfoWithRetries(video, attempts = 3, delayMs = 1200) {
+  let lastErr;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      return await getMediaInfo(video);
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await wait(delayMs);
+      }
+    }
+  }
+  throw lastErr;
+}
+
 async function defaultAudioIndex(video) {
   if (defaultAudioCache.has(video.id)) return defaultAudioCache.get(video.id);
   // Se llama sin try/catch desde varios sitios (ensureChecked, resolveKey,
@@ -59,7 +85,7 @@ async function defaultAudioIndex(video) {
   // todo el proceso de Node (ffprobe exited with code 1).
   let index = null;
   try {
-    const info = await getMediaInfo(video);
+    const info = await getMediaInfoWithRetries(video);
     const audioStreams = info.streams.filter((s) => s.codec_type === 'audio');
     const chosen = audioStreams.find((s) => s.disposition?.default === 1) || audioStreams[0];
     index = chosen ? chosen.index : null;
@@ -298,7 +324,7 @@ async function ensureChecked(video, audioIndex = null, priority = 'low') {
   const ext = path.extname(video.relativePath).toLowerCase();
   let info;
   try {
-    info = await getMediaInfo(video);
+    info = await getMediaInfoWithRetries(video);
   } catch (err) {
     console.warn(`No se pudo analizar "${video.title}": ${err.message}`);
     status.set(key, 'failed');
