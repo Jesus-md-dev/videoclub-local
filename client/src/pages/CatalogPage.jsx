@@ -10,8 +10,20 @@ function progressFor(id) {
   }
 }
 
-// IDs con progreso guardado (ni recién empezados ni ya terminados),
-// ordenados por lo visto más recientemente.
+function dismissedAt(id) {
+  const raw = localStorage.getItem(`dismissed:${id}`);
+  return raw ? Number(raw) || 0 : 0;
+}
+
+// Quita un vídeo de "Continuar viendo" sin tocar su progreso guardado: si
+// se retoma más adelante (el progreso se actualiza después de este
+// momento), vuelve a aparecer solo.
+function dismissFromContinueWatching(id) {
+  localStorage.setItem(`dismissed:${id}`, String(Date.now()));
+}
+
+// IDs con progreso guardado (ni recién empezados ni ya terminados) y no
+// descartados desde entonces, ordenados por lo visto más recientemente.
 function continueWatchingIds() {
   const entries = [];
   for (let i = 0; i < localStorage.length; i += 1) {
@@ -20,7 +32,10 @@ function continueWatchingIds() {
     try {
       const data = JSON.parse(localStorage.getItem(key));
       if (data.ratio > 0.02 && data.ratio < 0.95) {
-        entries.push({ id: key.slice('progress:'.length), updatedAt: data.updatedAt || 0 });
+        const id = key.slice('progress:'.length);
+        const updatedAt = data.updatedAt || 0;
+        if (dismissedAt(id) >= updatedAt) continue;
+        entries.push({ id, updatedAt });
       }
     } catch {
       // entrada corrupta, se ignora
@@ -30,7 +45,7 @@ function continueWatchingIds() {
   return entries.map((e) => e.id);
 }
 
-function VideoCard({ video }) {
+function VideoCard({ video, onRemove }) {
   const progress = progressFor(video.id);
   const showProgress = progress && progress.ratio < 0.95;
   const posterSrc = video.poster || `/api/thumbnail/${video.id}`;
@@ -41,6 +56,19 @@ function VideoCard({ video }) {
   return (
     <Link className="card" to={`/watch/${video.id}`}>
       {showProgress && <span className="badge">Continuar</span>}
+      {onRemove && (
+        <button
+          className="card-remove"
+          title="Quitar de Continuar viendo"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRemove(video.id);
+          }}
+        >
+          ✕
+        </button>
+      )}
       <img
         className="poster"
         src={posterSrc}
@@ -183,6 +211,7 @@ export default function CatalogPage() {
     return allVideos.filter((v) => v.title.toLowerCase().includes(q));
   }, [allVideos, term]);
 
+  const [dismissTick, setDismissTick] = useState(0);
   const continueWatching = useMemo(() => {
     if (searching || dir || allVideos.length === 0) return [];
     const byId = new Map(allVideos.map((v) => [v.id, v]));
@@ -190,7 +219,13 @@ export default function CatalogPage() {
       .map((id) => byId.get(id))
       .filter(Boolean)
       .slice(0, 12);
-  }, [allVideos, searching, dir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allVideos, searching, dir, dismissTick]);
+
+  const handleRemoveFromContinueWatching = (id) => {
+    dismissFromContinueWatching(id);
+    setDismissTick((t) => t + 1);
+  };
 
   const goToDir = (newDir) => setSearchParams(newDir ? { dir: newDir } : {});
   const handleSearch = (value) => {
@@ -248,7 +283,7 @@ export default function CatalogPage() {
                 <p className="section-title">Continuar viendo</p>
                 <div className="grid">
                   {continueWatching.map((video) => (
-                    <VideoCard key={video.id} video={video} />
+                    <VideoCard key={video.id} video={video} onRemove={handleRemoveFromContinueWatching} />
                   ))}
                 </div>
               </>

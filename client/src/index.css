@@ -166,6 +166,37 @@ main {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
+.card-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--text);
+  border: none;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.card:hover .card-remove,
+.card:focus-within .card-remove {
+  opacity: 1;
+}
+
+.card-remove:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
 .progress-bar {
   height: 4px;
   background: rgba(255, 255, 255, 0.15);
@@ -796,6 +827,10 @@ video {
   .grid {
     grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
     gap: 12px;
+  }
+
+  .card-remove {
+    opacity: 1;
   }
 
   .chip,
