@@ -153,6 +153,26 @@ function cleanQuery(name) {
     .trim();
 }
 
+// Nombre alternativo en español de un show de TVmaze, si existe entre sus
+// "akas" (títulos usados en otros países/idiomas). TVmaze no da el nombre
+// en español directamente en la ficha principal.
+async function fetchTvMazeSpanishName(showId, priority) {
+  try {
+    const res = await throttledFetch(
+      `https://api.tvmaze.com/shows/${showId}/akas`,
+      undefined,
+      350,
+      priority
+    );
+    if (!res.ok) return null;
+    const akas = await res.json();
+    const spanish = akas.find((a) => (a.country?.code || '').match(/^(ES|MX|AR|CO|CL|PE)$/i));
+    return spanish ? spanish.name : null;
+  } catch {
+    return null;
+  }
+}
+
 // TVmaze: series de TV en general (sin API key). https://www.tvmaze.com/api
 async function fetchTvMaze(query, priority) {
   const res = await throttledFetch(
@@ -164,11 +184,12 @@ async function fetchTvMaze(query, priority) {
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`TVmaze respondió ${res.status}`);
   const data = await res.json();
+  const spanishName = await fetchTvMazeSpanishName(data.id, priority);
   return {
     genres: normalizeGenres(data.genres),
     year: data.premiered ? data.premiered.slice(0, 4) : null,
     type: 'tv',
-    cleanName: data.name || null,
+    cleanName: spanishName || data.name || null,
     poster: data.image?.original || data.image?.medium || null,
   };
 }
@@ -229,7 +250,8 @@ async function fetchWikidataFilm(query, priority) {
   );
   if (!entityRes.ok) throw new Error(`Wikidata respondió ${entityRes.status}`);
   const entityData = await entityRes.json();
-  const claims = entityData.entities?.[best.id]?.claims || {};
+  const entity = entityData.entities?.[best.id] || {};
+  const claims = entity.claims || {};
 
   const genreIds = (claims.P136 || [])
     .map((c) => c.mainsnak?.datavalue?.value?.id)
@@ -237,7 +259,14 @@ async function fetchWikidataFilm(query, priority) {
 
   const dateValue = claims.P577?.[0]?.mainsnak?.datavalue?.value?.time;
   const year = dateValue ? dateValue.replace('+', '').slice(0, 4) : null;
-  const cleanName = best.label || null;
+  // La búsqueda se hace en inglés, pero la propia entidad trae también el
+  // título en español (más fiable que traducir el resultado de la búsqueda).
+  // Si ni la entidad ni el resultado de búsqueda traen una etiqueta real (o
+  // esta es literalmente el texto buscado, señal de una respuesta degradada
+  // de la API), se descarta en vez de guardar basura.
+  const nameCandidate = entity.labels?.es?.value || entity.labels?.en?.value || best.label || null;
+  const cleanName =
+    nameCandidate && nameCandidate.trim().toLowerCase() !== query.trim().toLowerCase() ? nameCandidate : null;
   const poster = posterFromClaims(claims);
 
   if (genreIds.length === 0) return { genres: [], year, type: 'movie', cleanName, poster };
