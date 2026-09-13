@@ -131,12 +131,12 @@ function listDir(webDir = '') {
   return { dir: webDir, parent, folders, videos };
 }
 
-// Clave de metadatos (TMDb) para un vídeo: el nombre de la carpeta de nivel
-// superior si pertenece a una serie, o su propio título si es un vídeo suelto.
+// Clave de metadatos para un vídeo: el nombre de la carpeta de nivel superior
+// si pertenece a una serie, o su propio título si es un vídeo suelto (película).
 function metadataKeyFor(video) {
   const [first] = video.relativePath.split(path.sep);
-  const hasFolder = video.relativePath.includes(path.sep);
-  return hasFolder ? cleanTitle(first) : video.title;
+  const isSeries = video.relativePath.includes(path.sep);
+  return { key: isSeries ? cleanTitle(first) : video.title, isSeries };
 }
 
 module.exports = { scan, getCatalog, getVideoById, listDir, metadataKeyFor };
