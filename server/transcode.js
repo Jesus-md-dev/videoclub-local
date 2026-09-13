@@ -379,6 +379,14 @@ function peekProcessingState(video) {
   return activeJob && activeJob.key === key ? 'active' : 'queued';
 }
 
+// Porcentaje (0-100) de la conversión en curso ahora mismo para esta pista
+// por defecto, o null si no está activa (en cola pero sin empezar, o no
+// necesita conversión). Para pintar el catálogo sin bloquear.
+function peekProgressPercent(video) {
+  const entry = progress.get(video.id);
+  return entry && typeof entry.percent === 'number' ? entry.percent : null;
+}
+
 // En modo "sin convertir" (?raw=1) se sirve el archivo tal cual, así que el
 // navegador solo reproduce la pista de audio que trae por defecto: cambiar
 // de idioma no tiene ningún efecto (la mayoría de navegadores no exponen las
@@ -491,6 +499,7 @@ module.exports = {
   getStatus,
   peekStatus,
   peekProcessingState,
+  peekProgressPercent,
   getProgress,
   playableFile,
   warmAll,

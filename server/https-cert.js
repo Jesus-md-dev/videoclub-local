@@ -32,8 +32,10 @@ async function generateCert() {
     { type: 7, ip: '127.0.0.1' }, // IP
     ...localIps().map((ip) => ({ type: 7, ip })),
   ];
+  const notAfterDate = new Date();
+  notAfterDate.setFullYear(notAfterDate.getFullYear() + 10);
   const pems = await selfsigned.generate([{ name: 'commonName', value: 'videoclub-local' }], {
-    days: 3650,
+    notAfterDate,
     keySize: 2048,
     algorithm: 'sha256',
     extensions: [{ name: 'subjectAltName', altNames }],
@@ -51,4 +53,4 @@ async function getOrCreateCert() {
   return generateCert();
 }
 
-module.exports = { getOrCreateCert };
+module.exports = { getOrCreateCert, CERT_FILE };

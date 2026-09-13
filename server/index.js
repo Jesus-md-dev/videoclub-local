@@ -3,7 +3,7 @@ const https = require('https');
 const os = require('os');
 const path = require('path');
 const { PORT, HTTPS_PORT, getVideosPath } = require('./config');
-const { getOrCreateCert } = require('./https-cert');
+const { getOrCreateCert, CERT_FILE } = require('./https-cert');
 const catalog = require('./catalog');
 const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
@@ -45,6 +45,16 @@ app.use('/api', profilesRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
+});
+
+// Descarga del certificado autofirmado, para instalarlo como "de confianza"
+// en un dispositivo y que deje de avisar de conexión no privada al usar
+// HTTPS. Servido también por HTTP a propósito: hace falta poder bajarlo
+// antes de que el dispositivo confíe todavía en el HTTPS de este servidor.
+app.get('/cert', (req, res) => {
+  res.download(CERT_FILE, 'videoclub-local.crt', {
+    headers: { 'Content-Type': 'application/x-x509-ca-cert' },
+  });
 });
 
 // Fallback para las rutas de React Router (recarga directa de /watch/:id, /config, ...).

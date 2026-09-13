@@ -27,19 +27,21 @@ function toPublicVideo(video) {
     // falta convertirlo, pero espera su turno (solo hay una conversión a la
     // vez). null: no hace falta, o aún no se ha comprobado.
     processingState: transcode.peekProcessingState(video),
+    processingPercent: transcode.peekProgressPercent(video),
   };
 }
 
 // Para una carpeta de serie: si algún episodio se está convirtiendo ahora
-// mismo eso manda; si no, pero alguno está en cola, se marca como en cola.
+// mismo eso manda (con su porcentaje real); si no, pero alguno está en
+// cola, se marca como en cola.
 function folderProcessingState(videosInFolder) {
   let queued = false;
   for (const v of videosInFolder) {
     const state = transcode.peekProcessingState(v);
-    if (state === 'active') return 'active';
+    if (state === 'active') return { processingState: 'active', processingPercent: transcode.peekProgressPercent(v) };
     if (state === 'queued') queued = true;
   }
-  return queued ? 'queued' : null;
+  return { processingState: queued ? 'queued' : null, processingPercent: null };
 }
 
 router.get('/videos', (req, res) => {
@@ -58,7 +60,7 @@ router.get('/videos/browse', (req, res) => {
     parent,
     folders: folders.map((folder) => {
       const meta = metadata.getCached(folder.name);
-      const processingState = folderProcessingState(catalog.listDir(folder.path).videos);
+      const { processingState, processingPercent } = folderProcessingState(catalog.listDir(folder.path).videos);
       return {
         ...folder,
         genres: meta.genres,
@@ -66,6 +68,7 @@ router.get('/videos/browse', (req, res) => {
         poster: meta.poster,
         type: resolveType(meta),
         processingState,
+        processingPercent,
       };
     }),
     videos: videos.map((video) => {

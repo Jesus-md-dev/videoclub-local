@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { getActiveProfileId } from '../profile';
 
-function processingBadgeLabel(state) {
-  if (state === 'active') return 'Procesando…';
+function processingBadgeLabel(state, percent) {
+  if (state === 'active') return `Procesando… ${typeof percent === 'number' ? `${percent}%` : ''}`.trim();
   if (state === 'queued') return 'Pendiente de conversión';
   return null;
 }
@@ -27,7 +27,7 @@ function VideoCard({ video, progress, onRemove }) {
   // El nombre limpio es el de la serie (mismo para todos sus episodios), así
   // que en un episodio taparía el número; solo se usa en películas sueltas.
   const displayTitle = video.seriesKey ? video.title : video.cleanName || video.title;
-  const processingLabel = processingBadgeLabel(video.processingState);
+  const processingLabel = processingBadgeLabel(video.processingState, video.processingPercent);
 
   return (
     <Link className="card" to={`/watch/${video.id}`}>
@@ -73,7 +73,7 @@ function VideoCard({ video, progress, onRemove }) {
 function FolderCard({ folder, onOpen }) {
   const posterSrc = folder.poster || (folder.thumbnailId ? `/api/thumbnail/${folder.thumbnailId}` : null);
   const displayName = folder.cleanName || folder.name;
-  const processingLabel = processingBadgeLabel(folder.processingState);
+  const processingLabel = processingBadgeLabel(folder.processingState, folder.processingPercent);
 
   return (
     <button className="card folder-card" onClick={() => onOpen(folder.path)}>
@@ -167,15 +167,35 @@ export default function CatalogPage() {
   }, []);
 
   useEffect(() => {
-    if (searching) return;
+    if (searching) return undefined;
     setError(null);
-    fetch(`/api/videos/browse?dir=${encodeURIComponent(dir)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setFolders(data.folders);
-        setVideos(data.videos);
-      })
-      .catch(() => setError('No se pudo cargar el catálogo.'));
+    let cancelled = false;
+    let timer;
+
+    // Mientras haya algo convirtiéndose o en cola, se vuelve a pedir cada
+    // pocos segundos para que el porcentaje avance solo en la lista; en
+    // cuanto no quede nada procesándose, deja de sondear.
+    const load = () => {
+      fetch(`/api/videos/browse?dir=${encodeURIComponent(dir)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (cancelled) return;
+          setFolders(data.folders);
+          setVideos(data.videos);
+          const stillProcessing =
+            data.folders.some((f) => f.processingState) || data.videos.some((v) => v.processingState);
+          if (stillProcessing) timer = setTimeout(load, 5000);
+        })
+        .catch(() => {
+          if (!cancelled) setError('No se pudo cargar el catálogo.');
+        });
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [dir, searching]);
 
   useEffect(() => {
