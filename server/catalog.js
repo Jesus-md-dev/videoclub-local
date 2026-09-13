@@ -157,6 +157,13 @@ function getAllGroupKeys() {
   return [...showsList.map((show) => show.name), ...moviesList.map((movie) => movie.title)];
 }
 
+// Clave de la serie a la que pertenece un vídeo, o null si es una película
+// suelta (para poder volver a la lista de episodios en vez de al catálogo).
+function getShowKeyFor(video) {
+  const key = groupKeyFor(video);
+  return showVideos.has(key) ? key : null;
+}
+
 module.exports = {
   scan,
   getCatalog,
@@ -165,4 +172,5 @@ module.exports = {
   metadataKeyFor: groupKeyFor,
   isGenericFolderName,
   getAllGroupKeys,
+  getShowKeyFor,
 };

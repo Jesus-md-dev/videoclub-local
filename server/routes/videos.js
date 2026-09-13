@@ -12,6 +12,7 @@ function toPublicVideo(video) {
     size: video.size,
     modifiedAt: video.modifiedAt,
     hasThumbnail: thumbnails.hasThumbnail(video.id),
+    seriesKey: catalog.getShowKeyFor(video),
   };
 }
 

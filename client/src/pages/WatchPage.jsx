@@ -168,12 +168,14 @@ export default function WatchPage() {
   };
 
   const streamSrc = `/api/stream/${id}${audioIndex != null ? `?audio=${audioIndex}` : ''}`;
+  const backTo = video?.seriesKey ? `/?dir=${encodeURIComponent(video.seriesKey)}` : '/';
+  const backLabel = video?.seriesKey ? '← Volver a episodios' : '← Volver al catálogo';
 
   return (
     <>
       <div className="watch-header">
-        <Link className="back-link" to="/">
-          &larr; Volver al catálogo
+        <Link className="back-link" to={backTo}>
+          {backLabel}
         </Link>
         <h1 className="watch-title">{error ? 'Error' : video ? video.title : 'Cargando...'}</h1>
         {tracks.audio.length > 1 && (
