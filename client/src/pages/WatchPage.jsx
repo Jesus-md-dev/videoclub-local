@@ -52,6 +52,8 @@ export default function WatchPage() {
   const [prevEpisodeId, setPrevEpisodeId] = useState(null);
   const [nextEpisodeId, setNextEpisodeId] = useState(null);
   const [autoAdvanceIn, setAutoAdvanceIn] = useState(null);
+  const [forcing, setForcing] = useState(false);
+  const [forced, setForced] = useState(false);
   const playerRef = useRef(null);
   const resumeTimeRef = useRef(null);
 
@@ -75,6 +77,7 @@ export default function WatchPage() {
       .catch(() => {});
 
     setAutoAdvanceIn(null);
+    setForced(false);
   }, [id]);
 
   useEffect(() => {
@@ -233,6 +236,16 @@ export default function WatchPage() {
     setAudioIndex(value === '' ? null : Number(value));
   };
 
+  const handleForcePriority = () => {
+    setForcing(true);
+    const url = `/api/stream/${id}/priority${audioIndex != null ? `?audio=${audioIndex}` : ''}`;
+    fetch(url, { method: 'POST' })
+      .then((res) => res.json())
+      .then(() => setForced(true))
+      .catch(() => {})
+      .finally(() => setForcing(false));
+  };
+
   const retryPlayback = () => {
     const player = playerRef.current;
     resumeTimeRef.current = player ? player.currentTime : null;
@@ -288,6 +301,13 @@ export default function WatchPage() {
               </>
             ) : (
               <p className="prep-detail">Analizando el vídeo, puede tardar unos minutos la primera vez...</p>
+            )}
+            {forced ? (
+              <p className="prep-detail">Priorizado. Si había otra conversión en marcha, se ha interrumpido para dar paso a esta.</p>
+            ) : (
+              <button onClick={handleForcePriority} disabled={forcing}>
+                {forcing ? 'Priorizando...' : 'Forzar prioridad'}
+              </button>
             )}
           </div>
         )}

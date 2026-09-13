@@ -83,11 +83,15 @@ function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex }, useGpu) {
   return outputOptions;
 }
 
+// La conversión de ffmpeg actualmente en marcha (si hay alguna), para poder
+// interrumpirla a propósito desde forcePriority().
+let activeJob = null; // { key, command }
+
 function runOnce(inputPath, tmpOutput, key, opts, useGpu) {
   return new Promise((resolve, reject) => {
     progress.set(key, { percent: null, startedAt: Date.now() });
 
-    ffmpeg(inputPath)
+    const command = ffmpeg(inputPath)
       .outputOptions(buildOutputOptions(opts, useGpu))
       .format('mp4')
       .on('progress', (p) => {
@@ -98,13 +102,24 @@ function runOnce(inputPath, tmpOutput, key, opts, useGpu) {
       })
       .on('error', (err) => {
         progress.delete(key);
+        const interrupted = activeJob?.key === key && activeJob.interrupted;
+        activeJob = null;
+        if (interrupted) {
+          const tagged = new Error('Interrumpido para priorizar otro vídeo');
+          tagged.interrupted = true;
+          reject(tagged);
+          return;
+        }
         reject(err);
       })
       .on('end', () => {
         progress.delete(key);
+        activeJob = null;
         resolve();
-      })
-      .save(tmpOutput);
+      });
+
+    activeJob = { key, command, interrupted: false };
+    command.save(tmpOutput);
   });
 }
 
@@ -117,6 +132,7 @@ async function runFfmpegNow(inputPath, key, opts) {
     await runOnce(inputPath, tmpOutput, key, opts, useGpu);
   } catch (err) {
     fs.rm(tmpOutput, { force: true }, () => {});
+    if (err.interrupted) throw err;
     if (!useGpu) throw err;
     // La GPU ha fallado para este archivo en concreto (a menudo por tener ya
     // otra sesión NVENC abierta): reintenta con CPU en vez de fallar del todo.
@@ -130,10 +146,9 @@ async function runFfmpegNow(inputPath, key, opts) {
 // Cola global con dos carriles: como mucho una conversión de ffmpeg a la
 // vez (para no agotar las sesiones NVENC de la GPU ni saturar CPU/disco),
 // pero lo que el usuario está pidiendo ver AHORA ("high") adelanta a lo que
-// el precalentamiento en segundo plano ("low") aún no ha empezado. Ojo: si
-// ya hay una conversión en marcha, esta no se interrumpe (no hay forma de
-// pausarla a medias), así que una petición "high" espera a que termine esa
-// en concreto antes de colarse delante del resto de la cola.
+// el precalentamiento en segundo plano ("low") aún no ha empezado. Si ya
+// hay una conversión en marcha, sigue su curso salvo que se pida
+// explícitamente interrumpirla con forcePriority().
 const ffmpegHighQueue = [];
 const ffmpegLowQueue = [];
 let ffmpegDraining = false;
@@ -144,17 +159,42 @@ async function drainFfmpegQueue() {
   while (ffmpegHighQueue.length || ffmpegLowQueue.length) {
     const task = ffmpegHighQueue.length ? ffmpegHighQueue.shift() : ffmpegLowQueue.shift();
     // eslint-disable-next-line no-await-in-loop
-    await task();
+    await task.run();
   }
   ffmpegDraining = false;
 }
 
 function runFfmpeg(inputPath, key, opts, priority = 'low') {
   return new Promise((resolve, reject) => {
-    const task = () => runFfmpegNow(inputPath, key, opts).then(resolve, reject);
+    const task = { key, run: () => runFfmpegNow(inputPath, key, opts).then(resolve, reject) };
     (priority === 'high' ? ffmpegHighQueue : ffmpegLowQueue).push(task);
     drainFfmpegQueue();
   });
+}
+
+// Interrumpe la conversión en marcha (si es de otro vídeo) y adelanta esta
+// clave al principio de la cola, para que le toque el turno justo después.
+function forcePriority(key) {
+  if (activeJob && activeJob.key !== key) {
+    activeJob.interrupted = true;
+    activeJob.command.kill('SIGKILL');
+  }
+
+  const highIdx = ffmpegHighQueue.findIndex((t) => t.key === key);
+  if (highIdx > 0) {
+    const [task] = ffmpegHighQueue.splice(highIdx, 1);
+    ffmpegHighQueue.unshift(task);
+    return true;
+  }
+
+  const lowIdx = ffmpegLowQueue.findIndex((t) => t.key === key);
+  if (lowIdx >= 0) {
+    const [task] = ffmpegLowQueue.splice(lowIdx, 1);
+    ffmpegHighQueue.unshift(task);
+    return true;
+  }
+
+  return Boolean(activeJob) && activeJob.key === key;
 }
 
 async function ensureChecked(video, audioIndex = null, priority = 'low') {
@@ -208,11 +248,29 @@ async function ensureChecked(video, audioIndex = null, priority = 'low') {
   )
     .then(() => status.set(key, 'ready'))
     .catch((err) => {
+      if (err.interrupted) {
+        // No se marca como fallida: se ha interrumpido a propósito para dar
+        // paso a otro vídeo. Se reintenta sola en segundo plano (baja
+        // prioridad) en vez de quedarse a medias para siempre.
+        status.delete(key);
+        ensureChecked(video, audioIndex, 'low');
+        return;
+      }
       console.warn(`No se pudo convertir "${video.title}": ${err.message}`);
       status.set(key, 'failed');
     });
 
   return 'processing';
+}
+
+// Interrumpe la conversión en marcha (si es de otro vídeo distinto) y
+// adelanta este vídeo al principio de la cola. Solo tiene efecto si el
+// vídeo ya está en curso de conversión ('processing'); si aún no se ha
+// pedido, primero hay que llamar a ensureChecked.
+async function forcePriorityFor(video, audioIndex = null) {
+  const key = await resolveKey(video, audioIndex);
+  if (status.get(key) !== 'processing') return false;
+  return forcePriority(key);
 }
 
 async function getStatus(video, audioIndex = null) {
@@ -257,4 +315,4 @@ async function warmAll(videos) {
   }
 }
 
-module.exports = { ensureChecked, getStatus, getProgress, playableFile, warmAll };
+module.exports = { ensureChecked, getStatus, getProgress, playableFile, warmAll, forcePriorityFor };

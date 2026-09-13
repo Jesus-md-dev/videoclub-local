@@ -100,6 +100,17 @@ router.get('/stream/:id/status', async (req, res) => {
   res.json({ status, progress });
 });
 
+// Interrumpe la conversión en marcha (si es de otro vídeo) y prioriza esta.
+router.post('/stream/:id/priority', async (req, res) => {
+  const video = catalog.getVideoById(req.params.id);
+  if (!video) {
+    res.status(404).json({ error: 'Vídeo no encontrado' });
+    return;
+  }
+  const forced = await transcode.forcePriorityFor(video, parseAudioIndex(req));
+  res.json({ forced });
+});
+
 router.get('/stream/:id', async (req, res) => {
   const video = catalog.getVideoById(req.params.id);
   if (!video) {

@@ -430,6 +430,27 @@ video {
   margin: 4px 0 0;
 }
 
+.prep-box button {
+  margin-top: 8px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.prep-box button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.prep-box button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .error-box {
   margin: 40px auto;
   max-width: 480px;
