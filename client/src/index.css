@@ -234,6 +234,16 @@ main {
 .watch-title {
   font-size: clamp(18px, 3vw, 24px);
   margin: 0;
+  flex: 1;
+}
+
+.track-select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
 }
 
 .player-wrap {

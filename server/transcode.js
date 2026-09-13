@@ -1,16 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const ffmpegPath = require('ffmpeg-static');
-const ffprobePath = require('ffprobe-static').path;
-const ffmpeg = require('fluent-ffmpeg');
-const { getVideosPath, DATA_PATH } = require('./config');
-
-if (ffmpegPath) {
-  ffmpeg.setFfmpegPath(ffmpegPath);
-}
-if (ffprobePath) {
-  ffmpeg.setFfprobePath(ffprobePath);
-}
+const { ffmpeg, getMediaInfo, inputPathFor } = require('./mediaInfo');
+const { DATA_PATH } = require('./config');
 
 const TRANSCODED_PATH = path.join(DATA_PATH, 'transcoded');
 
@@ -18,46 +9,42 @@ const COMPATIBLE_VIDEO_CODECS = ['h264'];
 const COMPATIBLE_AUDIO_CODECS = ['aac', 'mp3'];
 const COMPATIBLE_CONTAINERS = ['.mp4', '.m4v'];
 
-// Estado por vídeo: 'checking' | 'compatible' | 'processing' | 'ready' | 'failed'
+// Estado por clave ('<id>' para la pista de audio por defecto, o '<id>#a<index>'
+// para una pista de audio concreta): 'checking' | 'compatible' | 'processing' | 'ready' | 'failed'
 const status = new Map();
+const defaultAudioCache = new Map(); // video.id -> índice de la pista de audio por defecto
 
-function outputFile(id) {
-  return path.join(TRANSCODED_PATH, `${id}.mp4`);
+function outputFile(key) {
+  return path.join(TRANSCODED_PATH, `${key.replace('#', '__')}.mp4`);
 }
 
-function probe(inputPath) {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(inputPath, (err, data) => {
-      if (err) reject(err);
-      else resolve(data);
-    });
-  });
+async function defaultAudioIndex(video) {
+  if (defaultAudioCache.has(video.id)) return defaultAudioCache.get(video.id);
+  const info = await getMediaInfo(video);
+  const audioStreams = info.streams.filter((s) => s.codec_type === 'audio');
+  const chosen = audioStreams.find((s) => s.disposition?.default === 1) || audioStreams[0];
+  const index = chosen ? chosen.index : null;
+  defaultAudioCache.set(video.id, index);
+  return index;
 }
 
-async function inspect(inputPath, ext) {
-  const info = await probe(inputPath);
-  const videoStream = info.streams.find((s) => s.codec_type === 'video');
-  const audioStream = info.streams.find((s) => s.codec_type === 'audio');
-
-  const videoOk = Boolean(videoStream) && COMPATIBLE_VIDEO_CODECS.includes(videoStream.codec_name);
-  const audioOk = !audioStream || COMPATIBLE_AUDIO_CODECS.includes(audioStream.codec_name);
-  const containerOk = COMPATIBLE_CONTAINERS.includes(ext);
-
-  return { needed: !(videoOk && audioOk && containerOk), videoCopy: videoOk, audioCopy: audioOk };
-}
-
-function runFfmpeg(inputPath, id, { videoCopy, audioCopy }) {
+function runFfmpeg(inputPath, key, { videoCopy, audioCopy, audioMapIndex }) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(TRANSCODED_PATH, { recursive: true });
-    const tmpOutput = `${outputFile(id)}.tmp.mp4`;
-    const outputOptions = ['-movflags +faststart'];
+    const tmpOutput = `${outputFile(key)}.tmp.mp4`;
+
+    const outputOptions = [
+      '-map 0:v:0',
+      audioMapIndex != null ? `-map 0:${audioMapIndex}` : '-map 0:a:0?',
+      `-c:v ${videoCopy ? 'copy' : 'libx264'}`,
+      `-c:a ${audioCopy ? 'copy' : 'aac'}`,
+      '-movflags +faststart',
+    ];
     if (!videoCopy) {
       outputOptions.push('-preset veryfast', '-crf 23');
     }
 
     ffmpeg(inputPath)
-      .videoCodec(videoCopy ? 'copy' : 'libx264')
-      .audioCodec(audioCopy ? 'copy' : 'aac')
       .outputOptions(outputOptions)
       .format('mp4')
       .on('error', (err) => {
@@ -65,57 +52,79 @@ function runFfmpeg(inputPath, id, { videoCopy, audioCopy }) {
         reject(err);
       })
       .on('end', () => {
-        fs.renameSync(tmpOutput, outputFile(id));
+        fs.renameSync(tmpOutput, outputFile(key));
         resolve();
       })
       .save(tmpOutput);
   });
 }
 
-async function ensureChecked(video) {
-  const current = status.get(video.id);
+async function ensureChecked(video, audioIndex = null) {
+  const defaultAudio = await defaultAudioIndex(video);
+  const effectiveAudio = audioIndex != null ? Number(audioIndex) : defaultAudio;
+  const useDefault = effectiveAudio === defaultAudio;
+  const key = useDefault ? video.id : `${video.id}#a${effectiveAudio}`;
+
+  const current = status.get(key);
   if (current) return current;
 
-  if (fs.existsSync(outputFile(video.id))) {
-    status.set(video.id, 'ready');
+  if (fs.existsSync(outputFile(key))) {
+    status.set(key, 'ready');
     return 'ready';
   }
 
-  status.set(video.id, 'checking');
-  const inputPath = path.join(getVideosPath(), video.relativePath);
-  const ext = path.extname(video.relativePath).toLowerCase();
+  status.set(key, 'checking');
 
-  let work;
+  const ext = path.extname(video.relativePath).toLowerCase();
+  let info;
   try {
-    work = await inspect(inputPath, ext);
+    info = await getMediaInfo(video);
   } catch (err) {
     console.warn(`No se pudo analizar "${video.title}": ${err.message}`);
-    status.set(video.id, 'failed');
+    status.set(key, 'failed');
     return 'failed';
   }
 
-  if (!work.needed) {
-    status.set(video.id, 'compatible');
+  const videoStream = info.streams.find((s) => s.codec_type === 'video');
+  const audioStream = info.streams.find((s) => s.index === effectiveAudio);
+
+  const videoOk = Boolean(videoStream) && COMPATIBLE_VIDEO_CODECS.includes(videoStream.codec_name);
+  const audioOk = !audioStream || COMPATIBLE_AUDIO_CODECS.includes(audioStream.codec_name);
+  const containerOk = COMPATIBLE_CONTAINERS.includes(ext);
+
+  if (useDefault && videoOk && audioOk && containerOk) {
+    status.set(key, 'compatible');
     return 'compatible';
   }
 
-  status.set(video.id, 'processing');
-  runFfmpeg(inputPath, video.id, work)
-    .then(() => status.set(video.id, 'ready'))
+  status.set(key, 'processing');
+  runFfmpeg(inputPathFor(video), key, {
+    videoCopy: videoOk,
+    audioCopy: audioOk,
+    audioMapIndex: useDefault ? null : effectiveAudio,
+  })
+    .then(() => status.set(key, 'ready'))
     .catch((err) => {
       console.warn(`No se pudo convertir "${video.title}": ${err.message}`);
-      status.set(video.id, 'failed');
+      status.set(key, 'failed');
     });
 
   return 'processing';
 }
 
-function getStatus(id) {
-  return status.get(id) || 'unknown';
+async function getStatus(video, audioIndex = null) {
+  const defaultAudio = await defaultAudioIndex(video);
+  const effectiveAudio = audioIndex != null ? Number(audioIndex) : defaultAudio;
+  const key = effectiveAudio === defaultAudio ? video.id : `${video.id}#a${effectiveAudio}`;
+  return status.get(key) || 'unknown';
 }
 
-function playableFile(id) {
-  return fs.existsSync(outputFile(id)) ? outputFile(id) : null;
+async function playableFile(video, audioIndex = null) {
+  const defaultAudio = await defaultAudioIndex(video);
+  const effectiveAudio = audioIndex != null ? Number(audioIndex) : defaultAudio;
+  const key = effectiveAudio === defaultAudio ? video.id : `${video.id}#a${effectiveAudio}`;
+  const file = outputFile(key);
+  return fs.existsSync(file) ? file : null;
 }
 
 module.exports = { ensureChecked, getStatus, playableFile };

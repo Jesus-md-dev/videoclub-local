@@ -16,6 +16,10 @@ const MIME_TYPES = {
   '.m4v': 'video/x-m4v',
 };
 
+function parseAudioIndex(req) {
+  return req.query.audio != null ? Number(req.query.audio) : null;
+}
+
 function sendFileWithRange(req, res, filePath, contentType) {
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
@@ -60,18 +64,19 @@ router.get('/stream/:id/status', async (req, res) => {
     res.status(404).json({ error: 'Vídeo no encontrado' });
     return;
   }
-  const status = await transcode.ensureChecked(video);
+  const status = await transcode.ensureChecked(video, parseAudioIndex(req));
   res.json({ status });
 });
 
-router.get('/stream/:id', (req, res) => {
+router.get('/stream/:id', async (req, res) => {
   const video = catalog.getVideoById(req.params.id);
   if (!video) {
     res.status(404).json({ error: 'Vídeo no encontrado' });
     return;
   }
 
-  const status = transcode.getStatus(video.id);
+  const audioIndex = parseAudioIndex(req);
+  const status = await transcode.getStatus(video, audioIndex);
 
   if (status === 'processing' || status === 'checking' || status === 'unknown') {
     res.status(503).json({ error: 'El vídeo se está preparando', preparing: true });
@@ -83,7 +88,7 @@ router.get('/stream/:id', (req, res) => {
   }
 
   if (status === 'ready') {
-    const transcodedFile = transcode.playableFile(video.id);
+    const transcodedFile = await transcode.playableFile(video, audioIndex);
     sendFileWithRange(req, res, transcodedFile, 'video/mp4');
     return;
   }

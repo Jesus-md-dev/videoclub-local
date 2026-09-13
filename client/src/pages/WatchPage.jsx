@@ -23,12 +23,19 @@ function loadProgress(id) {
   }
 }
 
+function trackLabel(track) {
+  return track.languageLabel || track.title || `Pista ${track.index}`;
+}
+
 export default function WatchPage() {
   const { id } = useParams();
   const [video, setVideo] = useState(null);
   const [error, setError] = useState(null);
   const [ready, setReady] = useState(false);
+  const [tracks, setTracks] = useState({ audio: [], subtitles: [] });
+  const [audioIndex, setAudioIndex] = useState(null);
   const playerRef = useRef(null);
+  const resumeTimeRef = useRef(null);
 
   useEffect(() => {
     fetch('/api/videos')
@@ -43,15 +50,23 @@ export default function WatchPage() {
         document.title = `${found.title} - Videoclub Local`;
       })
       .catch(() => setError('No se pudo cargar el catálogo.'));
+
+    fetch(`/api/tracks/${id}`)
+      .then((res) => res.json())
+      .then(setTracks)
+      .catch(() => {});
   }, [id]);
 
   useEffect(() => {
     if (!video) return undefined;
     let cancelled = false;
     let timer;
+    setReady(false);
+
+    const streamUrl = `/api/stream/${id}/status${audioIndex != null ? `?audio=${audioIndex}` : ''}`;
 
     const checkStatus = () => {
-      fetch(`/api/stream/${id}/status`)
+      fetch(streamUrl)
         .then((res) => res.json())
         .then((data) => {
           if (cancelled) return;
@@ -73,7 +88,7 @@ export default function WatchPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [video, id]);
+  }, [video, id, audioIndex]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -81,7 +96,10 @@ export default function WatchPage() {
 
     const saved = loadProgress(id);
     const onLoadedMetadata = () => {
-      if (saved && saved.ratio < 0.95) {
+      if (resumeTimeRef.current != null) {
+        player.currentTime = resumeTimeRef.current;
+        resumeTimeRef.current = null;
+      } else if (saved && saved.ratio < 0.95) {
         player.currentTime = saved.time;
       }
     };
@@ -111,6 +129,15 @@ export default function WatchPage() {
     };
   }, [video, ready, id]);
 
+  const handleAudioChange = (e) => {
+    const value = e.target.value;
+    const player = playerRef.current;
+    resumeTimeRef.current = player ? player.currentTime : null;
+    setAudioIndex(value === '' ? null : Number(value));
+  };
+
+  const streamSrc = `/api/stream/${id}${audioIndex != null ? `?audio=${audioIndex}` : ''}`;
+
   return (
     <>
       <div className="watch-header">
@@ -118,6 +145,15 @@ export default function WatchPage() {
           &larr; Volver al catálogo
         </Link>
         <h1 className="watch-title">{error ? 'Error' : video ? video.title : 'Cargando...'}</h1>
+        {tracks.audio.length > 1 && (
+          <select className="track-select" value={audioIndex ?? ''} onChange={handleAudioChange}>
+            {tracks.audio.map((track) => (
+              <option key={track.index} value={track.index}>
+                Audio: {trackLabel(track)}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       <div className="player-wrap">
         {error && <div className="error-box">{error}</div>}
@@ -127,7 +163,17 @@ export default function WatchPage() {
           </div>
         )}
         {!error && video && ready && (
-          <video ref={playerRef} controls autoPlay src={`/api/stream/${id}`} />
+          <video ref={playerRef} controls autoPlay src={streamSrc}>
+            {tracks.subtitles.map((track) => (
+              <track
+                key={track.index}
+                kind="subtitles"
+                src={`/api/subtitle/${id}/${track.index}`}
+                srcLang={track.language || 'und'}
+                label={trackLabel(track)}
+              />
+            ))}
+          </video>
         )}
       </div>
     </>

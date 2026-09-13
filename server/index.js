@@ -9,6 +9,7 @@ const streamRouter = require('./routes/stream');
 const thumbnailRouter = require('./routes/thumbnail');
 const settingsRouter = require('./routes/settings');
 const browseRouter = require('./routes/browse');
+const tracksRouter = require('./routes/tracks');
 
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
@@ -20,6 +21,7 @@ app.use('/api', streamRouter);
 app.use('/api', thumbnailRouter);
 app.use('/api', settingsRouter);
 app.use('/api', browseRouter);
+app.use('/api', tracksRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
