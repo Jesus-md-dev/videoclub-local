@@ -5,6 +5,7 @@ const { PORT, getVideosPath } = require('./config');
 const catalog = require('./catalog');
 const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
+const watcher = require('./watcher');
 const videosRouter = require('./routes/videos');
 const streamRouter = require('./routes/stream');
 const thumbnailRouter = require('./routes/thumbnail');
@@ -59,6 +60,7 @@ function scanIfConfigured() {
     // Precalienta la caché de géneros en segundo plano (puede tardar si hay
     // muchas series/películas); el catálogo funciona igual mientras tanto.
     metadata.warmAll(catalog.getAllGroupKeys());
+    watcher.start();
   } catch (err) {
     console.error(`Error al escanear la carpeta de vídeos: ${err.message}`);
   }
