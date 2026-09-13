@@ -320,6 +320,17 @@ function peekStatus(video) {
   return status.get(video.id) || 'unknown';
 }
 
+// Para el catálogo: distingue entre "convirtiéndose ahora mismo" (el único
+// trabajo de ffmpeg activo) y "en cola, pendiente de conversión" (ya se sabe
+// que la necesita, pero le toca esperar su turno porque solo hay una
+// conversión a la vez). 'unknown'/'checking' significa que aún no se sabe
+// (warmAll no ha llegado a comprobarlo todavía).
+function peekProcessingState(video) {
+  const key = video.id;
+  if (status.get(key) !== 'processing') return null;
+  return activeJob && activeJob.key === key ? 'active' : 'queued';
+}
+
 // En modo "sin convertir" (?raw=1) se sirve el archivo tal cual, así que el
 // navegador solo reproduce la pista de audio que trae por defecto: cambiar
 // de idioma no tiene ningún efecto (la mayoría de navegadores no exponen las
@@ -405,25 +416,18 @@ async function playableFile(video, audioIndex = null) {
   return fs.existsSync(file) ? file : null;
 }
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// Precalienta en segundo plano los vídeos que necesiten conversión (pista de
-// audio por defecto), de uno en uno para no saturar la CPU con varios
-// ffmpeg a la vez. Así, cuando el usuario le da a play, muchos ya están
-// listos en vez de tener que esperar la conversión en ese momento.
+// Comprueba (pista de audio por defecto) todos los vídeos del catálogo en
+// segundo plano, para que el catálogo pueda marcar cuanto antes cuáles
+// necesitan conversión. La comprobación en sí (ffprobe) es rápida: no espera
+// a que cada conversión real termine antes de pasar al siguiente vídeo, eso
+// ya lo serializa la cola de ffmpeg (ensureChecked encola el trabajo y
+// vuelve al momento). Antes esta función sí esperaba a que cada conversión
+// acabase antes de comprobar el siguiente, así que con una cola de miles de
+// vídeos casi ninguno llegaba a comprobarse de verdad.
 async function warmAll(videos) {
   for (const video of videos) {
     // eslint-disable-next-line no-await-in-loop
-    const initial = await ensureChecked(video);
-    if (initial === 'processing') {
-      // eslint-disable-next-line no-await-in-loop
-      while ((await getStatus(video)) === 'processing') {
-        // eslint-disable-next-line no-await-in-loop
-        await wait(2000);
-      }
-    }
+    await ensureChecked(video);
   }
 }
 
@@ -431,6 +435,7 @@ module.exports = {
   ensureChecked,
   getStatus,
   peekStatus,
+  peekProcessingState,
   getProgress,
   playableFile,
   warmAll,

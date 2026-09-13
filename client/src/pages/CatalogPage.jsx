@@ -10,6 +10,12 @@ function progressFor(id) {
   }
 }
 
+function processingBadgeLabel(state) {
+  if (state === 'active') return 'Procesando…';
+  if (state === 'queued') return 'Pendiente de conversión';
+  return null;
+}
+
 function dismissedAt(id) {
   const raw = localStorage.getItem(`dismissed:${id}`);
   return raw ? Number(raw) || 0 : 0;
@@ -52,11 +58,14 @@ function VideoCard({ video, onRemove }) {
   // El nombre limpio es el de la serie (mismo para todos sus episodios), así
   // que en un episodio taparía el número; solo se usa en películas sueltas.
   const displayTitle = video.seriesKey ? video.title : video.cleanName || video.title;
+  const processingLabel = processingBadgeLabel(video.processingState);
 
   return (
     <Link className="card" to={`/watch/${video.id}`}>
       {showProgress && <span className="badge">Continuar</span>}
-      {video.processing && <span className="badge badge-processing">Procesando…</span>}
+      {processingLabel && (
+        <span className={`badge badge-processing badge-${video.processingState}`}>{processingLabel}</span>
+      )}
       {onRemove && (
         <button
           className="card-remove"
@@ -95,10 +104,13 @@ function VideoCard({ video, onRemove }) {
 function FolderCard({ folder, onOpen }) {
   const posterSrc = folder.poster || (folder.thumbnailId ? `/api/thumbnail/${folder.thumbnailId}` : null);
   const displayName = folder.cleanName || folder.name;
+  const processingLabel = processingBadgeLabel(folder.processingState);
 
   return (
     <button className="card folder-card" onClick={() => onOpen(folder.path)}>
-      {folder.processing && <span className="badge badge-processing">Procesando…</span>}
+      {processingLabel && (
+        <span className={`badge badge-processing badge-${folder.processingState}`}>{processingLabel}</span>
+      )}
       {posterSrc ? (
         <img
           className="poster"

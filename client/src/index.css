@@ -173,6 +173,12 @@ main {
   border: 1px solid rgba(255, 255, 255, 0.25);
 }
 
+.badge-queued {
+  background: rgba(20, 20, 20, 0.6);
+  border-color: rgba(255, 255, 255, 0.15);
+  opacity: 0.85;
+}
+
 .card-remove {
   position: absolute;
   top: 6px;

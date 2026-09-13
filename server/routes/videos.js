@@ -23,8 +23,23 @@ function toPublicVideo(video) {
     modifiedAt: video.modifiedAt,
     hasThumbnail: thumbnails.hasThumbnail(video.id),
     seriesKey: catalog.getShowKeyFor(video),
-    processing: transcode.peekStatus(video) === 'processing',
+    // 'active': convirtiéndose ahora mismo. 'queued': ya se sabe que hace
+    // falta convertirlo, pero espera su turno (solo hay una conversión a la
+    // vez). null: no hace falta, o aún no se ha comprobado.
+    processingState: transcode.peekProcessingState(video),
   };
+}
+
+// Para una carpeta de serie: si algún episodio se está convirtiendo ahora
+// mismo eso manda; si no, pero alguno está en cola, se marca como en cola.
+function folderProcessingState(videosInFolder) {
+  let queued = false;
+  for (const v of videosInFolder) {
+    const state = transcode.peekProcessingState(v);
+    if (state === 'active') return 'active';
+    if (state === 'queued') queued = true;
+  }
+  return queued ? 'queued' : null;
 }
 
 router.get('/videos', (req, res) => {
@@ -43,16 +58,14 @@ router.get('/videos/browse', (req, res) => {
     parent,
     folders: folders.map((folder) => {
       const meta = metadata.getCached(folder.name);
-      const processing = catalog
-        .listDir(folder.path)
-        .videos.some((v) => transcode.peekStatus(v) === 'processing');
+      const processingState = folderProcessingState(catalog.listDir(folder.path).videos);
       return {
         ...folder,
         genres: meta.genres,
         cleanName: meta.cleanName,
         poster: meta.poster,
         type: resolveType(meta),
-        processing,
+        processingState,
       };
     }),
     videos: videos.map((video) => {
