@@ -25,16 +25,19 @@ router.get('/videos/browse', (req, res) => {
   const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
   const { parent, folders, videos } = catalog.listDir(dir);
 
-  // Géneros ya cacheados (si los hay); nunca bloquea esperando a fuentes
+  // Metadatos ya cacheados (si los hay); nunca bloquea esperando a fuentes
   // externas, así el catálogo carga al instante aunque haya miles de vídeos.
   res.json({
     dir,
     parent,
-    folders: folders.map((folder) => ({ ...folder, genres: metadata.getCached(folder.name).genres })),
-    videos: videos.map((video) => ({
-      ...toPublicVideo(video),
-      genres: metadata.getCached(catalog.metadataKeyFor(video)).genres,
-    })),
+    folders: folders.map((folder) => {
+      const meta = metadata.getCached(folder.name);
+      return { ...folder, genres: meta.genres, cleanName: meta.cleanName, poster: meta.poster };
+    }),
+    videos: videos.map((video) => {
+      const meta = metadata.getCached(catalog.metadataKeyFor(video));
+      return { ...toPublicVideo(video), genres: meta.genres, cleanName: meta.cleanName, poster: meta.poster };
+    }),
   });
 });
 

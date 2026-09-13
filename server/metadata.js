@@ -25,21 +25,54 @@ function wait(ms) {
 }
 
 // Todas las peticiones a fuentes externas pasan por esta cola, para no
-// disparar ráfagas de peticiones en paralelo y evitar 429 (rate limit).
-let queue = Promise.resolve();
-function throttledFetch(url, options, minIntervalMs = 350) {
-  const run = queue.then(async () => {
-    let res = await fetch(url, options);
-    if (res.status === 429) {
-      const retryAfter = Number(res.headers.get('retry-after')) || 2;
-      await wait(retryAfter * 1000);
-      res = await fetch(url, options);
-    }
-    await wait(minIntervalMs);
-    return res;
+// disparar ráfagas en paralelo y evitar 429 (rate limit). Tiene dos carriles:
+// las peticiones "high" (lo que el usuario está viendo ahora) se atienden
+// antes que las "low" (el precalentamiento en segundo plano de toda la
+// biblioteca), para que navegar por el catálogo no se quede esperando
+// detrás de cientos de series que nadie ha pedido todavía.
+const highQueue = [];
+const lowQueue = [];
+let draining = false;
+
+async function drainQueue() {
+  if (draining) return;
+  draining = true;
+  while (highQueue.length || lowQueue.length) {
+    const task = highQueue.length ? highQueue.shift() : lowQueue.shift();
+    // eslint-disable-next-line no-await-in-loop
+    await task();
+  }
+  draining = false;
+}
+
+const FETCH_TIMEOUT_MS = 8000;
+
+// Una petición colgada (sin responder nunca) bloquearía la cola entera para
+// siempre, ya que nada más se procesa hasta que termina la actual. Por eso
+// todas las peticiones llevan un límite de tiempo.
+function fetchWithTimeout(url, options) {
+  return fetch(url, { ...options, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+}
+
+function throttledFetch(url, options, minIntervalMs = 350, priority = 'low') {
+  return new Promise((resolve, reject) => {
+    const task = async () => {
+      try {
+        let res = await fetchWithTimeout(url, options);
+        if (res.status === 429) {
+          const retryAfter = Math.min(Number(res.headers.get('retry-after')) || 2, 10);
+          await wait(retryAfter * 1000);
+          res = await fetchWithTimeout(url, options);
+        }
+        resolve(res);
+      } catch (err) {
+        reject(err);
+      }
+      await wait(minIntervalMs);
+    };
+    (priority === 'high' ? highQueue : lowQueue).push(task);
+    drainQueue();
   });
-  queue = run.catch(() => {});
-  return run;
 }
 
 // TVmaze/Jikan devuelven géneros en inglés; Wikidata en español con el
@@ -121,8 +154,13 @@ function cleanQuery(name) {
 }
 
 // TVmaze: series de TV en general (sin API key). https://www.tvmaze.com/api
-async function fetchTvMaze(query) {
-  const res = await throttledFetch(`https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(query)}`);
+async function fetchTvMaze(query, priority) {
+  const res = await throttledFetch(
+    `https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(query)}`,
+    undefined,
+    350,
+    priority
+  );
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`TVmaze respondió ${res.status}`);
   const data = await res.json();
@@ -130,12 +168,19 @@ async function fetchTvMaze(query) {
     genres: normalizeGenres(data.genres),
     year: data.premiered ? data.premiered.slice(0, 4) : null,
     type: 'tv',
+    cleanName: data.name || null,
+    poster: data.image?.original || data.image?.medium || null,
   };
 }
 
 // Jikan (MyAnimeList no oficial): buen respaldo para anime (sin API key). https://jikan.moe
-async function fetchJikan(query) {
-  const res = await throttledFetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`, undefined, 800);
+async function fetchJikan(query, priority) {
+  const res = await throttledFetch(
+    `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`,
+    undefined,
+    800,
+    priority
+  );
   if (!res.ok) throw new Error(`Jikan respondió ${res.status}`);
   const data = await res.json();
   const match = data.data && data.data[0];
@@ -144,16 +189,29 @@ async function fetchJikan(query) {
     genres: normalizeGenres((match.genres || []).map((g) => g.name)),
     year: match.year || null,
     type: 'anime',
+    cleanName: match.title || null,
+    poster: match.images?.jpg?.large_image_url || match.images?.jpg?.image_url || null,
   };
 }
 
 const WIKIDATA_HEADERS = { 'User-Agent': 'videoclub-local/1.0 (uso personal, sin fines comerciales)' };
 const FILM_DESCRIPTION_HINTS = ['film', 'movie'];
 
+function commonsFileUrl(filename) {
+  if (!filename) return null;
+  return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(filename)}?width=500`;
+}
+
+// P3383 = carátula/póster; P18 = imagen genérica, como respaldo si no hay póster.
+function posterFromClaims(claims) {
+  const filename = claims.P3383?.[0]?.mainsnak?.datavalue?.value || claims.P18?.[0]?.mainsnak?.datavalue?.value;
+  return commonsFileUrl(filename);
+}
+
 // Wikidata: películas en general (totalmente pública, sin API key ni registro).
-async function fetchWikidataFilm(query) {
+async function fetchWikidataFilm(query, priority) {
   const searchUrl = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(query)}&language=en&type=item&format=json&limit=10`;
-  const searchRes = await throttledFetch(searchUrl, { headers: WIKIDATA_HEADERS });
+  const searchRes = await throttledFetch(searchUrl, { headers: WIKIDATA_HEADERS }, 350, priority);
   if (!searchRes.ok) throw new Error(`Wikidata respondió ${searchRes.status}`);
   const searchData = await searchRes.json();
   const results = searchData.search || [];
@@ -163,9 +221,12 @@ async function fetchWikidataFilm(query) {
     results.find((r) => FILM_DESCRIPTION_HINTS.some((hint) => (r.description || '').toLowerCase().includes(hint))) ||
     results[0];
 
-  const entityRes = await throttledFetch(`https://www.wikidata.org/wiki/Special:EntityData/${best.id}.json`, {
-    headers: WIKIDATA_HEADERS,
-  });
+  const entityRes = await throttledFetch(
+    `https://www.wikidata.org/wiki/Special:EntityData/${best.id}.json`,
+    { headers: WIKIDATA_HEADERS },
+    350,
+    priority
+  );
   if (!entityRes.ok) throw new Error(`Wikidata respondió ${entityRes.status}`);
   const entityData = await entityRes.json();
   const claims = entityData.entities?.[best.id]?.claims || {};
@@ -176,12 +237,16 @@ async function fetchWikidataFilm(query) {
 
   const dateValue = claims.P577?.[0]?.mainsnak?.datavalue?.value?.time;
   const year = dateValue ? dateValue.replace('+', '').slice(0, 4) : null;
+  const cleanName = best.label || null;
+  const poster = posterFromClaims(claims);
 
-  if (genreIds.length === 0) return { genres: [], year, type: 'movie' };
+  if (genreIds.length === 0) return { genres: [], year, type: 'movie', cleanName, poster };
 
   const labelsRes = await throttledFetch(
     `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${genreIds.join('|')}&props=labels&languages=es|en&format=json`,
-    { headers: WIKIDATA_HEADERS }
+    { headers: WIKIDATA_HEADERS },
+    350,
+    priority
   );
   if (!labelsRes.ok) throw new Error(`Wikidata respondió ${labelsRes.status}`);
   const labelsData = await labelsRes.json();
@@ -192,21 +257,21 @@ async function fetchWikidataFilm(query) {
     })
     .filter(Boolean);
 
-  return { genres: normalizeGenres(rawGenres), year, type: 'movie' };
+  return { genres: normalizeGenres(rawGenres), year, type: 'movie', cleanName, poster };
 }
 
 // Prueba las fuentes en un orden fijo y se queda con la primera que
 // encuentre géneros reales; no asume de antemano si es serie o película
 // (eso lo decide el propio resultado de la búsqueda, no la estructura de
 // carpetas/archivos en disco).
-async function fetchBest(query) {
-  const tv = await fetchTvMaze(query);
+async function fetchBest(query, priority) {
+  const tv = await fetchTvMaze(query, priority);
   if (tv && tv.genres.length) return tv;
 
-  const movie = await fetchWikidataFilm(query);
+  const movie = await fetchWikidataFilm(query, priority);
   if (movie && movie.genres.length) return movie;
 
-  const anime = await fetchJikan(query);
+  const anime = await fetchJikan(query, priority);
   if (anime && anime.genres.length) return anime;
 
   return tv || movie || anime || null;
@@ -214,24 +279,26 @@ async function fetchBest(query) {
 
 // Devuelve los metadatos (géneros, año, tipo) para una clave (nombre de
 // serie o de película), consultando fuentes públicas sin API key.
-async function getMetadata(key) {
+// `priority`: 'high' para lo que el usuario está viendo ahora (adelanta a
+// la cola de precalentamiento en segundo plano), 'low' para el resto.
+async function getMetadata(key, priority = 'low') {
   if (cache[key]) return cache[key];
   if (pending.has(key)) return pending.get(key);
 
   const promise = (async () => {
     const query = cleanQuery(key);
-    if (!query) return { genres: [], year: null, type: null };
+    if (!query) return { genres: [], year: null, type: null, cleanName: null, poster: null };
 
     try {
-      const result = await fetchBest(query);
-      const entry = result || { genres: [], year: null, type: null };
+      const result = await fetchBest(query, priority);
+      const entry = result || { genres: [], year: null, type: null, cleanName: null, poster: null };
       cache[key] = entry;
       saveCache();
       return entry;
     } catch (err) {
       // Fallo de red/rate-limit: no se cachea, para reintentar más tarde.
       console.warn(`No se pudieron obtener metadatos para "${key}": ${err.message}`);
-      return { genres: [], year: null, type: null };
+      return { genres: [], year: null, type: null, cleanName: null, poster: null };
     } finally {
       pending.delete(key);
     }
@@ -247,8 +314,8 @@ async function getMetadata(key) {
 // bloquear el listado del catálogo mientras se consultan fuentes externas.
 function getCached(key) {
   if (cache[key]) return cache[key];
-  getMetadata(key);
-  return { genres: [], year: null, type: null };
+  getMetadata(key, 'high');
+  return { genres: [], year: null, type: null, cleanName: null, poster: null };
 }
 
 async function warmAll(keys) {

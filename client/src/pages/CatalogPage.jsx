@@ -13,14 +13,16 @@ function progressFor(id) {
 function VideoCard({ video }) {
   const progress = progressFor(video.id);
   const showProgress = progress && progress.ratio < 0.95;
+  const posterSrc = video.poster || `/api/thumbnail/${video.id}`;
+  const displayTitle = video.cleanName || video.title;
 
   return (
     <Link className="card" to={`/watch/${video.id}`}>
       {showProgress && <span className="badge">Continuar</span>}
       <img
         className="poster"
-        src={`/api/thumbnail/${video.id}`}
-        alt={video.title}
+        src={posterSrc}
+        alt={displayTitle}
         loading="lazy"
         onError={(e) => {
           e.currentTarget.onerror = null;
@@ -33,20 +35,23 @@ function VideoCard({ video }) {
         </div>
       )}
       <div className="card-info">
-        <p className="card-title">{video.title}</p>
+        <p className="card-title">{displayTitle}</p>
       </div>
     </Link>
   );
 }
 
 function FolderCard({ folder, onOpen }) {
+  const posterSrc = folder.poster || (folder.thumbnailId ? `/api/thumbnail/${folder.thumbnailId}` : null);
+  const displayName = folder.cleanName || folder.name;
+
   return (
     <button className="card folder-card" onClick={() => onOpen(folder.path)}>
-      {folder.thumbnailId ? (
+      {posterSrc ? (
         <img
           className="poster"
-          src={`/api/thumbnail/${folder.thumbnailId}`}
-          alt={folder.name}
+          src={posterSrc}
+          alt={displayName}
           loading="lazy"
           onError={(e) => {
             e.currentTarget.onerror = null;
@@ -57,7 +62,7 @@ function FolderCard({ folder, onOpen }) {
         <div className="folder-icon">📁</div>
       )}
       <div className="card-info">
-        <p className="card-title">{folder.name}</p>
+        <p className="card-title">{displayName}</p>
       </div>
     </button>
   );
