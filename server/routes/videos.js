@@ -1,6 +1,7 @@
 const express = require('express');
 const catalog = require('../catalog');
 const thumbnails = require('../thumbnails');
+const metadata = require('../metadata');
 
 const router = express.Router();
 
@@ -19,10 +20,28 @@ router.get('/videos', (req, res) => {
   res.json(videos);
 });
 
-router.get('/videos/browse', (req, res) => {
+router.get('/videos/browse', async (req, res) => {
   const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
   const { parent, folders, videos } = catalog.listDir(dir);
-  res.json({ dir, parent, folders, videos: videos.map(toPublicVideo) });
+
+  // Metadatos (géneros) por carpeta: una consulta por serie/película, no por episodio.
+  const folderGenres = await Promise.all(
+    folders.map((folder) => metadata.getMetadata(folder.name))
+  );
+  const videoGenres = await Promise.all(
+    videos.map((video) => metadata.getMetadata(catalog.metadataKeyFor(video)))
+  );
+
+  res.json({
+    dir,
+    parent,
+    folders: folders.map((folder, i) => ({ ...folder, genres: folderGenres[i].genres })),
+    videos: videos.map((video, i) => ({ ...toPublicVideo(video), genres: videoGenres[i].genres })),
+  });
+});
+
+router.get('/genres', (req, res) => {
+  res.json(metadata.allGenres());
 });
 
 router.post('/scan', async (req, res) => {

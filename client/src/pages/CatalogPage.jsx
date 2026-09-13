@@ -64,6 +64,23 @@ function FolderCard({ folder, onOpen }) {
   );
 }
 
+function GenreFilter({ genres, active, onToggle }) {
+  if (genres.length === 0) return null;
+  return (
+    <div className="genre-filter">
+      {genres.map((genre) => (
+        <button
+          key={genre}
+          className={`chip ${active === genre ? 'chip-active' : ''}`}
+          onClick={() => onToggle(genre)}
+        >
+          {genre}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Breadcrumb({ dir, onNavigate }) {
   const segments = dir ? dir.split('/') : [];
   return (
@@ -91,12 +108,22 @@ export default function CatalogPage() {
   const dir = searchParams.get('dir') || '';
   const term = searchParams.get('q') || '';
 
+  const genre = searchParams.get('genre') || '';
+
   const [folders, setFolders] = useState([]);
   const [videos, setVideos] = useState([]);
   const [allVideos, setAllVideos] = useState([]);
+  const [genres, setGenres] = useState([]);
   const [error, setError] = useState(null);
 
   const searching = term.trim().length > 0;
+
+  useEffect(() => {
+    fetch('/api/genres')
+      .then((res) => res.json())
+      .then(setGenres)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (searching) return;
@@ -130,10 +157,19 @@ export default function CatalogPage() {
     if (value) setSearchParams({ q: value });
     else setSearchParams(dir ? { dir } : {});
   };
+  const toggleGenre = (g) => {
+    const params = {};
+    if (dir) params.dir = dir;
+    if (g !== genre) params.genre = g;
+    setSearchParams(params);
+  };
 
-  const list = searching ? filtered : videos;
-  const showFolders = !searching && folders.length > 0;
-  const isEmpty = !error && list.length === 0 && (searching || folders.length === 0);
+  const visibleFolders = genre ? folders.filter((f) => f.genres?.includes(genre)) : folders;
+  const visibleVideos = genre ? videos.filter((v) => v.genres?.includes(genre)) : videos;
+
+  const list = searching ? filtered : visibleVideos;
+  const showFolders = !searching && visibleFolders.length > 0;
+  const isEmpty = !error && list.length === 0 && (searching || visibleFolders.length === 0);
 
   return (
     <>
@@ -152,6 +188,7 @@ export default function CatalogPage() {
       </header>
       <main>
         {!searching && <Breadcrumb dir={dir} onNavigate={goToDir} />}
+        {!searching && <GenreFilter genres={genres} active={genre} onToggle={toggleGenre} />}
 
         {searching && (
           <>
@@ -170,18 +207,18 @@ export default function CatalogPage() {
               <>
                 <p className="section-title">{dir ? 'Carpetas' : 'Series'}</p>
                 <div className="grid folder-grid">
-                  {folders.map((folder) => (
+                  {visibleFolders.map((folder) => (
                     <FolderCard key={folder.path} folder={folder} onOpen={goToDir} />
                   ))}
                 </div>
               </>
             )}
 
-            {videos.length > 0 && (
+            {visibleVideos.length > 0 && (
               <>
                 <p className="section-title">{dir ? 'Vídeos' : 'Películas'}</p>
                 <div className="grid">
-                  {videos.map((video) => (
+                  {visibleVideos.map((video) => (
                     <VideoCard key={video.id} video={video} />
                   ))}
                 </div>
