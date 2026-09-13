@@ -17,6 +17,17 @@ const trickplayRouter = require('./routes/trickplay');
 
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
+// Red de seguridad: un archivo corrupto (ffprobe fallando) u otro error
+// inesperado en tareas de fondo (precalentamiento, watcher...) no debe poder
+// tumbar todo el servidor. Node mata el proceso por defecto ante una
+// promesa rechazada sin capturar; aquí solo se registra y se sigue.
+process.on('unhandledRejection', (err) => {
+  console.error(`Error no capturado (la app sigue en marcha): ${err?.message || err}`);
+});
+process.on('uncaughtException', (err) => {
+  console.error(`Excepción no capturada (la app sigue en marcha): ${err?.message || err}`);
+});
+
 const app = express();
 
 app.use(express.static(CLIENT_DIST));

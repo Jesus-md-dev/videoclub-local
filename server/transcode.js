@@ -30,10 +30,19 @@ const CONTAINER_FORMATS = {
 
 async function defaultAudioIndex(video) {
   if (defaultAudioCache.has(video.id)) return defaultAudioCache.get(video.id);
-  const info = await getMediaInfo(video);
-  const audioStreams = info.streams.filter((s) => s.codec_type === 'audio');
-  const chosen = audioStreams.find((s) => s.disposition?.default === 1) || audioStreams[0];
-  const index = chosen ? chosen.index : null;
+  // Se llama sin try/catch desde varios sitios (ensureChecked, resolveKey,
+  // ensureRawAudio...); un archivo corrupto o con datos inválidos hace que
+  // ffprobe falle, y sin capturarlo aquí esa excepción no cogida tumbaba
+  // todo el proceso de Node (ffprobe exited with code 1).
+  let index = null;
+  try {
+    const info = await getMediaInfo(video);
+    const audioStreams = info.streams.filter((s) => s.codec_type === 'audio');
+    const chosen = audioStreams.find((s) => s.disposition?.default === 1) || audioStreams[0];
+    index = chosen ? chosen.index : null;
+  } catch (err) {
+    console.warn(`No se pudo analizar "${video.title}": ${err.message}`);
+  }
   defaultAudioCache.set(video.id, index);
   return index;
 }
@@ -426,8 +435,15 @@ async function playableFile(video, audioIndex = null) {
 // vídeos casi ninguno llegaba a comprobarse de verdad.
 async function warmAll(videos) {
   for (const video of videos) {
-    // eslint-disable-next-line no-await-in-loop
-    await ensureChecked(video);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await ensureChecked(video);
+    } catch (err) {
+      // No debería llegar aquí (ensureChecked ya captura sus propios
+      // errores), pero un fallo inesperado en un vídeo no debe impedir
+      // comprobar el resto de la biblioteca.
+      console.warn(`Error al precalentar "${video.title}": ${err.message}`);
+    }
   }
 }
 
