@@ -153,6 +153,14 @@ function cleanQuery(name) {
     .trim();
 }
 
+// El año del propio nombre de archivo/carpeta ayuda a desambiguar títulos
+// cortos o genéricos (p.ej. "Nadie") frente a otra obra homónima distinta;
+// cleanQuery lo quita de la consulta en sí, pero se guarda aparte.
+function extractYear(name) {
+  const match = name.match(/\b(19|20)\d{2}\b/);
+  return match ? match[0] : null;
+}
+
 // Nombre alternativo en español de un show de TVmaze, si existe entre sus
 // "akas" (títulos usados en otros países/idiomas). TVmaze no da el nombre
 // en español directamente en la ficha principal.
@@ -234,6 +242,59 @@ async function fetchJikan(query, priority, attempts = 3) {
     }
   }
   throw lastErr;
+}
+
+// TMDB: mejor que Wikidata para películas (búsqueda mucho más precisa,
+// carátulas siempre en buena calidad); necesita una clave gratuita propia
+// (TMDB_API_KEY en .env). Si no está configurada, se salta sin más y se
+// sigue con Wikidata como respaldo.
+const TMDB_API_KEY = process.env.TMDB_API_KEY;
+const tmdbGenreMaps = {}; // 'movie' | 'tv' -> Map<id, nombre en español>
+
+async function tmdbGenreMap(mediaType, priority) {
+  if (tmdbGenreMaps[mediaType]) return tmdbGenreMaps[mediaType];
+  const res = await throttledFetch(
+    `https://api.themoviedb.org/3/genre/${mediaType}/list?api_key=${TMDB_API_KEY}&language=es-ES`,
+    undefined,
+    350,
+    priority
+  );
+  if (!res.ok) throw new Error(`TMDB respondió ${res.status}`);
+  const data = await res.json();
+  const map = new Map((data.genres || []).map((g) => [g.id, g.name]));
+  tmdbGenreMaps[mediaType] = map;
+  return map;
+}
+
+async function fetchTmdbMovie(query, priority, year) {
+  if (!TMDB_API_KEY) return null;
+  // Sin el año, un título corto/genérico ("Nadie") puede confundirse con
+  // otra película homónima distinta; cleanQuery ya lo ha quitado de la
+  // consulta en sí, así que se pasa aparte como filtro cuando se conoce.
+  const yearParam = year ? `&primary_release_year=${year}` : '';
+  const res = await throttledFetch(
+    `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}${yearParam}`,
+    undefined,
+    350,
+    priority
+  );
+  if (!res.ok) throw new Error(`TMDB respondió ${res.status}`);
+  const data = await res.json();
+  let match = data.results?.[0];
+  // El año del nombre de archivo puede no ser exactamente el de estreno
+  // (fecha de festival vs. estreno general, por ejemplo): si el filtro por
+  // año no encuentra nada, se reintenta sin él en vez de darse por vencido.
+  if (!match && year) return fetchTmdbMovie(query, priority, null);
+  if (!match) return null;
+  const genreMap = await tmdbGenreMap('movie', priority);
+  const genres = normalizeGenres((match.genre_ids || []).map((id) => genreMap.get(id)).filter(Boolean));
+  return {
+    genres,
+    year: match.release_date ? match.release_date.slice(0, 4) : null,
+    type: 'movie',
+    cleanName: match.title || null,
+    poster: match.poster_path ? `https://image.tmdb.org/t/p/w500${match.poster_path}` : null,
+  };
 }
 
 const WIKIDATA_HEADERS = { 'User-Agent': 'videoclub-local/1.0 (uso personal, sin fines comerciales)' };
@@ -319,15 +380,38 @@ async function fetchWikidataFilm(query, priority) {
 // los etiqueta también con el género "Anime" — por eso, salvo que ya venga
 // con esa etiqueta, se comprueba también en Jikan (específico de anime)
 // para no clasificar mal algo que sí lo es.
-async function fetchBest(query, priority) {
+async function fetchBest(query, priority, year) {
+  // Si el nombre trae año (habitual en películas de esta biblioteca, no en
+  // carpetas de serie/anime), se prueba primero en TMDB con ese año como
+  // filtro: mucho más preciso que la búsqueda difusa de TVmaze (que a
+  // veces encuentra una serie sin relación con el mismo nombre, p.ej.
+  // "Nadie" -> "Tú o nadie") y evita depender de Jikan para algo que casi
+  // seguro ya es una película. No afecta a la comprobación de anime de
+  // series/carpetas, que casi nunca llevan año en el nombre.
+  if (year) {
+    const tmdbMovieByYear = await fetchTmdbMovie(query, priority, year);
+    if (tmdbMovieByYear && tmdbMovieByYear.genres.length) return tmdbMovieByYear;
+  }
+
   const tv = await fetchTvMaze(query, priority);
   if (tv && tv.genres.includes('Anime')) return tv;
 
-  // Si Jikan sigue fallando tras los reintentos, no se puede confirmar si es
-  // anime o no: se propaga el error (nada se cachea, ver getMetadata) para
+  // Si Jikan sigue fallando tras los reintentos y ya hay un resultado de
+  // TVmaze sin confirmar todavía si es anime, no se puede cachear con
+  // seguridad: se propaga el error (nada se cachea, ver getMetadata) para
   // reintentarlo más tarde en vez de arriesgarse a clasificar mal algo que
-  // sí es anime solo porque Jikan estaba caído en ese momento.
-  const anime = await fetchJikan(query, priority);
+  // sí es anime solo porque Jikan estaba caído en ese momento. Pero si no
+  // hay nada de TVmaze que arriesgar (típicamente una película: Jikan no
+  // pinta nada ahí de todos modos), un fallo de Jikan no debe bloquear las
+  // demás fuentes (TMDB/Wikidata) — Jikan caído no puede tumbar también la
+  // búsqueda de películas.
+  let anime = null;
+  try {
+    anime = await fetchJikan(query, priority);
+  } catch (err) {
+    if (tv && tv.genres.length) throw err;
+    console.warn(`No se pudo comprobar en Jikan si "${query}" es anime: ${err.message}`);
+  }
   if (anime && anime.genres.length) {
     if (tv && tv.genres.length) {
       return {
@@ -343,10 +427,16 @@ async function fetchBest(query, priority) {
 
   if (tv && tv.genres.length) return tv;
 
+  // TMDB primero: búsqueda mucho más fiable que Wikidata para películas
+  // (Wikidata, con títulos ambiguos, a veces acertaba con la entidad
+  // equivocada). Si no hay clave de TMDB configurada, se salta sin más.
+  const tmdbMovie = await fetchTmdbMovie(query, priority, year);
+  if (tmdbMovie && tmdbMovie.genres.length) return tmdbMovie;
+
   const movie = await fetchWikidataFilm(query, priority);
   if (movie && movie.genres.length) return movie;
 
-  return tv || movie || anime || null;
+  return tv || tmdbMovie || movie || anime || null;
 }
 
 // Devuelve los metadatos (géneros, año, tipo) para una clave (nombre de
@@ -360,9 +450,10 @@ async function getMetadata(key, priority = 'low') {
   const promise = (async () => {
     const query = cleanQuery(key);
     if (!query) return { genres: [], year: null, type: null, cleanName: null, poster: null };
+    const year = extractYear(key);
 
     try {
-      const result = await fetchBest(query, priority);
+      const result = await fetchBest(query, priority, year);
       const entry = result || { genres: [], year: null, type: null, cleanName: null, poster: null };
       cache[key] = entry;
       saveCache();
