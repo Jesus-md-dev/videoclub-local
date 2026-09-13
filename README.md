@@ -15,9 +15,14 @@ Web local, accesible solo desde la red doméstica, para ver los vídeos de una c
 npm install
 ```
 
+Esto también instala las dependencias del frontend en `client/` (vía `postinstall`).
+
 ## Configuración
 
-Copia `.env.example` a `.env` y ajusta las variables:
+La carpeta de vídeos se puede fijar de dos formas:
+
+- **Desde la web** (recomendado): entra en `/config` (página sin enlace visible desde el catálogo) y usa el campo de texto o el botón "Examinar..." para elegirla. Se guarda en `data/settings.json` y no requiere reiniciar el servidor.
+- **Por variable de entorno** (solo se usa si no hay nada guardado en `/config`): copia `.env.example` a `.env` y ajusta:
 
 ```bash
 cp .env.example .env
@@ -30,7 +35,10 @@ cp .env.example .env
 
 ## Arranque
 
+El frontend (React) hay que compilarlo antes de arrancar el servidor:
+
 ```bash
+npm run build
 npm start
 ```
 
@@ -46,12 +54,23 @@ Desde cualquier otro dispositivo conectado a la misma red Wi-Fi/LAN, abre la URL
 
 ## Funcionalidad
 
-- Escaneo automático de `VIDEOS_PATH` (recursivo) al arrancar.
+- Frontend en React (Vite), servido como estático desde Express (`client/dist`).
+- Escaneo recursivo de la carpeta de vídeos configurada, al arrancar y cada vez que se cambia desde `/config`.
 - Catálogo en cuadrícula con carátulas generadas automáticamente a partir de un fotograma del vídeo.
 - Buscador para filtrar el catálogo por título.
 - Reproductor con soporte de salto en la barra de progreso (streaming por rangos de bytes).
 - "Continuar viendo": recuerda el punto de reproducción de cada vídeo (guardado en el navegador).
+- Página de configuración oculta (`/config`) con explorador de carpetas para elegir la carpeta de vídeos sin escribir la ruta a mano.
 - `POST /api/scan` para volver a escanear la carpeta sin reiniciar el servidor.
+
+## Desarrollo
+
+Para trabajar en el frontend con recarga en caliente:
+
+```bash
+npm start            # backend en el puerto 3000
+cd client && npm run dev   # frontend en modo desarrollo (proxy a /api hacia el puerto 3000)
+```
 
 ## Aviso de seguridad
 
