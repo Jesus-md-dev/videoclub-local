@@ -28,6 +28,29 @@ const CONTAINER_FORMATS = {
   '.webm': 'webm',
 };
 
+// Al arrancar, cualquier ".tmp.*" que quede en la carpeta de convertidos es
+// forzosamente de una conversión que no llegó a terminar (murió con el
+// proceso anterior: solo hay una conversión de ffmpeg a la vez y este
+// proceso acaba de empezar). Sin limpiarlos se quedan acumulando para
+// siempre, aunque nunca se sirvan ni se retomen.
+function cleanupStaleTmpFiles() {
+  let entries;
+  try {
+    entries = fs.readdirSync(TRANSCODED_PATH);
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    if (!name.includes('.tmp.')) continue;
+    const full = path.join(TRANSCODED_PATH, name);
+    fs.rm(full, { force: true }, (err) => {
+      if (err) console.warn(`No se pudo borrar el archivo temporal "${name}": ${err.message}`);
+      else console.log(`Conversión sin terminar (proceso anterior interrumpido), borrado: ${name}`);
+    });
+  }
+}
+cleanupStaleTmpFiles();
+
 async function defaultAudioIndex(video) {
   if (defaultAudioCache.has(video.id)) return defaultAudioCache.get(video.id);
   // Se llama sin try/catch desde varios sitios (ensureChecked, resolveKey,
@@ -241,6 +264,22 @@ function forcePriority(key) {
 }
 
 async function ensureChecked(video, audioIndex = null, priority = 'low') {
+  // Atajo para el caso más común (pista por defecto): si el archivo ya
+  // convertido sigue en disco, no hace falta ni ffprobe ni resolver el
+  // índice de audio por defecto. Sin esto, cada reinicio del servidor (el
+  // estado en memoria se pierde, pero los archivos convertidos no)
+  // obligaba a repetir ffprobe en TODA la biblioteca, incluidos los vídeos
+  // que ya estaban listos desde hace tiempo.
+  if (audioIndex == null) {
+    const quickKey = video.id;
+    const quickCurrent = status.get(quickKey);
+    if (quickCurrent) return quickCurrent;
+    if (fs.existsSync(outputFile(quickKey))) {
+      status.set(quickKey, 'ready');
+      return 'ready';
+    }
+  }
+
   const defaultAudio = await defaultAudioIndex(video);
   const effectiveAudio = audioIndex != null ? Number(audioIndex) : defaultAudio;
   const useDefault = effectiveAudio === defaultAudio;
