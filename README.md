@@ -61,6 +61,10 @@ Desde cualquier otro dispositivo conectado a la misma red Wi-Fi/LAN, abre la URL
 - Reproductor con soporte de salto en la barra de progreso (streaming por rangos de bytes).
 - "Continuar viendo": recuerda el punto de reproducción de cada vídeo (guardado en el navegador).
 - Página de configuración oculta (`/config`) con explorador de carpetas para elegir la carpeta de vídeos sin escribir la ruta a mano.
+- Navegación por carpetas (secciones "Series"/"Películas"), con carátula de carpeta = primer vídeo dentro.
+- Categorías/géneros automáticos por título (TVmaze, Jikan/MyAnimeList y Wikidata; sin API key) con filtro por género en el catálogo. Cachea los resultados en `data/metadata.json`; si un título no se encuentra, simplemente no muestra género, sin errores.
+- Selector de pista de audio y subtítulos (extraídos a WebVTT bajo demanda) en el reproductor.
+- Conversión automática bajo demanda a H.264/MP4 para vídeos con códecs no compatibles con navegadores móviles (p.ej. HEVC en `.mkv`).
 - `POST /api/scan` para volver a escanear la carpeta sin reiniciar el servidor.
 
 ## Desarrollo
