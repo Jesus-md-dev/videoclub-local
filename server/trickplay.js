@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { ffmpeg, getMediaInfo, inputPathFor } = require('./mediaInfo');
 const { DATA_PATH } = require('./config');
+const { runLimited } = require('./ffmpeg-limiter');
 
 const TRICKPLAY_PATH = path.join(DATA_PATH, 'trickplay');
 const THUMB_WIDTH = 160;
@@ -42,17 +43,24 @@ async function generate(video) {
   fs.mkdirSync(TRICKPLAY_PATH, { recursive: true });
   const tmpSprite = `${spriteFile(video.id)}.tmp.jpg`;
 
-  await new Promise((resolve, reject) => {
-    ffmpeg(inputPathFor(video))
-      .outputOptions([
-        `-vf fps=1/${interval},scale=${THUMB_WIDTH}:-1,tile=${columns}x${rows}`,
-        '-frames:v 1',
-        '-q:v 4',
-      ])
-      .on('error', reject)
-      .on('end', resolve)
-      .save(tmpSprite);
-  });
+  // Cada vídeo tiene su propia promesa (pending, más abajo), pero sin este
+  // límite compartido nada impedía que decenas de vídeos DISTINTOS
+  // generasen su sprite a la vez: eso es justo lo que llegó a lanzar más de
+  // 200 procesos ffmpeg simultáneos y tumbó el servidor entero.
+  await runLimited(
+    () =>
+      new Promise((resolve, reject) => {
+        ffmpeg(inputPathFor(video))
+          .outputOptions([
+            `-vf fps=1/${interval},scale=${THUMB_WIDTH}:-1,tile=${columns}x${rows}`,
+            '-frames:v 1',
+            '-q:v 4',
+          ])
+          .on('error', reject)
+          .on('end', resolve)
+          .save(tmpSprite);
+      })
+  );
 
   fs.renameSync(tmpSprite, spriteFile(video.id));
   const meta = { interval, columns, rows, count, thumbWidth: THUMB_WIDTH, thumbHeight, duration };

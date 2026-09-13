@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { ffmpeg, getMediaInfo, inputPathFor } = require('./mediaInfo');
 const { DATA_PATH } = require('./config');
+const { runLimited } = require('./ffmpeg-limiter');
 
 const TRANSCODED_PATH = path.join(DATA_PATH, 'transcoded');
 
@@ -220,6 +221,14 @@ const MAX_CONCURRENT_JOBS = 1;
 const activeJobs = new Map(); // key -> { key, command, interrupted, meta, priority }
 
 function runOnce(inputPath, tmpOutput, key, opts, useGpu, format = 'mp4', meta = null, priority = 'low') {
+  // Además del propio tope interno (MAX_CONCURRENT_JOBS), pasa también por
+  // el límite global compartido con trickplay/carátulas: así el techo real
+  // de procesos ffmpeg a la vez en toda la app nunca se puede superar,
+  // aunque en el futuro se vuelva a subir MAX_CONCURRENT_JOBS.
+  return runLimited(() => runOnceUnthrottled(inputPath, tmpOutput, key, opts, useGpu, format, meta, priority));
+}
+
+function runOnceUnthrottled(inputPath, tmpOutput, key, opts, useGpu, format, meta, priority) {
   return new Promise((resolve, reject) => {
     progress.set(key, { percent: null, startedAt: Date.now() });
 
