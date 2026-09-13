@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 function progressKey(id) {
   return `progress:${id}`;
@@ -40,6 +40,7 @@ function formatRemaining(progress) {
 
 export default function WatchPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [video, setVideo] = useState(null);
   const [error, setError] = useState(null);
   const [ready, setReady] = useState(false);
@@ -48,6 +49,9 @@ export default function WatchPage() {
   const [audioIndex, setAudioIndex] = useState(null);
   const [playbackKey, setPlaybackKey] = useState(0);
   const [stuck, setStuck] = useState(false);
+  const [prevEpisodeId, setPrevEpisodeId] = useState(null);
+  const [nextEpisodeId, setNextEpisodeId] = useState(null);
+  const [autoAdvanceIn, setAutoAdvanceIn] = useState(null);
   const playerRef = useRef(null);
   const resumeTimeRef = useRef(null);
 
@@ -69,7 +73,39 @@ export default function WatchPage() {
       .then((res) => res.json())
       .then(setTracks)
       .catch(() => {});
+
+    setAutoAdvanceIn(null);
   }, [id]);
+
+  useEffect(() => {
+    if (!video?.seriesKey) {
+      setPrevEpisodeId(null);
+      setNextEpisodeId(null);
+      return;
+    }
+    fetch(`/api/videos/browse?dir=${encodeURIComponent(video.seriesKey)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        const list = data.videos || [];
+        const idx = list.findIndex((v) => v.id === id);
+        setPrevEpisodeId(idx > 0 ? list[idx - 1].id : null);
+        setNextEpisodeId(idx >= 0 && idx < list.length - 1 ? list[idx + 1].id : null);
+      })
+      .catch(() => {
+        setPrevEpisodeId(null);
+        setNextEpisodeId(null);
+      });
+  }, [video, id]);
+
+  useEffect(() => {
+    if (autoAdvanceIn == null) return undefined;
+    if (autoAdvanceIn <= 0) {
+      navigate(`/watch/${nextEpisodeId}`);
+      return undefined;
+    }
+    const timer = setTimeout(() => setAutoAdvanceIn((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [autoAdvanceIn, nextEpisodeId, navigate]);
 
   useEffect(() => {
     if (!video) return undefined;
@@ -125,6 +161,9 @@ export default function WatchPage() {
         progressKey(id),
         JSON.stringify({ time: 0, ratio: 1, updatedAt: Date.now() })
       );
+      if (nextEpisodeId) {
+        setAutoAdvanceIn(5);
+      }
     };
 
     // Si la reproducción se queda esperando datos, se reintenta sola una vez
@@ -185,7 +224,7 @@ export default function WatchPage() {
       clearTimeout(stallTimer);
       saveProgress(id, player);
     };
-  }, [video, ready, id, playbackKey]);
+  }, [video, ready, id, playbackKey, nextEpisodeId]);
 
   const handleAudioChange = (e) => {
     const value = e.target.value;
@@ -212,6 +251,16 @@ export default function WatchPage() {
           {backLabel}
         </Link>
         <h1 className="watch-title">{error ? 'Error' : video ? video.title : 'Cargando...'}</h1>
+        {(prevEpisodeId || nextEpisodeId) && (
+          <div className="episode-nav">
+            <button disabled={!prevEpisodeId} onClick={() => navigate(`/watch/${prevEpisodeId}`)}>
+              ← Anterior
+            </button>
+            <button disabled={!nextEpisodeId} onClick={() => navigate(`/watch/${nextEpisodeId}`)}>
+              Siguiente →
+            </button>
+          </div>
+        )}
         {tracks.audio.length > 1 && (
           <select className="track-select" value={audioIndex ?? ''} onChange={handleAudioChange}>
             {tracks.audio.map((track) => (
@@ -259,6 +308,15 @@ export default function WatchPage() {
               <div className="stall-banner">
                 <span>La reproducción parece atascada.</span>
                 <button onClick={retryPlayback}>Reintentar</button>
+              </div>
+            )}
+            {autoAdvanceIn != null && (
+              <div className="stall-banner">
+                <span>Siguiente episodio en {autoAdvanceIn}s...</span>
+                <button onClick={() => navigate(`/watch/${nextEpisodeId}`)}>Reproducir ahora</button>
+                <button className="secondary" onClick={() => setAutoAdvanceIn(null)}>
+                  Cancelar
+                </button>
               </div>
             )}
           </div>

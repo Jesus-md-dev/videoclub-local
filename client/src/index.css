@@ -317,6 +317,43 @@ video {
   background: var(--accent-glow);
 }
 
+.stall-banner button.secondary {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.stall-banner button.secondary:hover {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.episode-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.episode-nav button {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.episode-nav button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.episode-nav button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .prep-box {
   margin: 60px auto;
   max-width: 360px;
