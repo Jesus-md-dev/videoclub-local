@@ -66,7 +66,14 @@ function checkGpuAvailable() {
   });
 }
 
-function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex }, useGpu) {
+// PQ (HDR10) o HLG: sin esto, un vídeo HDR recodificado a 8 bits SDR sale
+// oscuro/apagado, porque el rango dinámico no se reduce, solo los bits.
+function isHdrSource(videoStream) {
+  const transfer = videoStream?.color_transfer;
+  return transfer === 'smpte2084' || transfer === 'arib-std-b67';
+}
+
+function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex, hdr }, useGpu) {
   const outputOptions = [
     '-map 0:v:0',
     audioMapIndex != null ? `-map 0:${audioMapIndex}` : '-map 0:a:0?',
@@ -75,9 +82,15 @@ function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex }, useGpu) {
     '-movflags +faststart',
   ];
   if (!videoCopy) {
-    // Fuentes de 10 bits (HDR/HEVC) deben bajarse a 8 bits: h264_nvenc no
-    // codifica H.264 en 10 bits, y da igual mantenerlos para este uso.
-    outputOptions.push('-pix_fmt yuv420p');
+    if (hdr) {
+      outputOptions.push(
+        '-vf zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p'
+      );
+    } else {
+      // Fuentes de 10 bits sin HDR deben bajarse a 8 bits igualmente:
+      // h264_nvenc no codifica H.264 en 10 bits.
+      outputOptions.push('-pix_fmt yuv420p');
+    }
     outputOptions.push(...(useGpu ? ['-preset p4', '-rc vbr', '-cq 23'] : ['-preset veryfast', '-crf 23']));
   }
   return outputOptions;
@@ -251,6 +264,7 @@ async function ensureChecked(video, audioIndex = null, priority = 'low') {
       videoCopy: videoOk,
       audioCopy: audioOk,
       audioMapIndex: useDefault ? null : effectiveAudio,
+      hdr: isHdrSource(videoStream),
     },
     priority
   )
