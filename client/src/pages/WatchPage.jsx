@@ -1,27 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import VideoControls from '../components/VideoControls';
+import { getActiveProfileId } from '../profile';
 
-function progressKey(id) {
-  return `progress:${id}`;
+// El progreso se guarda en el servidor por perfil (no en localStorage), así
+// que se retoma igual desde cualquier dispositivo de la red.
+function progressUrl(profileId, id) {
+  return `/api/profiles/${profileId}/progress/${id}`;
 }
 
-function saveProgress(id, videoEl) {
-  if (!videoEl.duration) return;
+function saveProgress(profileId, id, videoEl) {
+  if (!profileId || !videoEl.duration) return;
   const ratio = videoEl.currentTime / videoEl.duration;
-  localStorage.setItem(
-    progressKey(id),
-    JSON.stringify({ time: videoEl.currentTime, ratio, updatedAt: Date.now() })
-  );
+  fetch(progressUrl(profileId, id), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ time: videoEl.currentTime, ratio }),
+  }).catch(() => {});
 }
 
-function loadProgress(id) {
-  try {
-    const raw = localStorage.getItem(progressKey(id));
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+// Más fiable que fetch al cerrar la pestaña/navegar fuera: el navegador
+// garantiza el envío aunque la página ya se esté descargando.
+function saveProgressOnUnload(profileId, id, videoEl) {
+  if (!profileId || !videoEl.duration || !navigator.sendBeacon) return;
+  const ratio = videoEl.currentTime / videoEl.duration;
+  const blob = new Blob([JSON.stringify({ time: videoEl.currentTime, ratio })], {
+    type: 'application/json',
+  });
+  navigator.sendBeacon(progressUrl(profileId, id), blob);
 }
 
 function trackLabel(track) {
@@ -59,6 +65,8 @@ export default function WatchPage() {
   const playerRef = useRef(null);
   const shellRef = useRef(null);
   const resumeTimeRef = useRef(null);
+  const savedProgressRef = useRef(null);
+  const profileId = getActiveProfileId();
 
   useEffect(() => {
     fetch('/api/videos')
@@ -79,9 +87,20 @@ export default function WatchPage() {
       .then(setTracks)
       .catch(() => {});
 
+    savedProgressRef.current = null;
+    if (profileId) {
+      fetch(progressUrl(profileId, id))
+        .then((res) => res.json())
+        .then((data) => {
+          savedProgressRef.current = data;
+        })
+        .catch(() => {});
+    }
+
     setAutoAdvanceIn(null);
     setForced(false);
     setRawMode(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
@@ -157,8 +176,8 @@ export default function WatchPage() {
     const player = playerRef.current;
     if (!video || !ready || !player) return undefined;
 
-    const saved = loadProgress(id);
     const onLoadedMetadata = () => {
+      const saved = savedProgressRef.current;
       if (resumeTimeRef.current != null) {
         player.currentTime = resumeTimeRef.current;
         resumeTimeRef.current = null;
@@ -166,12 +185,15 @@ export default function WatchPage() {
         player.currentTime = saved.time;
       }
     };
-    const onPause = () => saveProgress(id, player);
+    const onPause = () => saveProgress(profileId, id, player);
     const onEnded = () => {
-      localStorage.setItem(
-        progressKey(id),
-        JSON.stringify({ time: 0, ratio: 1, updatedAt: Date.now() })
-      );
+      if (profileId) {
+        fetch(progressUrl(profileId, id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ time: 0, ratio: 1 }),
+        }).catch(() => {});
+      }
       if (nextEpisodeId) {
         setAutoAdvanceIn(5);
       }
@@ -218,8 +240,8 @@ export default function WatchPage() {
     player.addEventListener('timeupdate', clearStall);
     player.addEventListener('error', onError);
 
-    const interval = setInterval(() => saveProgress(id, player), 5000);
-    const onBeforeUnload = () => saveProgress(id, player);
+    const interval = setInterval(() => saveProgress(profileId, id, player), 5000);
+    const onBeforeUnload = () => saveProgressOnUnload(profileId, id, player);
     window.addEventListener('beforeunload', onBeforeUnload);
 
     return () => {
@@ -233,9 +255,9 @@ export default function WatchPage() {
       window.removeEventListener('beforeunload', onBeforeUnload);
       clearInterval(interval);
       clearTimeout(stallTimer);
-      saveProgress(id, player);
+      saveProgress(profileId, id, player);
     };
-  }, [video, ready, id, playbackKey, nextEpisodeId]);
+  }, [video, ready, id, playbackKey, nextEpisodeId, profileId]);
 
   const handleAudioChange = (e) => {
     const value = e.target.value;

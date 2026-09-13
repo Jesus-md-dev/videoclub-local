@@ -90,6 +90,21 @@ header {
   border-color: var(--accent);
 }
 
+.switch-profile-link {
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 13px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+}
+
+.switch-profile-link:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 main {
   padding: 24px clamp(16px, 4vw, 48px) 60px;
 }
@@ -938,4 +953,121 @@ video {
   .watch-title {
     font-size: 28px;
   }
+}
+
+.profiles-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  padding: 24px clamp(16px, 4vw, 48px) 60px;
+  text-align: center;
+}
+
+.profiles-title {
+  font-size: clamp(24px, 5vw, 40px);
+  font-weight: normal;
+}
+
+.profiles-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  justify-content: center;
+  max-width: 900px;
+}
+
+.profile-card-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 120px;
+}
+
+.profile-card {
+  width: 100px;
+  height: 100px;
+  border-radius: 12px;
+  border: 3px solid transparent;
+  font-size: 36px;
+  font-weight: bold;
+  color: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.profile-card:hover {
+  border-color: var(--text);
+  transform: scale(1.04);
+}
+
+.profile-add {
+  background: var(--bg-alt);
+  border: 3px dashed var(--border);
+  color: var(--text-dim);
+}
+
+.profile-name {
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-name-input {
+  width: 100px;
+  height: 100px;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text);
+  text-align: center;
+  font-size: 16px;
+}
+
+.profile-create-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.profile-create-actions button {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.profile-delete {
+  font-size: 12px;
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.profiles-manage-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 10px 24px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.profiles-manage-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }

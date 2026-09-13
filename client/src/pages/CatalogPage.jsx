@@ -1,14 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-
-function progressFor(id) {
-  try {
-    const raw = localStorage.getItem(`progress:${id}`);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
+import { getActiveProfileId } from '../profile';
 
 function processingBadgeLabel(state) {
   if (state === 'active') return 'Procesando…';
@@ -16,43 +8,20 @@ function processingBadgeLabel(state) {
   return null;
 }
 
-function dismissedAt(id) {
-  const raw = localStorage.getItem(`dismissed:${id}`);
-  return raw ? Number(raw) || 0 : 0;
-}
-
-// Quita un vídeo de "Continuar viendo" sin tocar su progreso guardado: si
-// se retoma más adelante (el progreso se actualiza después de este
-// momento), vuelve a aparecer solo.
-function dismissFromContinueWatching(id) {
-  localStorage.setItem(`dismissed:${id}`, String(Date.now()));
-}
-
-// IDs con progreso guardado (ni recién empezados ni ya terminados) y no
-// descartados desde entonces, ordenados por lo visto más recientemente.
-function continueWatchingIds() {
-  const entries = [];
-  for (let i = 0; i < localStorage.length; i += 1) {
-    const key = localStorage.key(i);
-    if (!key?.startsWith('progress:')) continue;
-    try {
-      const data = JSON.parse(localStorage.getItem(key));
-      if (data.ratio > 0.02 && data.ratio < 0.95) {
-        const id = key.slice('progress:'.length);
-        const updatedAt = data.updatedAt || 0;
-        if (dismissedAt(id) >= updatedAt) continue;
-        entries.push({ id, updatedAt });
-      }
-    } catch {
-      // entrada corrupta, se ignora
-    }
-  }
+// El progreso ya no vive en localStorage: se guarda en el servidor por
+// perfil, así que se ve igual desde cualquier dispositivo de la red.
+// `progressMap` es { [videoId]: { time, ratio, updatedAt, dismissedAt? } },
+// cargado una vez desde /api/profiles/:id/progress.
+function continueWatchingIds(progressMap) {
+  const entries = Object.entries(progressMap)
+    .filter(([, data]) => data.ratio > 0.02 && data.ratio < 0.95)
+    .filter(([, data]) => !data.dismissedAt || data.dismissedAt < (data.updatedAt || 0))
+    .map(([id, data]) => ({ id, updatedAt: data.updatedAt || 0 }));
   entries.sort((a, b) => b.updatedAt - a.updatedAt);
   return entries.map((e) => e.id);
 }
 
-function VideoCard({ video, onRemove }) {
-  const progress = progressFor(video.id);
+function VideoCard({ video, progress, onRemove }) {
   const showProgress = progress && progress.ratio < 0.95;
   const posterSrc = video.poster || `/api/thumbnail/${video.id}`;
   // El nombre limpio es el de la serie (mismo para todos sus episodios), así
@@ -219,26 +188,42 @@ export default function CatalogPage() {
       });
   }, []);
 
+  const profileId = getActiveProfileId();
+  const [progressMap, setProgressMap] = useState({});
+
+  useEffect(() => {
+    if (!profileId) return;
+    fetch(`/api/profiles/${profileId}/progress`)
+      .then((res) => res.json())
+      .then(setProgressMap)
+      .catch(() => {});
+  }, [profileId]);
+
   const filtered = useMemo(() => {
     const q = term.trim().toLowerCase();
     if (!q) return [];
     return allVideos.filter((v) => v.title.toLowerCase().includes(q));
   }, [allVideos, term]);
 
-  const [dismissTick, setDismissTick] = useState(0);
   const continueWatching = useMemo(() => {
     if (searching || dir || allVideos.length === 0) return [];
     const byId = new Map(allVideos.map((v) => [v.id, v]));
-    return continueWatchingIds()
+    return continueWatchingIds(progressMap)
       .map((id) => byId.get(id))
       .filter(Boolean)
       .slice(0, 12);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allVideos, searching, dir, dismissTick]);
+  }, [allVideos, searching, dir, progressMap]);
 
+  // Quita un vídeo de "Continuar viendo" sin tocar su progreso guardado: si
+  // se retoma más adelante (el progreso se actualiza después de este
+  // momento), vuelve a aparecer solo.
   const handleRemoveFromContinueWatching = (id) => {
-    dismissFromContinueWatching(id);
-    setDismissTick((t) => t + 1);
+    if (!profileId) return;
+    setProgressMap((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] || {}), dismissedAt: Date.now() },
+    }));
+    fetch(`/api/profiles/${profileId}/progress/${id}/dismiss`, { method: 'POST' }).catch(() => {});
   };
 
   const goToDir = (newDir) => setSearchParams(newDir ? { dir: newDir } : {});
@@ -280,6 +265,9 @@ export default function CatalogPage() {
           value={term}
           onChange={(e) => handleSearch(e.target.value)}
         />
+        <Link className="switch-profile-link" to="/profiles">
+          Cambiar perfil
+        </Link>
       </header>
       <main>
         {!searching && <Breadcrumb dir={dir} onNavigate={goToDir} />}
@@ -290,7 +278,7 @@ export default function CatalogPage() {
             <p className="section-title">Resultados</p>
             <div className="grid">
               {list.map((video) => (
-                <VideoCard key={video.id} video={video} />
+                <VideoCard key={video.id} video={video} progress={progressMap[video.id]} />
               ))}
             </div>
           </>
@@ -303,7 +291,12 @@ export default function CatalogPage() {
                 <p className="section-title">Continuar viendo</p>
                 <div className="grid">
                   {continueWatching.map((video) => (
-                    <VideoCard key={video.id} video={video} onRemove={handleRemoveFromContinueWatching} />
+                    <VideoCard
+                      key={video.id}
+                      video={video}
+                      progress={progressMap[video.id]}
+                      onRemove={handleRemoveFromContinueWatching}
+                    />
                   ))}
                 </div>
               </>
@@ -314,7 +307,7 @@ export default function CatalogPage() {
                 <p className="section-title">{dir ? 'Vídeos' : 'Películas'}</p>
                 <div className="grid">
                   {visibleVideos.map((video) => (
-                    <VideoCard key={video.id} video={video} />
+                    <VideoCard key={video.id} video={video} progress={progressMap[video.id]} />
                   ))}
                 </div>
               </>
