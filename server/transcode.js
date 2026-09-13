@@ -204,13 +204,15 @@ function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex, hdr, sourceHe
   return outputOptions;
 }
 
-// Los drivers actuales permiten varias sesiones NVENC a la vez en GPUs de
-// consumo (antes 3, ahora bastantes más en tarjetas/drivers recientes), así
-// que en vez de convertir de una en una se aprovechan varias a la vez para
-// vaciar la cola mucho más rápido en conjunto. Un valor conservador: si la
-// GPU concreta no aguanta tantas sesiones, cada trabajo cae solo a CPU para
-// ese archivo (ver el "catch" de runFfmpegNow), no se rompe nada.
-const MAX_CONCURRENT_JOBS = 3;
+// Se probó con 3 conversiones a la vez asumiendo que los drivers NVENC
+// actuales lo permiten en GPUs de consumo (cierto en general), pero en la
+// práctica esta GPU en concreto no aguantaba 3 sesiones NVENC reales a la
+// vez: fallaba en cascada ("Generic error in an external library") y, al
+// caer TODAS a la CPU (libx264) al mismo tiempo, saturaba la máquina entera
+// hasta dejar el servidor sin responder. Vuelta a 1 por estabilidad: es un
+// límite real del hardware/driver de esta GPU, no algo que se pueda ajustar
+// solo con código.
+const MAX_CONCURRENT_JOBS = 1;
 
 // Los trabajos de ffmpeg en marcha ahora mismo (puede haber varios a la
 // vez), por clave, para poder interrumpir uno en concreto desde
