@@ -127,18 +127,37 @@ async function runFfmpegNow(inputPath, key, opts) {
   fs.renameSync(tmpOutput, outputFile(key));
 }
 
-// Cola global: como mucho una conversión de ffmpeg a la vez, sin importar
-// si la pide el precalentamiento en segundo plano o una petición del
-// usuario en ese momento. Sin esto, varias conversiones en paralelo pueden
-// agotar las sesiones NVENC de la GPU (y saturar la CPU/disco).
-let ffmpegQueueTail = Promise.resolve();
-function runFfmpeg(inputPath, key, opts) {
-  const run = ffmpegQueueTail.then(() => runFfmpegNow(inputPath, key, opts));
-  ffmpegQueueTail = run.catch(() => {});
-  return run;
+// Cola global con dos carriles: como mucho una conversión de ffmpeg a la
+// vez (para no agotar las sesiones NVENC de la GPU ni saturar CPU/disco),
+// pero lo que el usuario está pidiendo ver AHORA ("high") adelanta a lo que
+// el precalentamiento en segundo plano ("low") aún no ha empezado. Ojo: si
+// ya hay una conversión en marcha, esta no se interrumpe (no hay forma de
+// pausarla a medias), así que una petición "high" espera a que termine esa
+// en concreto antes de colarse delante del resto de la cola.
+const ffmpegHighQueue = [];
+const ffmpegLowQueue = [];
+let ffmpegDraining = false;
+
+async function drainFfmpegQueue() {
+  if (ffmpegDraining) return;
+  ffmpegDraining = true;
+  while (ffmpegHighQueue.length || ffmpegLowQueue.length) {
+    const task = ffmpegHighQueue.length ? ffmpegHighQueue.shift() : ffmpegLowQueue.shift();
+    // eslint-disable-next-line no-await-in-loop
+    await task();
+  }
+  ffmpegDraining = false;
 }
 
-async function ensureChecked(video, audioIndex = null) {
+function runFfmpeg(inputPath, key, opts, priority = 'low') {
+  return new Promise((resolve, reject) => {
+    const task = () => runFfmpegNow(inputPath, key, opts).then(resolve, reject);
+    (priority === 'high' ? ffmpegHighQueue : ffmpegLowQueue).push(task);
+    drainFfmpegQueue();
+  });
+}
+
+async function ensureChecked(video, audioIndex = null, priority = 'low') {
   const defaultAudio = await defaultAudioIndex(video);
   const effectiveAudio = audioIndex != null ? Number(audioIndex) : defaultAudio;
   const useDefault = effectiveAudio === defaultAudio;
@@ -177,11 +196,16 @@ async function ensureChecked(video, audioIndex = null) {
   }
 
   status.set(key, 'processing');
-  runFfmpeg(inputPathFor(video), key, {
-    videoCopy: videoOk,
-    audioCopy: audioOk,
-    audioMapIndex: useDefault ? null : effectiveAudio,
-  })
+  runFfmpeg(
+    inputPathFor(video),
+    key,
+    {
+      videoCopy: videoOk,
+      audioCopy: audioOk,
+      audioMapIndex: useDefault ? null : effectiveAudio,
+    },
+    priority
+  )
     .then(() => status.set(key, 'ready'))
     .catch((err) => {
       console.warn(`No se pudo convertir "${video.title}": ${err.message}`);

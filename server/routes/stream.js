@@ -93,7 +93,9 @@ router.get('/stream/:id/status', async (req, res) => {
     return;
   }
   const audioIndex = parseAudioIndex(req);
-  const status = await transcode.ensureChecked(video, audioIndex);
+  // 'high': esto lo pide un usuario viendo el reproductor ahora mismo, así
+  // que adelanta al precalentamiento en segundo plano en la cola de ffmpeg.
+  const status = await transcode.ensureChecked(video, audioIndex, 'high');
   const progress = status === 'processing' ? await transcode.getProgress(video, audioIndex) : null;
   res.json({ status, progress });
 });
