@@ -195,7 +195,11 @@ async function fetchTvMaze(query, priority) {
 }
 
 // Jikan (MyAnimeList no oficial): buen respaldo para anime (sin API key). https://jikan.moe
-async function fetchJikan(query, priority) {
+// La API pública de Jikan devuelve 504 (Gateway Timeout) con bastante
+// frecuencia cuando está saturada por el uso global, no solo por nuestras
+// propias peticiones: se reintenta unas pocas veces con espera antes de
+// darse por vencido, en vez de fallar a la primera.
+async function fetchJikanOnce(query, priority) {
   const res = await throttledFetch(
     `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&limit=1`,
     undefined,
@@ -213,6 +217,23 @@ async function fetchJikan(query, priority) {
     cleanName: match.title || null,
     poster: match.images?.jpg?.large_image_url || match.images?.jpg?.image_url || null,
   };
+}
+
+async function fetchJikan(query, priority, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      return await fetchJikanOnce(query, priority);
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await wait(2000 * (i + 1));
+      }
+    }
+  }
+  throw lastErr;
 }
 
 const WIKIDATA_HEADERS = { 'User-Agent': 'videoclub-local/1.0 (uso personal, sin fines comerciales)' };
@@ -302,6 +323,10 @@ async function fetchBest(query, priority) {
   const tv = await fetchTvMaze(query, priority);
   if (tv && tv.genres.includes('Anime')) return tv;
 
+  // Si Jikan sigue fallando tras los reintentos, no se puede confirmar si es
+  // anime o no: se propaga el error (nada se cachea, ver getMetadata) para
+  // reintentarlo más tarde en vez de arriesgarse a clasificar mal algo que
+  // sí es anime solo porque Jikan estaba caído en ese momento.
   const anime = await fetchJikan(query, priority);
   if (anime && anime.genres.length) {
     if (tv && tv.genres.length) {
