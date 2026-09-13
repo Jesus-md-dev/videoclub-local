@@ -79,7 +79,7 @@ export default function QueuePage() {
 
             <p className="hint">
               Sin forzar prioridad manualmente sobre ningún vídeo, se procesan primero los
-              archivos más pesados.
+              archivos más ligeros.
             </p>
 
             {data.active ? (

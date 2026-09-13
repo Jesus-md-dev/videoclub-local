@@ -536,9 +536,9 @@ async function playableFile(video, audioIndex = null) {
 async function warmAll(videos) {
   // Sin nada forzado explícitamente (forcePriorityFor, al abrir un vídeo
   // concreto), el precalentamiento en segundo plano prioriza los archivos
-  // más pesados primero: son los que más tardarían si le tocara convertirlos
-  // al vuelo mientras alguien espera para verlos.
-  const ordered = [...videos].sort((a, b) => (b.size || 0) - (a.size || 0));
+  // más ligeros primero: se terminan muchos antes y hay más contenido listo
+  // para ver cuanto antes, en vez de tardar mucho en el primero.
+  const ordered = [...videos].sort((a, b) => (a.size || 0) - (b.size || 0));
   for (const video of ordered) {
     try {
       // eslint-disable-next-line no-await-in-loop
