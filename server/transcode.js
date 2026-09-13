@@ -91,7 +91,15 @@ function runOnce(inputPath, tmpOutput, key, opts, useGpu) {
   return new Promise((resolve, reject) => {
     progress.set(key, { percent: null, startedAt: Date.now() });
 
-    const command = ffmpeg(inputPath)
+    const command = ffmpeg(inputPath);
+    if (useGpu) {
+      // Descodifica también por GPU (no solo codifica): sin esto, un origen
+      // pesado (AV1/HEVC 4K) se descodifica por CPU y ese es el cuello de
+      // botella real, aunque la codificación ya use NVENC. Con NVDEC en la
+      // descodificación también, la conversión completa va ~3-4x más rápido.
+      command.inputOptions(['-hwaccel cuda']);
+    }
+    command
       .outputOptions(buildOutputOptions(opts, useGpu))
       .format('mp4')
       .on('progress', (p) => {
