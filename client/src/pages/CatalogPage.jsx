@@ -14,7 +14,9 @@ function VideoCard({ video }) {
   const progress = progressFor(video.id);
   const showProgress = progress && progress.ratio < 0.95;
   const posterSrc = video.poster || `/api/thumbnail/${video.id}`;
-  const displayTitle = video.cleanName || video.title;
+  // El nombre limpio es el de la serie (mismo para todos sus episodios), así
+  // que en un episodio taparía el número; solo se usa en películas sueltas.
+  const displayTitle = video.seriesKey ? video.title : video.cleanName || video.title;
 
   return (
     <Link className="card" to={`/watch/${video.id}`}>
