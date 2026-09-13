@@ -202,23 +202,23 @@ export default function CatalogPage() {
 
         {!searching && (
           <>
-            {showFolders && (
-              <>
-                <p className="section-title">{dir ? 'Carpetas' : 'Series'}</p>
-                <div className="grid folder-grid">
-                  {visibleFolders.map((folder) => (
-                    <FolderCard key={folder.path} folder={folder} onOpen={goToDir} />
-                  ))}
-                </div>
-              </>
-            )}
-
             {visibleVideos.length > 0 && (
               <>
                 <p className="section-title">{dir ? 'Vídeos' : 'Películas'}</p>
                 <div className="grid">
                   {visibleVideos.map((video) => (
                     <VideoCard key={video.id} video={video} />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {showFolders && (
+              <>
+                <p className="section-title">{dir ? 'Carpetas' : 'Series'}</p>
+                <div className="grid folder-grid">
+                  {visibleFolders.map((folder) => (
+                    <FolderCard key={folder.path} folder={folder} onOpen={goToDir} />
                   ))}
                 </div>
               </>
