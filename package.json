@@ -6,7 +6,9 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node --watch server/index.js"
+    "dev": "node --watch server/index.js",
+    "build": "npm --prefix client install && npm --prefix client run build",
+    "postinstall": "npm --prefix client install"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { VIDEOS_PATH, VIDEO_EXTENSIONS } = require('./config');
+const { getVideosPath, VIDEO_EXTENSIONS } = require('./config');
 
 let cache = [];
 let byId = new Map();
@@ -40,15 +40,16 @@ function walk(dir, baseDir, results) {
 }
 
 function scan() {
-  if (!VIDEOS_PATH) {
-    throw new Error('VIDEOS_PATH no está configurado. Define la variable de entorno en .env');
+  const videosPath = getVideosPath();
+  if (!videosPath) {
+    throw new Error('No hay carpeta de vídeos configurada. Ajústala en /config.html o en .env');
   }
-  if (!fs.existsSync(VIDEOS_PATH)) {
-    throw new Error(`VIDEOS_PATH no existe: ${VIDEOS_PATH}`);
+  if (!fs.existsSync(videosPath)) {
+    throw new Error(`La carpeta configurada no existe: ${videosPath}`);
   }
 
   const results = [];
-  walk(VIDEOS_PATH, VIDEOS_PATH, results);
+  walk(videosPath, videosPath, results);
   results.sort((a, b) => a.title.localeCompare(b.title, 'es'));
 
   cache = results;

@@ -1,22 +1,31 @@
 const express = require('express');
 const os = require('os');
 const path = require('path');
-const { PORT, VIDEOS_PATH } = require('./config');
+const { PORT, getVideosPath } = require('./config');
 const catalog = require('./catalog');
 const thumbnails = require('./thumbnails');
 const videosRouter = require('./routes/videos');
 const streamRouter = require('./routes/stream');
 const thumbnailRouter = require('./routes/thumbnail');
+const settingsRouter = require('./routes/settings');
+
+const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
 const app = express();
 
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(CLIENT_DIST));
 app.use('/api', videosRouter);
 app.use('/api', streamRouter);
 app.use('/api', thumbnailRouter);
+app.use('/api', settingsRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
+});
+
+// Fallback para las rutas de React Router (recarga directa de /watch/:id, /config, ...).
+app.get(/^(?!\/api).*/, (req, res) => {
+  res.sendFile(path.join(CLIENT_DIST, 'index.html'));
 });
 
 function localIps() {
@@ -32,20 +41,23 @@ function localIps() {
   return ips;
 }
 
-function start() {
-  if (!VIDEOS_PATH) {
-    console.error('Falta VIDEOS_PATH en .env. Copia .env.example a .env y configúralo.');
-    process.exit(1);
+function scanIfConfigured() {
+  const videosPath = getVideosPath();
+  if (!videosPath) {
+    console.warn('No hay carpeta de vídeos configurada todavía. Ajústala en /config');
+    return;
   }
-
   try {
     const videos = catalog.scan();
-    console.log(`Catálogo inicial: ${videos.length} vídeo(s) encontrados en ${VIDEOS_PATH}`);
+    console.log(`Catálogo: ${videos.length} vídeo(s) encontrados en ${videosPath}`);
     thumbnails.generateMissingThumbnails(videos);
   } catch (err) {
-    console.error(`Error al escanear VIDEOS_PATH: ${err.message}`);
-    process.exit(1);
+    console.error(`Error al escanear la carpeta de vídeos: ${err.message}`);
   }
+}
+
+function start() {
+  scanIfConfigured();
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Videoclub local escuchando en el puerto ${PORT}`);

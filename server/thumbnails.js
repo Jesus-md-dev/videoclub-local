@@ -3,7 +3,7 @@ const path = require('path');
 const ffmpegPath = require('ffmpeg-static');
 const ffprobePath = require('ffprobe-static').path;
 const ffmpeg = require('fluent-ffmpeg');
-const { VIDEOS_PATH, THUMBNAILS_PATH } = require('./config');
+const { getVideosPath, THUMBNAILS_PATH } = require('./config');
 
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath);
@@ -30,7 +30,7 @@ function generateThumbnail(video) {
     }
     generating.add(video.id);
 
-    const inputPath = path.join(VIDEOS_PATH, video.relativePath);
+    const inputPath = path.join(getVideosPath(), video.relativePath);
     const outputFile = `${video.id}.jpg`;
 
     ffmpeg(inputPath)

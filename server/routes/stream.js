@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const catalog = require('../catalog');
-const { VIDEOS_PATH } = require('../config');
+const { getVideosPath } = require('../config');
 
 const router = express.Router();
 
@@ -22,12 +22,13 @@ router.get('/stream/:id', (req, res) => {
     return;
   }
 
-  const filePath = path.join(VIDEOS_PATH, video.relativePath);
+  const videosPath = getVideosPath();
+  const filePath = path.join(videosPath, video.relativePath);
   const resolved = path.resolve(filePath);
 
-  // El id proviene del catálogo ya escaneado dentro de VIDEOS_PATH, pero se
-  // valida igualmente que la ruta resuelta no se haya salido de esa carpeta.
-  if (!resolved.startsWith(path.resolve(VIDEOS_PATH))) {
+  // El id proviene del catálogo ya escaneado dentro de la carpeta configurada,
+  // pero se valida igualmente que la ruta resuelta no se haya salido de ella.
+  if (!resolved.startsWith(path.resolve(videosPath))) {
     res.status(400).json({ error: 'Ruta inválida' });
     return;
   }

@@ -20,6 +20,10 @@ body {
   min-height: 100vh;
 }
 
+#root {
+  min-height: 100vh;
+}
+
 header {
   padding: 24px clamp(16px, 4vw, 48px);
   border-bottom: 2px solid var(--border);
@@ -41,6 +45,7 @@ header {
   letter-spacing: 2px;
   color: var(--accent);
   text-shadow: 0 0 12px rgba(230, 57, 70, 0.5);
+  text-decoration: none;
 }
 
 .logo span {
@@ -199,4 +204,74 @@ video {
   max-width: 480px;
   text-align: center;
   color: var(--text-dim);
+}
+
+.config-wrap {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 40px clamp(16px, 4vw, 48px);
+}
+
+.config-wrap label {
+  display: block;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.config-wrap input[type='text'] {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text);
+  font-size: 15px;
+  margin-bottom: 16px;
+}
+
+.config-wrap input[type='text']:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.config-wrap button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 12px 22px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.config-wrap button:hover {
+  background: var(--accent-glow);
+}
+
+.config-wrap button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.config-message {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.config-message.ok {
+  color: #6fcf97;
+}
+
+.config-message.error {
+  color: var(--accent);
+}
+
+.hint {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: -8px 0 20px;
 }
