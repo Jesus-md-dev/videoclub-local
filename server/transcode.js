@@ -481,7 +481,12 @@ async function playableFile(video, audioIndex = null) {
 // acabase antes de comprobar el siguiente, así que con una cola de miles de
 // vídeos casi ninguno llegaba a comprobarse de verdad.
 async function warmAll(videos) {
-  for (const video of videos) {
+  // Sin nada forzado explícitamente (forcePriorityFor, al abrir un vídeo
+  // concreto), el precalentamiento en segundo plano prioriza los archivos
+  // más pesados primero: son los que más tardarían si le tocara convertirlos
+  // al vuelo mientras alguien espera para verlos.
+  const ordered = [...videos].sort((a, b) => (b.size || 0) - (a.size || 0));
+  for (const video of ordered) {
     try {
       // eslint-disable-next-line no-await-in-loop
       await ensureChecked(video);
