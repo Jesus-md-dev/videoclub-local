@@ -20,6 +20,10 @@ function parseAudioIndex(req) {
   return req.query.audio != null ? Number(req.query.audio) : null;
 }
 
+function isRawRequest(req) {
+  return req.query.raw === '1';
+}
+
 // Conecta el stream de lectura a la respuesta, cerrando limpiamente en
 // cualquier caso anómalo (error de disco, cliente que corta la conexión al
 // buscar en la barra de progreso, ...) en vez de dejar la petición colgada
@@ -86,10 +90,35 @@ function sendFileWithRange(req, res, filePath, contentType) {
   pipeWithCleanup(req, res, fs.createReadStream(filePath, { start, end }));
 }
 
+// Sirve el archivo tal cual está en disco, sin pasar por transcode.js. Solo
+// para el modo "reproducir sin convertir": el usuario asume que puede no
+// funcionar en su dispositivo/navegador concreto.
+function serveOriginal(req, res, video) {
+  const videosPath = getVideosPath();
+  const resolved = path.resolve(path.join(videosPath, video.relativePath));
+
+  // El id proviene del catálogo ya escaneado dentro de la carpeta configurada,
+  // pero se valida igualmente que la ruta resuelta no se haya salido de ella.
+  if (!resolved.startsWith(path.resolve(videosPath))) {
+    res.status(400).json({ error: 'Ruta inválida' });
+    return;
+  }
+  if (!fs.existsSync(resolved)) {
+    res.status(404).json({ error: 'Archivo no encontrado en disco' });
+    return;
+  }
+  const contentType = MIME_TYPES[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
+  sendFileWithRange(req, res, resolved, contentType);
+}
+
 router.get('/stream/:id/status', async (req, res) => {
   const video = catalog.getVideoById(req.params.id);
   if (!video) {
     res.status(404).json({ error: 'Vídeo no encontrado' });
+    return;
+  }
+  if (isRawRequest(req)) {
+    res.json({ status: 'compatible', progress: null });
     return;
   }
   const audioIndex = parseAudioIndex(req);
@@ -118,6 +147,11 @@ router.get('/stream/:id', async (req, res) => {
     return;
   }
 
+  if (isRawRequest(req)) {
+    serveOriginal(req, res, video);
+    return;
+  }
+
   const audioIndex = parseAudioIndex(req);
   const status = await transcode.getStatus(video, audioIndex);
 
@@ -137,24 +171,7 @@ router.get('/stream/:id', async (req, res) => {
   }
 
   // status === 'compatible': el original ya es reproducible tal cual.
-  const videosPath = getVideosPath();
-  const filePath = path.join(videosPath, video.relativePath);
-  const resolved = path.resolve(filePath);
-
-  // El id proviene del catálogo ya escaneado dentro de la carpeta configurada,
-  // pero se valida igualmente que la ruta resuelta no se haya salido de ella.
-  if (!resolved.startsWith(path.resolve(videosPath))) {
-    res.status(400).json({ error: 'Ruta inválida' });
-    return;
-  }
-
-  if (!fs.existsSync(resolved)) {
-    res.status(404).json({ error: 'Archivo no encontrado en disco' });
-    return;
-  }
-
-  const contentType = MIME_TYPES[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
-  sendFileWithRange(req, res, resolved, contentType);
+  serveOriginal(req, res, video);
 });
 
 module.exports = router;

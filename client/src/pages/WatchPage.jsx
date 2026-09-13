@@ -55,6 +55,7 @@ export default function WatchPage() {
   const [autoAdvanceIn, setAutoAdvanceIn] = useState(null);
   const [forcing, setForcing] = useState(false);
   const [forced, setForced] = useState(false);
+  const [rawMode, setRawMode] = useState(false);
   const playerRef = useRef(null);
   const shellRef = useRef(null);
   const resumeTimeRef = useRef(null);
@@ -80,6 +81,7 @@ export default function WatchPage() {
 
     setAutoAdvanceIn(null);
     setForced(false);
+    setRawMode(false);
   }, [id]);
 
   useEffect(() => {
@@ -119,7 +121,11 @@ export default function WatchPage() {
     setReady(false);
     setPrepProgress(null);
 
-    const streamUrl = `/api/stream/${id}/status${audioIndex != null ? `?audio=${audioIndex}` : ''}`;
+    const params = new URLSearchParams();
+    if (audioIndex != null) params.set('audio', audioIndex);
+    if (rawMode) params.set('raw', '1');
+    const query = params.toString();
+    const streamUrl = `/api/stream/${id}/status${query ? `?${query}` : ''}`;
 
     const checkStatus = () => {
       fetch(streamUrl)
@@ -145,7 +151,7 @@ export default function WatchPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [video, id, audioIndex]);
+  }, [video, id, audioIndex, rawMode]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -255,7 +261,11 @@ export default function WatchPage() {
     setPlaybackKey((k) => k + 1);
   };
 
-  const streamSrc = `/api/stream/${id}${audioIndex != null ? `?audio=${audioIndex}` : ''}`;
+  const streamParams = new URLSearchParams();
+  if (audioIndex != null) streamParams.set('audio', audioIndex);
+  if (rawMode) streamParams.set('raw', '1');
+  const streamQuery = streamParams.toString();
+  const streamSrc = `/api/stream/${id}${streamQuery ? `?${streamQuery}` : ''}`;
   const backTo = video?.seriesKey ? `/?dir=${encodeURIComponent(video.seriesKey)}` : '/';
   const backLabel = video?.seriesKey ? '← Volver a episodios' : '← Volver al catálogo';
 
@@ -311,10 +321,15 @@ export default function WatchPage() {
                 {forcing ? 'Priorizando...' : 'Forzar prioridad'}
               </button>
             )}
+            <button className="raw-mode-btn" onClick={() => setRawMode(true)}>
+              Reproducir sin convertir
+            </button>
+            <p className="prep-detail">Formato original: puede no funcionar en este dispositivo/navegador.</p>
           </div>
         )}
         {!error && video && ready && (
           <div className="player-column">
+            {rawMode && <p className="prep-detail">Reproduciendo en formato original (sin convertir).</p>}
             <div className="player-shell" ref={shellRef}>
               <video
                 key={playbackKey}
