@@ -131,12 +131,34 @@ function listDir(webDir = '') {
   return { dir: webDir, parent, folders, videos };
 }
 
-// Clave de metadatos para un vídeo: el nombre de la carpeta de nivel superior
-// si pertenece a una serie, o su propio título si es un vídeo suelto (película).
-function metadataKeyFor(video) {
-  const [first] = video.relativePath.split(path.sep);
-  const isSeries = video.relativePath.includes(path.sep);
-  return { key: isSeries ? cleanTitle(first) : video.title, isSeries };
+// Nombres de carpeta que son categorías genéricas, no el título de una obra
+// concreta (p.ej. "Anime", "Peliculas"). Se ignoran al buscar la clave de
+// metadatos de un vídeo, para no acabar buscando "Anime" o "Peliculas" en
+// vez del título real.
+const GENERIC_FOLDER_NAMES = new Set([
+  'anime', 'peliculas', 'películas', 'pelis', 'series', 'movies', 'movie',
+  'tv', 'shows', 'videos', 'video', 'films', 'film', 'dorama', 'doramas',
+]);
+
+function isGenericFolderName(name) {
+  return GENERIC_FOLDER_NAMES.has(name.trim().toLowerCase());
 }
 
-module.exports = { scan, getCatalog, getVideoById, listDir, metadataKeyFor };
+// Clave de metadatos para un vídeo: el nombre de la carpeta contenedora más
+// específica (la más profunda que no sea una categoría genérica), asumiendo
+// que agrupa otros vídeos de la misma obra (ej. episodios de una serie). Si
+// no hay ninguna carpeta así en la ruta, se usa el propio título del
+// archivo (vídeo suelto/película). No se asume de antemano si es serie o
+// película por estructura: eso lo decide la propia búsqueda de metadatos.
+function metadataKeyFor(video) {
+  const folderSegments = video.relativePath.split(path.sep).slice(0, -1);
+  for (let i = folderSegments.length - 1; i >= 0; i -= 1) {
+    const name = cleanTitle(folderSegments[i]);
+    if (!isGenericFolderName(name)) {
+      return name;
+    }
+  }
+  return video.title;
+}
+
+module.exports = { scan, getCatalog, getVideoById, listDir, metadataKeyFor, isGenericFolderName };

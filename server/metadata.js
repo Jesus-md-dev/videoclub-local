@@ -129,6 +129,7 @@ async function fetchTvMaze(query) {
   return {
     genres: normalizeGenres(data.genres),
     year: data.premiered ? data.premiered.slice(0, 4) : null,
+    type: 'tv',
   };
 }
 
@@ -142,6 +143,7 @@ async function fetchJikan(query) {
   return {
     genres: normalizeGenres((match.genres || []).map((g) => g.name)),
     year: match.year || null,
+    type: 'anime',
   };
 }
 
@@ -175,7 +177,7 @@ async function fetchWikidataFilm(query) {
   const dateValue = claims.P577?.[0]?.mainsnak?.datavalue?.value?.time;
   const year = dateValue ? dateValue.replace('+', '').slice(0, 4) : null;
 
-  if (genreIds.length === 0) return { genres: [], year };
+  if (genreIds.length === 0) return { genres: [], year, type: 'movie' };
 
   const labelsRes = await throttledFetch(
     `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${genreIds.join('|')}&props=labels&languages=es|en&format=json`,
@@ -190,44 +192,46 @@ async function fetchWikidataFilm(query) {
     })
     .filter(Boolean);
 
-  return { genres: normalizeGenres(rawGenres), year };
+  return { genres: normalizeGenres(rawGenres), year, type: 'movie' };
 }
 
-async function fetchBest(query, isSeries) {
-  if (isSeries) {
-    const tv = await fetchTvMaze(query);
-    if (tv && tv.genres.length) return tv;
-    const anime = await fetchJikan(query);
-    if (anime && anime.genres.length) return anime;
-    return tv || anime || null;
-  }
+// Prueba las fuentes en un orden fijo y se queda con la primera que
+// encuentre géneros reales; no asume de antemano si es serie o película
+// (eso lo decide el propio resultado de la búsqueda, no la estructura de
+// carpetas/archivos en disco).
+async function fetchBest(query) {
+  const tv = await fetchTvMaze(query);
+  if (tv && tv.genres.length) return tv;
 
   const movie = await fetchWikidataFilm(query);
   if (movie && movie.genres.length) return movie;
+
   const anime = await fetchJikan(query);
-  return anime || movie || null;
+  if (anime && anime.genres.length) return anime;
+
+  return tv || movie || anime || null;
 }
 
-// Devuelve los metadatos (géneros, año) para una clave (nombre de serie o
-// de película), consultando fuentes públicas sin API key.
-async function getMetadata(key, isSeries = false) {
+// Devuelve los metadatos (géneros, año, tipo) para una clave (nombre de
+// serie o de película), consultando fuentes públicas sin API key.
+async function getMetadata(key) {
   if (cache[key]) return cache[key];
   if (pending.has(key)) return pending.get(key);
 
   const promise = (async () => {
     const query = cleanQuery(key);
-    if (!query) return { genres: [], year: null };
+    if (!query) return { genres: [], year: null, type: null };
 
     try {
-      const result = await fetchBest(query, isSeries);
-      const entry = result || { genres: [], year: null };
+      const result = await fetchBest(query);
+      const entry = result || { genres: [], year: null, type: null };
       cache[key] = entry;
       saveCache();
       return entry;
     } catch (err) {
       // Fallo de red/rate-limit: no se cachea, para reintentar más tarde.
       console.warn(`No se pudieron obtener metadatos para "${key}": ${err.message}`);
-      return { genres: [], year: null };
+      return { genres: [], year: null, type: null };
     } finally {
       pending.delete(key);
     }

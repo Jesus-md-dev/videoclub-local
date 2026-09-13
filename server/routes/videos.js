@@ -24,15 +24,16 @@ router.get('/videos/browse', async (req, res) => {
   const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
   const { parent, folders, videos } = catalog.listDir(dir);
 
-  // Metadatos (géneros) por carpeta: una consulta por serie/película, no por episodio.
+  // Metadatos (géneros) por carpeta: una consulta por serie/película, no por
+  // episodio. Las carpetas de categoría genérica (Anime, Peliculas...) no se
+  // consultan, ya que no son el título de ninguna obra concreta.
   const folderGenres = await Promise.all(
-    folders.map((folder) => metadata.getMetadata(folder.name, true))
+    folders.map((folder) =>
+      catalog.isGenericFolderName(folder.name) ? Promise.resolve({ genres: [] }) : metadata.getMetadata(folder.name)
+    )
   );
   const videoGenres = await Promise.all(
-    videos.map((video) => {
-      const { key, isSeries } = catalog.metadataKeyFor(video);
-      return metadata.getMetadata(key, isSeries);
-    })
+    videos.map((video) => metadata.getMetadata(catalog.metadataKeyFor(video)))
   );
 
   res.json({
