@@ -1,7 +1,9 @@
 const express = require('express');
+const https = require('https');
 const os = require('os');
 const path = require('path');
-const { PORT, getVideosPath } = require('./config');
+const { PORT, HTTPS_PORT, getVideosPath } = require('./config');
+const { getOrCreateCert } = require('./https-cert');
 const catalog = require('./catalog');
 const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
@@ -85,7 +87,7 @@ function scanIfConfigured() {
   }
 }
 
-function start() {
+async function start() {
   scanIfConfigured();
 
   app.listen(PORT, '0.0.0.0', () => {
@@ -95,6 +97,20 @@ function start() {
       console.log(`  Red:      http://${ip}:${PORT}`);
     }
   });
+
+  try {
+    const cert = await getOrCreateCert();
+    https.createServer(cert, app).listen(HTTPS_PORT, '0.0.0.0', () => {
+      console.log(`También disponible por HTTPS en el puerto ${HTTPS_PORT} (certificado autofirmado):`);
+      console.log(`  Local:    https://localhost:${HTTPS_PORT}`);
+      for (const ip of localIps()) {
+        console.log(`  Red:      https://${ip}:${HTTPS_PORT}`);
+      }
+      console.log('  El navegador avisará de que el certificado no es de confianza (es autofirmado, sin dominio real): hay que aceptarlo manualmente la primera vez en cada dispositivo.');
+    });
+  } catch (err) {
+    console.warn(`No se pudo iniciar HTTPS (se sigue sirviendo por HTTP): ${err.message}`);
+  }
 }
 
 start();

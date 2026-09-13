@@ -3,6 +3,7 @@ const path = require('path');
 require('dotenv').config();
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
+const HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 3443;
 
 const DATA_PATH = path.join(__dirname, '..', 'data');
 const THUMBNAILS_PATH = path.join(DATA_PATH, 'thumbnails');
@@ -44,6 +45,7 @@ function setVideosPath(newPath) {
 
 module.exports = {
   PORT,
+  HTTPS_PORT,
   DATA_PATH,
   THUMBNAILS_PATH,
   VIDEO_EXTENSIONS,
