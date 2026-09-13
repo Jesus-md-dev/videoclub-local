@@ -4,6 +4,7 @@ const path = require('path');
 const { PORT, getVideosPath } = require('./config');
 const catalog = require('./catalog');
 const thumbnails = require('./thumbnails');
+const metadata = require('./metadata');
 const videosRouter = require('./routes/videos');
 const streamRouter = require('./routes/stream');
 const thumbnailRouter = require('./routes/thumbnail');
@@ -55,6 +56,9 @@ function scanIfConfigured() {
     const videos = catalog.scan();
     console.log(`Catálogo: ${videos.length} vídeo(s) encontrados en ${videosPath}`);
     thumbnails.generateMissingThumbnails(videos);
+    // Precalienta la caché de géneros en segundo plano (puede tardar si hay
+    // muchas series/películas); el catálogo funciona igual mientras tanto.
+    metadata.warmAll(catalog.getAllGroupKeys());
   } catch (err) {
     console.error(`Error al escanear la carpeta de vídeos: ${err.message}`);
   }

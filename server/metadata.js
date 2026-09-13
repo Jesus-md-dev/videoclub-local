@@ -241,6 +241,23 @@ async function getMetadata(key) {
   return promise;
 }
 
+// Versión no bloqueante: devuelve lo que ya haya en caché al instante (o
+// vacío si aún no se ha consultado) y dispara la búsqueda en segundo plano
+// para la próxima vez, sin hacer esperar al que la pide. Pensado para no
+// bloquear el listado del catálogo mientras se consultan fuentes externas.
+function getCached(key) {
+  if (cache[key]) return cache[key];
+  getMetadata(key);
+  return { genres: [], year: null, type: null };
+}
+
+async function warmAll(keys) {
+  for (const key of keys) {
+    // eslint-disable-next-line no-await-in-loop
+    await getMetadata(key);
+  }
+}
+
 function allGenres() {
   const set = new Set();
   for (const entry of Object.values(cache)) {
@@ -249,4 +266,4 @@ function allGenres() {
   return [...set].sort((a, b) => a.localeCompare(b, 'es'));
 }
 
-module.exports = { getMetadata, allGenres };
+module.exports = { getMetadata, getCached, warmAll, allGenres };

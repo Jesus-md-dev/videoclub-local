@@ -20,27 +20,20 @@ router.get('/videos', (req, res) => {
   res.json(videos);
 });
 
-router.get('/videos/browse', async (req, res) => {
+router.get('/videos/browse', (req, res) => {
   const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
   const { parent, folders, videos } = catalog.listDir(dir);
 
-  // Metadatos (géneros) por carpeta: una consulta por serie/película, no por
-  // episodio. Las carpetas de categoría genérica (Anime, Peliculas...) no se
-  // consultan, ya que no son el título de ninguna obra concreta.
-  const folderGenres = await Promise.all(
-    folders.map((folder) =>
-      catalog.isGenericFolderName(folder.name) ? Promise.resolve({ genres: [] }) : metadata.getMetadata(folder.name)
-    )
-  );
-  const videoGenres = await Promise.all(
-    videos.map((video) => metadata.getMetadata(catalog.metadataKeyFor(video)))
-  );
-
+  // Géneros ya cacheados (si los hay); nunca bloquea esperando a fuentes
+  // externas, así el catálogo carga al instante aunque haya miles de vídeos.
   res.json({
     dir,
     parent,
-    folders: folders.map((folder, i) => ({ ...folder, genres: folderGenres[i].genres })),
-    videos: videos.map((video, i) => ({ ...toPublicVideo(video), genres: videoGenres[i].genres })),
+    folders: folders.map((folder) => ({ ...folder, genres: metadata.getCached(folder.name).genres })),
+    videos: videos.map((video) => ({
+      ...toPublicVideo(video),
+      genres: metadata.getCached(catalog.metadataKeyFor(video)).genres,
+    })),
   });
 });
 
@@ -51,8 +44,9 @@ router.get('/genres', (req, res) => {
 router.post('/scan', async (req, res) => {
   try {
     const videos = catalog.scan();
-    // Generar carátulas en segundo plano, sin bloquear la respuesta.
+    // Generar carátulas y precalentar géneros en segundo plano, sin bloquear la respuesta.
     thumbnails.generateMissingThumbnails(videos);
+    metadata.warmAll(catalog.getAllGroupKeys());
     res.json({ count: videos.length });
   } catch (err) {
     res.status(500).json({ error: err.message });

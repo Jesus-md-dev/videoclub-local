@@ -5,6 +5,9 @@ const { getVideosPath, VIDEO_EXTENSIONS } = require('./config');
 
 let cache = [];
 let byId = new Map();
+let showsList = []; // agrupaciones con más de un vídeo (series/anime)
+let moviesList = []; // vídeos sueltos (películas)
+let showVideos = new Map(); // clave de serie -> vídeos ordenados
 
 function makeId(relativePath) {
   return crypto.createHash('sha1').update(relativePath).digest('hex').slice(0, 16);
@@ -16,6 +19,40 @@ function cleanTitle(filename) {
     .replace(/[._]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+// Nombres de carpeta que son categorías genéricas, no el título de una obra
+// concreta (p.ej. "Anime", "Peliculas"). Se ignoran al buscar la clave de
+// agrupación de un vídeo, para no acabar agrupando por "Anime" o "Peliculas"
+// en vez del título real.
+const GENERIC_FOLDER_NAMES = new Set([
+  'anime', 'peliculas', 'películas', 'pelis', 'series', 'movies', 'movie',
+  'tv', 'shows', 'videos', 'video', 'films', 'film', 'dorama', 'doramas',
+  // Variantes de idioma/audio, habituales como subcarpeta dentro de una categoría.
+  'castellano', 'español', 'espanol', 'latino', 'subtitulado', 'subtitulados',
+  'vose', 'dual', 'japones', 'japonés', 'ingles', 'inglés',
+]);
+
+function isGenericFolderName(name) {
+  return GENERIC_FOLDER_NAMES.has(name.trim().toLowerCase());
+}
+
+// Clave de agrupación para un vídeo: el nombre de la carpeta contenedora más
+// específica (la más profunda que no sea una categoría genérica), asumiendo
+// que agrupa otros vídeos de la misma obra (ej. episodios de una serie). Si
+// no hay ninguna carpeta así en la ruta, se usa el propio título del
+// archivo. No se asume de antemano si es serie o película por estructura de
+// carpetas: eso lo decide cuántos vídeos comparten la clave y la propia
+// búsqueda de metadatos.
+function groupKeyFor(video) {
+  const folderSegments = video.relativePath.split(path.sep).slice(0, -1);
+  for (let i = folderSegments.length - 1; i >= 0; i -= 1) {
+    const name = cleanTitle(folderSegments[i]);
+    if (!isGenericFolderName(name)) {
+      return name;
+    }
+  }
+  return video.title;
 }
 
 function walk(dir, baseDir, results) {
@@ -39,6 +76,37 @@ function walk(dir, baseDir, results) {
   }
 }
 
+// Agrupa el catálogo por `groupKeyFor`: las claves con más de un vídeo se
+// tratan como series/anime (mostradas como carpeta), y las de un único
+// vídeo como películas sueltas. Esto ignora la carpeta física real en la
+// que esté cada archivo: la agrupación es por lo detectado, no por disco.
+function buildLibrary() {
+  const groups = new Map();
+  for (const video of cache) {
+    const key = groupKeyFor(video);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(video);
+  }
+
+  showsList = [];
+  moviesList = [];
+  showVideos = new Map();
+
+  for (const [key, videos] of groups) {
+    videos.sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'es', { numeric: true }));
+
+    if (videos.length > 1) {
+      showsList.push({ name: key, path: key, thumbnailId: videos[0].id });
+      showVideos.set(key, videos);
+    } else {
+      moviesList.push(videos[0]);
+    }
+  }
+
+  showsList.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  moviesList.sort((a, b) => a.title.localeCompare(b.title, 'es'));
+}
+
 function scan() {
   const videosPath = getVideosPath();
   if (!videosPath) {
@@ -54,6 +122,7 @@ function scan() {
 
   cache = results;
   byId = new Map(results.map((video) => [video.id, video]));
+  buildLibrary();
   return cache;
 }
 
@@ -65,103 +134,27 @@ function getVideoById(id) {
   return byId.get(id);
 }
 
-function toWebPath(osPath) {
-  return osPath.split(path.sep).join('/');
-}
-
-function toOsPath(webPath) {
-  return webPath.split('/').join(path.sep);
-}
-
-// Primer vídeo (recursivo, orden natural por ruta) dentro de una carpeta,
-// usado como carátula representativa de esa carpeta.
-function firstVideoIn(osFolderPath) {
-  const prefix = osFolderPath + path.sep;
-  let first = null;
-  for (const video of cache) {
-    if (!video.relativePath.startsWith(prefix)) continue;
-    if (!first || video.relativePath.localeCompare(first.relativePath, 'es', { numeric: true }) < 0) {
-      first = video;
-    }
+// Lista el contenido del catálogo: sin clave, la raíz (series/anime como
+// "carpetas" + películas sueltas); con clave, los vídeos de esa serie.
+function listDir(key = '') {
+  if (!key) {
+    return { dir: '', parent: null, folders: showsList, videos: moviesList };
   }
-  return first;
+  return { dir: key, parent: '', folders: [], videos: showVideos.get(key) || [] };
 }
 
-// Lista el contenido directo (subcarpetas + vídeos) de una carpeta del
-// catálogo, sin aplanar el árbol completo. `webDir` usa '/' como separador
-// independientemente del sistema operativo.
-function listDir(webDir = '') {
-  const osDir = webDir ? toOsPath(webDir) : '';
-  const prefix = osDir ? osDir + path.sep : '';
-  const folderMap = new Map();
-  const videos = [];
-
-  for (const video of cache) {
-    if (prefix && !video.relativePath.startsWith(prefix)) continue;
-
-    const rest = prefix ? video.relativePath.slice(prefix.length) : video.relativePath;
-    const parts = rest.split(path.sep);
-
-    if (parts.length === 1) {
-      videos.push(video);
-    } else {
-      const name = parts[0];
-      if (!folderMap.has(name)) {
-        folderMap.set(name, prefix + name);
-      }
-    }
-  }
-
-  const folders = [...folderMap.entries()]
-    .map(([name, osPath]) => ({
-      name,
-      path: toWebPath(osPath),
-      thumbnailId: firstVideoIn(osPath)?.id ?? null,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'es'));
-
-  videos.sort((a, b) => a.title.localeCompare(b.title, 'es'));
-
-  let parent = null;
-  if (osDir) {
-    const dirname = path.dirname(osDir);
-    parent = dirname === '.' ? '' : toWebPath(dirname);
-  }
-
-  return { dir: webDir, parent, folders, videos };
+// Todas las claves de agrupación del catálogo (series + películas), para
+// precalentar la caché de metadatos en segundo plano tras escanear.
+function getAllGroupKeys() {
+  return [...showsList.map((show) => show.name), ...moviesList.map((movie) => movie.title)];
 }
 
-// Nombres de carpeta que son categorías genéricas, no el título de una obra
-// concreta (p.ej. "Anime", "Peliculas"). Se ignoran al buscar la clave de
-// metadatos de un vídeo, para no acabar buscando "Anime" o "Peliculas" en
-// vez del título real.
-const GENERIC_FOLDER_NAMES = new Set([
-  'anime', 'peliculas', 'películas', 'pelis', 'series', 'movies', 'movie',
-  'tv', 'shows', 'videos', 'video', 'films', 'film', 'dorama', 'doramas',
-  // Variantes de idioma/audio, habituales como subcarpeta dentro de una categoría.
-  'castellano', 'español', 'espanol', 'latino', 'subtitulado', 'subtitulados',
-  'vose', 'dual', 'japones', 'japonés', 'ingles', 'inglés',
-]);
-
-function isGenericFolderName(name) {
-  return GENERIC_FOLDER_NAMES.has(name.trim().toLowerCase());
-}
-
-// Clave de metadatos para un vídeo: el nombre de la carpeta contenedora más
-// específica (la más profunda que no sea una categoría genérica), asumiendo
-// que agrupa otros vídeos de la misma obra (ej. episodios de una serie). Si
-// no hay ninguna carpeta así en la ruta, se usa el propio título del
-// archivo (vídeo suelto/película). No se asume de antemano si es serie o
-// película por estructura: eso lo decide la propia búsqueda de metadatos.
-function metadataKeyFor(video) {
-  const folderSegments = video.relativePath.split(path.sep).slice(0, -1);
-  for (let i = folderSegments.length - 1; i >= 0; i -= 1) {
-    const name = cleanTitle(folderSegments[i]);
-    if (!isGenericFolderName(name)) {
-      return name;
-    }
-  }
-  return video.title;
-}
-
-module.exports = { scan, getCatalog, getVideoById, listDir, metadataKeyFor, isGenericFolderName };
+module.exports = {
+  scan,
+  getCatalog,
+  getVideoById,
+  listDir,
+  metadataKeyFor: groupKeyFor,
+  isGenericFolderName,
+  getAllGroupKeys,
+};
