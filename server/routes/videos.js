@@ -2,7 +2,6 @@ const express = require('express');
 const catalog = require('../catalog');
 const thumbnails = require('../thumbnails');
 const metadata = require('../metadata');
-const transcode = require('../transcode');
 const hls = require('../hls');
 const profiles = require('../profiles');
 
@@ -17,6 +16,16 @@ function resolveType(meta) {
   return meta.type;
 }
 
+// 'active': generándose el HLS ahora mismo (con su % si se conoce).
+// 'queued': ya se sabe que hace falta, pero aún analizando/esperando su
+// turno. null: ya está listo, o aún no se ha comprobado.
+function hlsProcessingState(video) {
+  const status = hls.getStatus(video);
+  if (status === 'processing') return 'active';
+  if (status === 'checking') return 'queued';
+  return null;
+}
+
 function toPublicVideo(video) {
   return {
     id: video.id,
@@ -25,11 +34,8 @@ function toPublicVideo(video) {
     modifiedAt: video.modifiedAt,
     hasThumbnail: thumbnails.hasThumbnail(video.id),
     seriesKey: catalog.getShowKeyFor(video),
-    // 'active': convirtiéndose ahora mismo. 'queued': ya se sabe que hace
-    // falta convertirlo, pero espera su turno (solo hay una conversión a la
-    // vez). null: no hace falta, o aún no se ha comprobado.
-    processingState: transcode.peekProcessingState(video),
-    processingPercent: transcode.peekProgressPercent(video),
+    processingState: hlsProcessingState(video),
+    processingPercent: hls.getProgress(video)?.percent ?? null,
   };
 }
 
@@ -39,8 +45,8 @@ function toPublicVideo(video) {
 function folderProcessingState(videosInFolder) {
   let queued = false;
   for (const v of videosInFolder) {
-    const state = transcode.peekProcessingState(v);
-    if (state === 'active') return { processingState: 'active', processingPercent: transcode.peekProgressPercent(v) };
+    const state = hlsProcessingState(v);
+    if (state === 'active') return { processingState: 'active', processingPercent: hls.getProgress(v)?.percent ?? null };
     if (state === 'queued') queued = true;
   }
   return { processingState: queued ? 'queued' : null, processingPercent: null };
