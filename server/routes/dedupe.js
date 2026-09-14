@@ -1,6 +1,7 @@
 const express = require('express');
 const catalog = require('../catalog');
 const dedupe = require('../dedupe');
+const transcode = require('../transcode');
 
 const router = express.Router();
 
@@ -18,7 +19,8 @@ router.post('/videos/:id/replace-with-transcoded', async (req, res) => {
   }
   const keepBackup = req.body?.keepBackup !== false;
   try {
-    const result = await dedupe.replaceWithTranscoded(video, { keepBackup });
+    const transcodedFile = await transcode.playableFile(video);
+    const result = await dedupe.replaceWithTranscoded(video, transcodedFile, { keepBackup });
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });

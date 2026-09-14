@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const { DATA_PATH, THUMBNAILS_PATH, getVideosPath } = require('./config');
 const catalog = require('./catalog');
-const transcode = require('./transcode');
 
 const PROGRESS_DIR = path.join(DATA_PATH, 'progress');
 const TRICKPLAY_DIR = path.join(DATA_PATH, 'trickplay');
@@ -36,16 +35,17 @@ function migrateFile(oldPath, newPath) {
   }
 }
 
-// Sustituye el archivo original de un vídeo por su versión ya convertida,
-// para no tener las dos copias ocupando espacio (la convertida suele pesar
-// mucho menos, sobre todo en 4K/HDR). Requiere que ya exista una conversión
-// lista (transcode.ensureChecked debe haber terminado con 'ready' antes).
+// Sustituye el archivo original de un vídeo por su versión ya convertida
+// (recibida en `transcodedFile`, la ruta del archivo ya listo), para no
+// tener las dos copias ocupando espacio (la convertida suele pesar mucho
+// menos, sobre todo en 4K/HDR). No depende de transcode.js a propósito
+// (evita una dependencia circular: transcode.js llama a esto justo después
+// de terminar una conversión).
 //
 // Devuelve { oldId, newId, relativePath }. Si el id cambia (cambió la
 // extensión), migra progreso/carátula/vista previa al id nuevo.
-async function replaceWithTranscoded(video, { keepBackup = true } = {}) {
-  const transcodedFile = await transcode.playableFile(video);
-  if (!transcodedFile) {
+async function replaceWithTranscoded(video, transcodedFile, { keepBackup = true } = {}) {
+  if (!transcodedFile || !fs.existsSync(transcodedFile)) {
     throw new Error('Este vídeo todavía no tiene una conversión lista para sustituirlo.');
   }
 

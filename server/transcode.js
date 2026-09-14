@@ -3,6 +3,7 @@ const path = require('path');
 const { ffmpeg, getMediaInfo, inputPathFor } = require('./mediaInfo');
 const { TRANSCODED_PATH } = require('./config');
 const { runLimited } = require('./ffmpeg-limiter');
+const dedupe = require('./dedupe');
 
 const COMPATIBLE_VIDEO_CODECS = ['h264'];
 const COMPATIBLE_AUDIO_CODECS = ['aac', 'mp3'];
@@ -431,7 +432,18 @@ async function ensureChecked(video, audioIndex = null, priority = 'low') {
     priority,
     { id: video.id, title: video.title, size: video.size }
   )
-    .then(() => status.set(key, 'ready'))
+    .then(() => {
+      status.set(key, 'ready');
+      // Solo para la pista por defecto: sustituye ya mismo el original por
+      // el convertido, para no acabar con las dos copias ocupando espacio.
+      // No es fatal si falla (p.ej. ya hay un .bak de un intento previo):
+      // el vídeo se queda sirviéndose desde la caché como hasta ahora.
+      if (useDefault) {
+        dedupe.replaceWithTranscoded(video, outputFile(key)).catch((err) => {
+          console.warn(`No se pudo sustituir el original de "${video.title}" por la versión convertida: ${err.message}`);
+        });
+      }
+    })
     .catch((err) => {
       if (err.interrupted) {
         // No se marca como fallida: se ha interrumpido a propósito para dar
