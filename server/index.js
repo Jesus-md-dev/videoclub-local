@@ -118,7 +118,7 @@ function scanIfConfigured() {
 // Copia de seguridad periódica (por si algo se escribe sin pasar por una
 // ruta que ya la programa) y al cerrar el servidor, para no perder los
 // últimos cambios (progreso de vídeo, etc.) si se apaga el PC.
-const BACKUP_INTERVAL_MS = 10 * 60 * 1000;
+const BACKUP_INTERVAL_MS = 60 * 60 * 1000;
 function scheduleShutdownBackup() {
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
