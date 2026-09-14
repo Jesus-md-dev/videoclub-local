@@ -3,3 +3,5 @@ client/node_modules/
 client/dist/
 data/
 .env
+server.log
+server-error.log
