@@ -61,4 +61,21 @@ router.post('/metadata/override', async (req, res) => {
   }
 });
 
+// Hasta 3 fichas candidatas de TMDB (nombre, año, carátula) para que la
+// persona elija cuál es la correcta a mano, en vez de fiarse a ciegas de
+// la búsqueda automática (ver ConfigPage/QuickInfoModal "Cambiar carátula").
+router.get('/metadata/candidates', async (req, res) => {
+  const key = typeof req.query.key === 'string' ? req.query.key : '';
+  if (!key) {
+    res.status(400).json({ error: 'Falta "key"' });
+    return;
+  }
+  try {
+    const candidates = await metadata.getPosterCandidates(key);
+    res.json({ candidates });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

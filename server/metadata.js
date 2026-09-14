@@ -741,6 +741,87 @@ async function fetchTmdbFixedEntry({ tmdbType, tmdbId, season }) {
   return entry;
 }
 
+// Para elegir a mano entre varias posibles fichas de TMDB cuando la
+// búsqueda automática no acierta con ninguna heurística: devuelve hasta 3
+// candidatos (título, año, carátula, origen) de TV y película combinados,
+// para que la persona elija cuál aplicar (con overrideFromTmdb) en vez de
+// que el servidor siga adivinando solo.
+async function getPosterCandidates(key) {
+  if (!TMDB_API_KEY) throw new Error('TMDB_API_KEY no configurada en .env');
+  const query = cleanQuery(key);
+  if (!query) return [];
+  const year = extractYear(key);
+
+  const [tvRes, movieRes] = await Promise.all([
+    throttledFetch(
+      `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}${year ? `&first_air_date_year=${year}` : ''}`,
+      undefined,
+      350,
+      'high'
+    ),
+    throttledFetch(
+      `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}${year ? `&primary_release_year=${year}` : ''}`,
+      undefined,
+      350,
+      'high'
+    ),
+  ]);
+
+  const tvData = tvRes.ok ? await tvRes.json() : { results: [] };
+  const movieData = movieRes.ok ? await movieRes.json() : { results: [] };
+
+  const isAnimeCandidate = (r) =>
+    (r.genre_ids || []).includes(TMDB_ANIME_GENRE_ID) && (r.origin_country || []).includes('JP');
+
+  const tvCandidates = (tvData.results || [])
+    .filter((r) => r.poster_path)
+    .map((r) => ({
+      tmdbType: 'tv',
+      tmdbId: r.id,
+      name: r.name,
+      year: r.first_air_date ? r.first_air_date.slice(0, 4) : null,
+      poster: `https://image.tmdb.org/t/p/w500${r.poster_path}`,
+      isAnime: isAnimeCandidate(r),
+      popularity: r.popularity || 0,
+    }));
+  const movieCandidates = (movieData.results || [])
+    .filter((r) => r.poster_path)
+    .map((r) => ({
+      tmdbType: 'movie',
+      tmdbId: r.id,
+      name: r.title,
+      year: r.release_date ? r.release_date.slice(0, 4) : null,
+      poster: `https://image.tmdb.org/t/p/w500${r.poster_path}`,
+      isAnime: false,
+      popularity: r.popularity || 0,
+    }));
+
+  const target = query.trim().toLowerCase();
+  const all = [...tvCandidates, ...movieCandidates];
+  // Mismo criterio que la búsqueda automática (coincidencia exacta de
+  // título primero, y entre esas el anime japonés antes que un remake
+  // occidental homónimo) pero mostrando varias opciones en vez de
+  // quedarse con una sola a ciegas.
+  all.sort((a, b) => {
+    const aExact = a.name.trim().toLowerCase() === target;
+    const bExact = b.name.trim().toLowerCase() === target;
+    if (aExact !== bExact) return aExact ? -1 : 1;
+    if (a.isAnime !== b.isAnime) return a.isAnime ? -1 : 1;
+    return b.popularity - a.popularity;
+  });
+
+  const seen = new Set();
+  const result = [];
+  for (const c of all) {
+    const dedupeKey = `${c.tmdbType}:${c.tmdbId}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    result.push(c);
+    if (result.length >= 3) break;
+  }
+  return result;
+}
+
 // Para cuando la búsqueda automática no encuentra la ficha correcta (título
 // ambiguo, temporada con carátula distinta a la del show...): se fija a
 // mano a partir de un id de TMDB conocido, sin pasar por la búsqueda. Se
@@ -862,4 +943,5 @@ module.exports = {
   forceTmdbRefreshAll,
   getForceTmdbProgress,
   forgetMetadata,
+  getPosterCandidates,
 };

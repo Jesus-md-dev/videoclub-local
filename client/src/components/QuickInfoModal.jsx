@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import PosterPicker from './PosterPicker';
 
 // Ficha rápida ("más info" estilo Netflix): un vistazo sin salir del
 // catálogo, en vez de tener que navegar y volver atrás solo para ver el
 // género o cuántos episodios lleva vistos una serie.
-export default function QuickInfoModal({ target, onClose, onOpenFolder }) {
+export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetadataChanged }) {
+  const [pickingPoster, setPickingPoster] = useState(false);
   if (!target) return null;
   const { type, data, progress } = target;
   const isFolder = type === 'folder';
@@ -12,6 +15,7 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder }) {
     ? data.poster || (data.thumbnailId ? `/api/thumbnail/${data.thumbnailId}` : '/placeholder.svg')
     : data.poster || `/api/thumbnail/${data.id}`;
   const genres = data.genres || [];
+  const metadataKey = data.metadataKey || (isFolder ? data.name : null);
 
   return (
     <div className="quickinfo-backdrop" onClick={onClose}>
@@ -63,9 +67,21 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder }) {
                 ▶ Reproducir
               </Link>
             )}
+            {metadataKey && (
+              <button className="secondary" onClick={() => setPickingPoster(true)}>
+                Cambiar carátula
+              </button>
+            )}
           </div>
         </div>
       </div>
+      {pickingPoster && (
+        <PosterPicker
+          metadataKey={metadataKey}
+          onClose={() => setPickingPoster(false)}
+          onApplied={() => onMetadataChanged?.()}
+        />
+      )}
     </div>
   );
 }

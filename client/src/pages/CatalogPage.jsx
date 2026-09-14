@@ -267,6 +267,9 @@ export default function CatalogPage() {
   const [genres, setGenres] = useState([]);
   const [error, setError] = useState(null);
   const [quickInfoTarget, setQuickInfoTarget] = useState(null);
+  // Se incrementa tras cambiar una carátula a mano (PosterPicker) para
+  // forzar una recarga inmediata, sin esperar al sondeo periódico.
+  const [catalogVersion, setCatalogVersion] = useState(0);
 
   const searching = term.trim().length > 0;
 
@@ -324,7 +327,7 @@ export default function CatalogPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [dir, searching, profileId]);
+  }, [dir, searching, profileId, catalogVersion]);
 
   useEffect(() => {
     // Se usa tanto para la búsqueda global como para "Continuar viendo".
@@ -353,7 +356,7 @@ export default function CatalogPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searching]);
+  }, [searching, catalogVersion]);
 
   const [progressMap, setProgressMap] = useState({});
 
@@ -529,7 +532,12 @@ export default function CatalogPage() {
           </p>
         )}
       </main>
-      <QuickInfoModal target={quickInfoTarget} onClose={() => setQuickInfoTarget(null)} onOpenFolder={goToDir} />
+      <QuickInfoModal
+        target={quickInfoTarget}
+        onClose={() => setQuickInfoTarget(null)}
+        onOpenFolder={goToDir}
+        onMetadataChanged={() => setCatalogVersion((v) => v + 1)}
+      />
     </>
   );
 }

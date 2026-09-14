@@ -32,6 +32,11 @@ function toPublicVideo(video) {
     title: video.title,
     size: video.size,
     modifiedAt: video.modifiedAt,
+    // Clave de metadatos (nombre de carpeta de serie/anime, o título si es
+    // una película suelta): para poder pedir/corregir su carátula desde el
+    // cliente (ver /api/metadata/candidates y QuickInfoModal "Cambiar
+    // carátula") sin tener que adivinarla.
+    metadataKey: catalog.metadataKeyFor(video),
     hasThumbnail: thumbnails.hasThumbnail(video.id),
     seriesKey: catalog.getShowKeyFor(video),
     processingState: hlsProcessingState(video),
@@ -60,7 +65,16 @@ function folderProcessingState(videosInFolder) {
 }
 
 router.get('/videos', (req, res) => {
-  const videos = catalog.getCatalog().map(toPublicVideo);
+  const videos = catalog.getCatalog().map((video) => {
+    const meta = metadata.getCached(catalog.metadataKeyFor(video));
+    return {
+      ...toPublicVideo(video),
+      genres: meta.genres,
+      cleanName: meta.cleanName,
+      poster: meta.poster,
+      type: resolveType(meta),
+    };
+  });
   res.json(videos);
 });
 
@@ -91,6 +105,7 @@ router.get('/videos/browse', (req, res) => {
       const { processingState, processingPercent } = folderProcessingState(folderVideos);
       return {
         ...folder,
+        metadataKey: folder.name,
         genres: meta.genres,
         cleanName: meta.cleanName,
         poster: meta.poster,
