@@ -44,4 +44,14 @@ function getAll() {
   return registry;
 }
 
-module.exports = { archive, isArchived, getAll };
+// Para purgar del todo una obra cuya carpeta se ha borrado a mano (ver
+// purge.js): sin esto, catalog.js la seguiría añadiendo de vuelta al
+// catálogo para siempre a partir de este registro, aunque ya no quede ni
+// rastro suyo en disco.
+function forget(id) {
+  if (!registry[id]) return;
+  delete registry[id];
+  save();
+}
+
+module.exports = { archive, isArchived, getAll, forget };

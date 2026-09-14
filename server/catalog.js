@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { getVideosPath, VIDEO_EXTENSIONS } = require('./config');
 const archivedVideos = require('./archivedVideos');
+const catalogOverrides = require('./catalogOverrides');
 
 let cache = [];
 let byId = new Map();
@@ -58,6 +59,12 @@ function groupKeyFor(video) {
   for (let i = folderSegments.length - 1; i >= 0; i -= 1) {
     const name = cleanTitle(folderSegments[i]);
     if (!isGenericFolderName(name)) {
+      // Carpeta marcada como "no es una serie, son varios títulos sueltos"
+      // (ver catalogOverrides.js, p.ej. "Berserk" con sus 3 películas de
+      // "La Edad de Oro"): cada vídeo usa su propio título como clave, así
+      // que buildLibrary() los trata como películas independientes en vez
+      // de agruparlos todos bajo la misma carpeta.
+      if (catalogOverrides.isUngrouped(name)) return video.title;
       return name;
     }
   }

@@ -82,4 +82,19 @@ function recordLost(video) {
   }
 }
 
-module.exports = { recordLost };
+// Para purgar del todo una obra (ver purge.js): quita este id de la lista
+// de "Volver a descargar" y regenera el fichero, para no dejar ahí un
+// episodio que ya se ha decidido no reponer.
+function forget(id) {
+  if (!registry[id]) return;
+  delete registry[id];
+  saveRegistry(registry);
+  try {
+    fs.mkdirSync(manifestDir(), { recursive: true });
+    fs.writeFileSync(manifestPath(), buildManifestText(registry), 'utf-8');
+  } catch (err) {
+    console.warn(`No se pudo actualizar la lista de vídeos perdidos: ${err.message}`);
+  }
+}
+
+module.exports = { recordLost, forget };

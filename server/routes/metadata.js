@@ -1,9 +1,32 @@
 const express = require('express');
 const metadata = require('../metadata');
+const catalog = require('../catalog');
 
 const router = express.Router();
 
 router.use(express.json());
+
+// Fuerza nombre y carátula de TODA la biblioteca desde TMDB (en español),
+// sin tocar lo que no encuentre. Se lanza en segundo plano (puede tardar
+// varios minutos con cientos de series/películas, limitado por el mismo
+// throttle que el resto de peticiones a TMDB) y se consulta con
+// GET /metadata/force-tmdb-status.
+router.post('/metadata/force-tmdb-all', (req, res) => {
+  const progress = metadata.getForceTmdbProgress();
+  if (progress.running) {
+    res.status(409).json({ error: 'Ya hay una actualización en marcha', progress });
+    return;
+  }
+  const keys = catalog.getAllGroupKeys();
+  metadata.forceTmdbRefreshAll(keys).catch((err) => {
+    console.warn(`Fallo forzando actualización TMDB de toda la biblioteca: ${err.message}`);
+  });
+  res.json({ started: true, total: keys.length });
+});
+
+router.get('/metadata/force-tmdb-status', (req, res) => {
+  res.json(metadata.getForceTmdbProgress());
+});
 
 // Olvida la caché de una clave (nombre de carpeta de serie/anime o de
 // vídeo suelto) y la vuelve a buscar ya mismo, sin reiniciar el servidor.

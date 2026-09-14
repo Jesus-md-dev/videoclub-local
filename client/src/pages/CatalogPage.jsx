@@ -287,7 +287,11 @@ export default function CatalogPage() {
 
     // Mientras haya algo convirtiéndose o en cola, se vuelve a pedir cada
     // pocos segundos para que el porcentaje avance solo en la lista; en
-    // cuanto no quede nada procesándose, deja de sondear.
+    // cuanto no quede nada procesándose, deja de sondear. También se sigue
+    // sondeando mientras haya una actualización masiva de metadatos en
+    // marcha (ver ConfigPage "Forzar actualización TMDB"), para que los
+    // títulos y carátulas de las tarjetas se vayan poniendo al día solos,
+    // sin tener que recargar la página a mano.
     const load = () => {
       const params = new URLSearchParams({ dir });
       if (profileId) params.set('profileId', profileId);
@@ -299,7 +303,16 @@ export default function CatalogPage() {
           setVideos(data.videos);
           const stillProcessing =
             data.folders.some((f) => f.processingState) || data.videos.some((v) => v.processingState);
-          if (stillProcessing) timer = setTimeout(load, 5000);
+          if (stillProcessing) {
+            timer = setTimeout(load, 5000);
+            return;
+          }
+          fetch('/api/metadata/force-tmdb-status')
+            .then((res) => res.json())
+            .then((status) => {
+              if (!cancelled && status.running) timer = setTimeout(load, 4000);
+            })
+            .catch(() => {});
         })
         .catch(() => {
           if (!cancelled) setError('No se pudo cargar el catálogo.');
@@ -315,13 +328,32 @@ export default function CatalogPage() {
 
   useEffect(() => {
     // Se usa tanto para la búsqueda global como para "Continuar viendo".
-    fetch('/api/videos')
-      .then((res) => res.json())
-      .then(setAllVideos)
-      .catch(() => {
-        if (searching) setError('No se pudo cargar el catálogo.');
-      });
-  }, []);
+    // Igual que el catálogo por carpetas: se sigue sondeando mientras haya
+    // una actualización masiva de metadatos en marcha, para que los
+    // títulos también se pongan al día solos aquí.
+    let cancelled = false;
+    let timer;
+    const load = () => {
+      fetch('/api/videos')
+        .then((res) => res.json())
+        .then((data) => {
+          if (cancelled) return;
+          setAllVideos(data);
+          return fetch('/api/metadata/force-tmdb-status').then((res) => res.json());
+        })
+        .then((status) => {
+          if (!cancelled && status?.running) timer = setTimeout(load, 4000);
+        })
+        .catch(() => {
+          if (!cancelled && searching) setError('No se pudo cargar el catálogo.');
+        });
+    };
+    load();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searching]);
 
   const [progressMap, setProgressMap] = useState({});
 

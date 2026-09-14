@@ -3,6 +3,13 @@ const path = require('path');
 const { DATA_PATH } = require('./config');
 
 const METADATA_FILE = path.join(DATA_PATH, 'metadata.json');
+// Claves corregidas a mano con overrideFromTmdb (id de TMDB conocido, a
+// veces con temporada concreta porque su carátula difiere de la del show
+// en general - el caso de ".hack//Sign"): se recuerdan aparte y para
+// siempre, para que una búsqueda automática posterior (refreshMetadata,
+// forceTmdbRefreshAll...) no las vuelva a pisar con un resultado
+// "parecido" pero equivocado.
+const OVERRIDES_FILE = path.join(DATA_PATH, 'metadata-overrides.json');
 
 let cache = loadCache();
 const pending = new Map();
@@ -27,6 +34,21 @@ function saveCache() {
   fs.mkdirSync(DATA_PATH, { recursive: true });
   fs.writeFileSync(METADATA_FILE, JSON.stringify(cache, null, 2));
 }
+
+function loadOverrides() {
+  try {
+    return JSON.parse(fs.readFileSync(OVERRIDES_FILE, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveOverrides() {
+  fs.mkdirSync(DATA_PATH, { recursive: true });
+  fs.writeFileSync(OVERRIDES_FILE, JSON.stringify(overrides, null, 2));
+}
+
+let overrides = loadOverrides();
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -274,6 +296,18 @@ async function tmdbGenreMap(mediaType, priority) {
   return map;
 }
 
+// TMDB ordena por popularidad, no por coincidencia de título: para una obra
+// vieja o poco popular con secuelas/spin-offs más conocidos (p.ej. "Dragon
+// Ball" -> "Dragon Ball Z" sale primero, mucho más popular), el resultado
+// correcto puede no ser el primero aunque su título coincida exactamente
+// con lo buscado. Se prefiere esa coincidencia exacta (título traducido u
+// original) entre los primeros resultados antes que fiarse solo del orden
+// de popularidad de TMDB.
+function exactTitleMatch(results, query, titleKeys) {
+  const target = query.trim().toLowerCase();
+  return results.slice(0, 8).find((r) => titleKeys.some((k) => (r[k] || '').trim().toLowerCase() === target));
+}
+
 async function fetchTmdbMovie(query, priority, year) {
   if (!TMDB_API_KEY) return null;
   // Sin el año, un título corto/genérico ("Nadie") puede confundirse con
@@ -288,7 +322,8 @@ async function fetchTmdbMovie(query, priority, year) {
   );
   if (!res.ok) throw new Error(`TMDB respondió ${res.status}`);
   const data = await res.json();
-  let match = data.results?.[0];
+  const results = data.results || [];
+  let match = exactTitleMatch(results, query, ['title', 'original_title']) || results[0];
   // El año del nombre de archivo puede no ser exactamente el de estreno
   // (fecha de festival vs. estreno general, por ejemplo): si el filtro por
   // año no encuentra nada, se reintenta sin él en vez de darse por vencido.
@@ -327,7 +362,11 @@ async function fetchTmdbTv(query, priority, year) {
   const animeMatch = results
     .slice(0, 5)
     .find((r) => (r.genre_ids || []).includes(TMDB_ANIME_GENRE_ID) && (r.origin_country || []).includes('JP'));
-  const match = animeMatch || results[0];
+  // Pero una coincidencia EXACTA de título (p.ej. "Dragon Ball" contra
+  // "Dragon Ball Z", ambos anime japonés) gana siempre a esa heurística:
+  // si lo que hay escrito es el título exacto de una obra concreta, es esa
+  // y no su secuela más popular.
+  const match = exactTitleMatch(results, query, ['name', 'original_name']) || animeMatch || results[0];
   if (!match && year) return fetchTmdbTv(query, priority, null);
   if (!match) return null;
   const genreMap = await tmdbGenreMap('tv', priority);
@@ -337,12 +376,35 @@ async function fetchTmdbTv(query, priority, year) {
   // frecuencia, para esta clasificación).
   const isAnime = (match.genre_ids || []).includes(TMDB_ANIME_GENRE_ID) && (match.origin_country || []).includes('JP');
   if (isAnime && !genres.includes('Anime')) genres.push('Anime');
+
+  // La carátula del show en TMDB a veces es la del arco/temporada más
+  // reciente, no la de la obra en general (p.ej. "Bleach": el show entero
+  // en TMDB junta las dos tandas, 2004 y "Guerra sangrienta de los mil
+  // años" 2022, y su carátula por defecto es la de la tanda nueva). Se
+  // prefiere la carátula de la temporada 1 cuando exista, más fiel a "la
+  // obra" que alguien busca por su nombre sin más.
+  let poster = match.poster_path ? `https://image.tmdb.org/t/p/w500${match.poster_path}` : null;
+  try {
+    const seasonRes = await throttledFetch(
+      `https://api.themoviedb.org/3/tv/${match.id}/season/1?api_key=${TMDB_API_KEY}&language=es-ES`,
+      undefined,
+      350,
+      priority
+    );
+    if (seasonRes.ok) {
+      const s = await seasonRes.json();
+      if (s.poster_path) poster = `https://image.tmdb.org/t/p/w500${s.poster_path}`;
+    }
+  } catch {
+    // No es crítico: se queda con la carátula del show si esto falla.
+  }
+
   return {
     genres: normalizeGenres(genres),
     year: match.first_air_date ? match.first_air_date.slice(0, 4) : null,
     type: isAnime ? 'anime' : 'tv',
     cleanName: match.name || null,
-    poster: match.poster_path ? `https://image.tmdb.org/t/p/w500${match.poster_path}` : null,
+    poster,
   };
 }
 
@@ -570,6 +632,19 @@ async function warmAll(keys) {
   }
 }
 
+// Para purgar del todo una obra (ver purge.js): olvida su entrada de
+// caché y cualquier override guardado, sin volver a buscar nada.
+function forgetMetadata(key) {
+  delete cache[key];
+  pending.delete(key);
+  failedAt.delete(key);
+  saveCache();
+  if (overrides[key]) {
+    delete overrides[key];
+    saveOverrides();
+  }
+}
+
 function allGenres() {
   const set = new Set();
   for (const entry of Object.values(cache)) {
@@ -584,15 +659,18 @@ function allGenres() {
 // marcha nunca se enteraba de un cambio hecho solo en el archivo): con esto
 // se puede corregir en caliente, sin reiniciar nada.
 async function refreshMetadata(key) {
+  const reapplied = await applyStoredOverrideIfAny(key);
+  if (reapplied) return reapplied;
   delete cache[key];
   pending.delete(key);
   return getMetadata(key, 'high');
 }
 
-// Para cuando la búsqueda automática no encuentra la ficha correcta (título
-// ambiguo, temporada con carátula distinta a la del show...): se fija a
-// mano a partir de un id de TMDB conocido, sin pasar por la búsqueda.
-async function overrideFromTmdb(key, { tmdbType, tmdbId, season } = {}) {
+// Lógica compartida de overrideFromTmdb (pedir la ficha exacta a TMDB por
+// id, sin pasar por la búsqueda) para poder reaplicarla sola cuando una
+// búsqueda automática posterior encuentra que la clave tiene un override
+// guardado (ver applyStoredOverrideIfAny).
+async function fetchTmdbFixedEntry({ tmdbType, tmdbId, season }) {
   if (!TMDB_API_KEY) throw new Error('TMDB_API_KEY no configurada en .env');
   if (!tmdbType || !tmdbId) throw new Error('Faltan "tmdbType" ("tv" o "movie") y "tmdbId"');
 
@@ -652,10 +730,128 @@ async function overrideFromTmdb(key, { tmdbType, tmdbId, season } = {}) {
     throw new Error('"tmdbType" debe ser "tv" o "movie"');
   }
 
+  return entry;
+}
+
+// Para cuando la búsqueda automática no encuentra la ficha correcta (título
+// ambiguo, temporada con carátula distinta a la del show...): se fija a
+// mano a partir de un id de TMDB conocido, sin pasar por la búsqueda. Se
+// recuerda para siempre en OVERRIDES_FILE, así que una actualización
+// masiva posterior (forceTmdbRefreshAll) o un refreshMetadata normal no lo
+// vuelven a pisar con un resultado de búsqueda "parecido" pero distinto.
+async function overrideFromTmdb(key, { tmdbType, tmdbId, season } = {}) {
+  const entry = await fetchTmdbFixedEntry({ tmdbType, tmdbId, season });
+  overrides[key] = { tmdbType, tmdbId, season: season ?? null };
+  saveOverrides();
   cache[key] = entry;
   pending.delete(key);
   saveCache();
   return entry;
 }
 
-module.exports = { getMetadata, getCached, warmAll, allGenres, refreshMetadata, overrideFromTmdb };
+// Si esta clave tiene un override guardado, lo vuelve a aplicar y devuelve
+// la entrada resultante; si no, devuelve null sin tocar nada. Se llama
+// antes de dejar que una búsqueda automática (refreshMetadata,
+// forceTmdbRefreshOne) toque una clave, para que nunca deshaga una
+// corrección hecha a mano.
+async function applyStoredOverrideIfAny(key) {
+  const saved = overrides[key];
+  if (!saved) return null;
+  try {
+    const entry = await fetchTmdbFixedEntry(saved);
+    cache[key] = entry;
+    pending.delete(key);
+    saveCache();
+    return entry;
+  } catch (err) {
+    console.warn(`No se pudo reaplicar el override guardado de "${key}": ${err.message}`);
+    return null;
+  }
+}
+
+// Fuerza una actualización de nombre y carátula SOLO desde TMDB (en
+// español), ignorando el resto de fuentes (TVmaze/Jikan/Wikidata): para
+// corregir de una vez toda la biblioteca con la fuente de mejor calidad.
+// Si TMDB no encuentra nada para esta clave, no se toca lo que ya hubiera
+// en caché - mejor conservar lo que hay que perderlo.
+async function forceTmdbRefreshOne(key, priority = 'low') {
+  if (!TMDB_API_KEY) throw new Error('TMDB_API_KEY no configurada en .env');
+  const reapplied = await applyStoredOverrideIfAny(key);
+  if (reapplied) return { updated: true };
+  const query = cleanQuery(key);
+  if (!query) return { updated: false };
+  const year = extractYear(key);
+
+  let match = null;
+  try {
+    // Mismo orden película/serie que fetchBest: el año en el nombre es lo
+    // que distingue una película de una carpeta de serie/anime aquí.
+    if (year) {
+      match = await fetchTmdbMovie(query, priority, year);
+      if (!match) match = await fetchTmdbTv(query, priority, year);
+    } else {
+      match = await fetchTmdbTv(query, priority, year);
+      if (!match) match = await fetchTmdbMovie(query, priority, year);
+    }
+  } catch (err) {
+    console.warn(`TMDB falló forzando "${key}": ${err.message}`);
+    return { updated: false, error: err.message };
+  }
+
+  if (!match || (!match.cleanName && !match.poster)) {
+    return { updated: false };
+  }
+
+  const existing = cache[key] || { genres: [], year: null, type: null, cleanName: null, poster: null };
+  cache[key] = {
+    genres: match.genres && match.genres.length ? match.genres : existing.genres,
+    year: match.year || existing.year,
+    type: match.type || existing.type,
+    cleanName: match.cleanName || existing.cleanName,
+    poster: match.poster || existing.poster,
+  };
+  pending.delete(key);
+  saveCache();
+  return { updated: true };
+}
+
+// Progreso de la pasada completa (ver forceTmdbRefreshAll), consultable
+// desde una ruta HTTP para pintar una barra de progreso sin bloquear la
+// petición que la arranca.
+const forceTmdbProgress = { running: false, total: 0, done: 0, updated: 0, startedAt: null };
+
+async function forceTmdbRefreshAll(keys) {
+  if (forceTmdbProgress.running) return forceTmdbProgress;
+  forceTmdbProgress.running = true;
+  forceTmdbProgress.total = keys.length;
+  forceTmdbProgress.done = 0;
+  forceTmdbProgress.updated = 0;
+  forceTmdbProgress.startedAt = Date.now();
+  try {
+    for (const key of keys) {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await forceTmdbRefreshOne(key, 'low');
+      if (result.updated) forceTmdbProgress.updated += 1;
+      forceTmdbProgress.done += 1;
+    }
+  } finally {
+    forceTmdbProgress.running = false;
+  }
+  return forceTmdbProgress;
+}
+
+function getForceTmdbProgress() {
+  return forceTmdbProgress;
+}
+
+module.exports = {
+  getMetadata,
+  getCached,
+  warmAll,
+  allGenres,
+  refreshMetadata,
+  overrideFromTmdb,
+  forceTmdbRefreshAll,
+  getForceTmdbProgress,
+  forgetMetadata,
+};

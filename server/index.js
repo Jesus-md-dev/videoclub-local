@@ -51,6 +51,7 @@ const queueRouter = require('./routes/queue');
 const metadataRouter = require('./routes/metadata');
 const analyticsRouter = require('./routes/analytics');
 const hlsRouter = require('./routes/hls');
+const purgeRouter = require('./routes/purge');
 
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
@@ -80,6 +81,7 @@ app.use('/api', queueRouter);
 app.use('/api', metadataRouter);
 app.use('/api', analyticsRouter);
 app.use('/api', hlsRouter);
+app.use('/api', purgeRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });

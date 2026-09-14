@@ -8,6 +8,7 @@ export default function ConfigPage() {
   const [message, setMessage] = useState(null);
   const [saving, setSaving] = useState(false);
   const [browsing, setBrowsing] = useState(false);
+  const [tmdbProgress, setTmdbProgress] = useState(null);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -16,6 +17,40 @@ export default function ConfigPage() {
         if (data.videosPath) setVideosPath(data.videosPath);
       });
   }, []);
+
+  // Si ya había una pasada en marcha (p.ej. se recargó la página a medias),
+  // se engancha a su progreso en vez de mostrar el botón como si no hubiera
+  // nada corriendo.
+  useEffect(() => {
+    fetch('/api/metadata/force-tmdb-status')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.running) setTmdbProgress(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!tmdbProgress?.running) return undefined;
+    const timer = setInterval(() => {
+      fetch('/api/metadata/force-tmdb-status')
+        .then((res) => res.json())
+        .then(setTmdbProgress)
+        .catch(() => {});
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [tmdbProgress?.running]);
+
+  const handleForceTmdb = async () => {
+    try {
+      const res = await fetch('/api/metadata/force-tmdb-all', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setTmdbProgress({ running: true, total: data.total, done: 0, updated: 0 });
+    } catch (err) {
+      setMessage({ text: err.message, ok: false });
+    }
+  };
 
   const handleSave = async () => {
     const value = videosPath.trim();
@@ -81,6 +116,32 @@ export default function ConfigPage() {
         </button>
         {message && (
           <p className={`config-message ${message.ok ? 'ok' : 'error'}`}>{message.text}</p>
+        )}
+
+        <p className="section-title" style={{ marginTop: 32 }}>
+          Metadatos
+        </p>
+        <p className="hint">
+          Vuelve a buscar el nombre y la carátula de toda la biblioteca, solo en TMDB y en español.
+          Lo que TMDB no encuentre se queda tal cual está ahora, sin borrar nada.
+        </p>
+        <button type="button" onClick={handleForceTmdb} disabled={tmdbProgress?.running}>
+          {tmdbProgress?.running ? 'Actualizando…' : 'Forzar actualización TMDB'}
+        </button>
+        {tmdbProgress && (
+          <>
+            <div className="progress-bar" style={{ height: 8, marginTop: 12 }}>
+              <div
+                style={{
+                  width: `${tmdbProgress.total ? Math.round((tmdbProgress.done / tmdbProgress.total) * 100) : 0}%`,
+                }}
+              />
+            </div>
+            <p className="hint">
+              {tmdbProgress.done} / {tmdbProgress.total} ({tmdbProgress.updated} actualizados)
+              {!tmdbProgress.running && tmdbProgress.total > 0 ? ' — completado' : ''}
+            </p>
+          </>
         )}
       </div>
       {browsing && (
