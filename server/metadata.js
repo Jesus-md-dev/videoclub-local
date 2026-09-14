@@ -354,19 +354,27 @@ async function fetchTmdbTv(query, priority, year) {
   if (!res.ok) throw new Error(`TMDB respondió ${res.status}`);
   const data = await res.json();
   const results = data.results || [];
+  const isAnimeCandidate = (r) =>
+    (r.genre_ids || []).includes(TMDB_ANIME_GENRE_ID) && (r.origin_country || []).includes('JP');
+
   // El primer resultado no siempre es el correcto: p.ej. "Blood +" devolvía
   // "True Blood" primero y el anime real "Blood+" segundo. Entre los
   // primeros resultados, se prefiere uno con origen Japón + género
   // Animación (probablemente el anime real) antes que quedarse sin más con
   // el primero a ciegas.
-  const animeMatch = results
-    .slice(0, 5)
-    .find((r) => (r.genre_ids || []).includes(TMDB_ANIME_GENRE_ID) && (r.origin_country || []).includes('JP'));
-  // Pero una coincidencia EXACTA de título (p.ej. "Dragon Ball" contra
-  // "Dragon Ball Z", ambos anime japonés) gana siempre a esa heurística:
-  // si lo que hay escrito es el título exacto de una obra concreta, es esa
-  // y no su secuela más popular.
-  const match = exactTitleMatch(results, query, ['name', 'original_name']) || animeMatch || results[0];
+  const animeMatch = results.slice(0, 5).find(isAnimeCandidate);
+  // Una coincidencia EXACTA de título (p.ej. "Dragon Ball" contra "Dragon
+  // Ball Z") gana normalmente a esa heurística: si lo que hay escrito es
+  // el título exacto de una obra, es esa y no su secuela más popular. PERO
+  // cuando hay varias coincidencias exactas a la vez (mismo título, remake
+  // occidental en imagen real de un anime real: "Devil May Cry", "One
+  // Piece" de Netflix) se prefiere entre ELLAS la de origen Japón +
+  // Animación, no la primera por popularidad.
+  const exactMatches = results
+    .slice(0, 8)
+    .filter((r) => ['name', 'original_name'].some((k) => (r[k] || '').trim().toLowerCase() === query.trim().toLowerCase()));
+  const exactAnimeMatch = exactMatches.find(isAnimeCandidate);
+  const match = exactAnimeMatch || exactMatches[0] || animeMatch || results[0];
   if (!match && year) return fetchTmdbTv(query, priority, null);
   if (!match) return null;
   const genreMap = await tmdbGenreMap('tv', priority);
