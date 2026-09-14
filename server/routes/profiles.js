@@ -1,5 +1,6 @@
 const express = require('express');
 const profiles = require('../profiles');
+const backup = require('../backup');
 
 const router = express.Router();
 
@@ -11,7 +12,9 @@ router.get('/profiles', (req, res) => {
 
 router.post('/profiles', (req, res) => {
   try {
-    res.json(profiles.createProfile(req.body?.name));
+    const profile = profiles.createProfile(req.body?.name);
+    backup.scheduleBackup();
+    res.json(profile);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -19,6 +22,7 @@ router.post('/profiles', (req, res) => {
 
 router.delete('/profiles/:id', (req, res) => {
   profiles.deleteProfile(req.params.id);
+  backup.scheduleBackup();
   res.json({ ok: true });
 });
 
@@ -49,6 +53,7 @@ function saveProgress(req, res) {
     return;
   }
   res.json(profiles.setProgress(req.params.id, req.params.videoId, { time, ratio }));
+  backup.scheduleBackup();
 }
 
 // PUT para el uso normal (fetch); también se acepta POST porque
@@ -60,6 +65,7 @@ router.post('/profiles/:id/progress/:videoId', saveProgress);
 router.post('/profiles/:id/progress/:videoId/dismiss', (req, res) => {
   if (!requireProfile(req, res)) return;
   profiles.dismissProgress(req.params.id, req.params.videoId);
+  backup.scheduleBackup();
   res.json({ ok: true });
 });
 

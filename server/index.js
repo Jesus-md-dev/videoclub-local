@@ -3,8 +3,14 @@ const https = require('https');
 const os = require('os');
 const path = require('path');
 const { PORT, HTTPS_PORT, getVideosPath } = require('./config');
+const backup = require('./backup');
+// Antes de que cualquier otro módulo lea sus ficheros de data/ (algunos,
+// como la caché de géneros, los cargan en memoria nada más arrancar), se
+// recupera lo que falte desde la copia guardada en la carpeta de vídeos.
+backup.restoreIfNeeded();
 const { getOrCreateCert, CERT_FILE } = require('./https-cert');
 const catalog = require('./catalog');
+const mediaInfo = require('./mediaInfo');
 const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
 const transcode = require('./transcode');
@@ -92,6 +98,7 @@ function scanIfConfigured() {
   try {
     const videos = catalog.scan();
     console.log(`Catálogo: ${videos.length} vídeo(s) encontrados en ${videosPath}`);
+    mediaInfo.pruneStore(videos.map((v) => v.id));
     thumbnails.generateMissingThumbnails(videos);
     // Precalienta la caché de géneros en segundo plano (puede tardar si hay
     // muchas series/películas); el catálogo funciona igual mientras tanto.
@@ -105,8 +112,24 @@ function scanIfConfigured() {
   }
 }
 
+// Copia de seguridad periódica (por si algo se escribe sin pasar por una
+// ruta que ya la programa) y al cerrar el servidor, para no perder los
+// últimos cambios (progreso de vídeo, etc.) si se apaga el PC.
+const BACKUP_INTERVAL_MS = 10 * 60 * 1000;
+function scheduleShutdownBackup() {
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+      backup.backupNow();
+      process.exit(0);
+    });
+  }
+}
+
 async function start() {
   scanIfConfigured();
+  backup.backupNow();
+  setInterval(backup.backupNow, BACKUP_INTERVAL_MS).unref();
+  scheduleShutdownBackup();
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Videoclub local escuchando en el puerto ${PORT}`);

@@ -14,6 +14,9 @@ const SETTINGS_FILE = path.join(DATA_PATH, 'settings.json');
 const TRANSCODED_PATH = process.env.TRANSCODED_PATH
   ? path.resolve(process.env.TRANSCODED_PATH)
   : path.join(DATA_PATH, 'transcoded');
+// Igual que TRANSCODED_PATH: los paquetes HLS (segmentos de vídeo + una
+// pista aparte por cada idioma de audio) también pueden ocupar mucho.
+const HLS_PATH = process.env.HLS_PATH ? path.resolve(process.env.HLS_PATH) : path.join(DATA_PATH, 'hls');
 
 const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.webm', '.mov', '.m4v'];
 
@@ -38,6 +41,13 @@ function getVideosPath() {
   return currentVideosPath;
 }
 
+// Se llama tras restaurar settings.json desde la copia de seguridad, para
+// que la carpeta de vídeos recuperada se tenga en cuenta sin reiniciar.
+function reloadVideosPath() {
+  currentVideosPath = initialVideosPath();
+  return currentVideosPath;
+}
+
 function setVideosPath(newPath) {
   const resolved = path.resolve(newPath);
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
@@ -55,7 +65,9 @@ module.exports = {
   DATA_PATH,
   THUMBNAILS_PATH,
   TRANSCODED_PATH,
+  HLS_PATH,
   VIDEO_EXTENSIONS,
   getVideosPath,
   setVideosPath,
+  reloadVideosPath,
 };

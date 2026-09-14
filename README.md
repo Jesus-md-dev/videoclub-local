@@ -66,6 +66,7 @@ Desde cualquier otro dispositivo conectado a la misma red Wi-Fi/LAN, abre la URL
 - Selector de pista de audio y subtítulos (extraídos a WebVTT bajo demanda) en el reproductor.
 - Conversión automática bajo demanda a H.264/MP4 para vídeos con códecs no compatibles con navegadores móviles (p.ej. HEVC en `.mkv`).
 - `POST /api/scan` para volver a escanear la carpeta sin reiniciar el servidor.
+- Copia de seguridad automática: perfiles, progreso ("Continuar viendo"/visto), carpeta configurada, caché de géneros y analítica se guardan también en `<carpeta de vídeos>/.videoclub-datos/`. Al arrancar en un PC nuevo (o tras reinstalar), si `data/` está vacío se recupera automáticamente de ahí, sin perder el historial al cambiar de máquina.
 
 ## Desarrollo
 
