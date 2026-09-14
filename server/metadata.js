@@ -6,6 +6,14 @@ const METADATA_FILE = path.join(DATA_PATH, 'metadata.json');
 
 let cache = loadCache();
 const pending = new Map();
+// Cuándo falló por última vez cada clave (p.ej. Jikan caído/504), para no
+// reintentarla en cada pasada de warmAll: sin esto, un reescaneo automático
+// (dispara uno cada vídeo que termina de convertirse y sustituye al
+// original) reiniciaba warmAll desde el principio de la lista una y otra
+// vez, y como las primeras claves seguían fallando, nunca se llegaba a
+// comprobar el resto de la biblioteca.
+const failedAt = new Map();
+const FAIL_COOLDOWN_MS = 5 * 60 * 1000;
 
 function loadCache() {
   try {
@@ -497,6 +505,13 @@ async function getMetadata(key, priority = 'low') {
   if (cache[key]) return cache[key];
   if (pending.has(key)) return pending.get(key);
 
+  // 'high' (el usuario está viendo esto ahora) se salta el enfriamiento:
+  // mejor un intento más contra una fuente caída que no comprobar nada.
+  const lastFailed = failedAt.get(key);
+  if (priority !== 'high' && lastFailed && Date.now() - lastFailed < FAIL_COOLDOWN_MS) {
+    return { genres: [], year: null, type: null, cleanName: null, poster: null };
+  }
+
   const promise = (async () => {
     const query = cleanQuery(key);
     if (!query) return { genres: [], year: null, type: null, cleanName: null, poster: null };
@@ -506,11 +521,14 @@ async function getMetadata(key, priority = 'low') {
       const result = await fetchBest(query, priority, year);
       const entry = result || { genres: [], year: null, type: null, cleanName: null, poster: null };
       cache[key] = entry;
+      failedAt.delete(key);
       saveCache();
       return entry;
     } catch (err) {
-      // Fallo de red/rate-limit: no se cachea, para reintentar más tarde.
+      // Fallo de red/rate-limit: no se cachea, para reintentar más tarde
+      // (tras el enfriamiento de arriba, no en la próxima pasada inmediata).
       console.warn(`No se pudieron obtener metadatos para "${key}": ${err.message}`);
+      failedAt.set(key, Date.now());
       return { genres: [], year: null, type: null, cleanName: null, poster: null };
     } finally {
       pending.delete(key);
@@ -531,10 +549,24 @@ function getCached(key) {
   return { genres: [], year: null, type: null, cleanName: null, poster: null };
 }
 
+// Un reescaneo automático (uno por cada vídeo que termina de convertirse y
+// sustituye al original, más los manuales) puede llamar a esto mientras la
+// pasada anterior todavía sigue en marcha; sin este guard, se acumulaban
+// pasadas paralelas todas reintentando las mismas claves fallidas desde el
+// principio en vez de avanzar. Con el guard, una pasada en marcha sigue
+// hasta el final (ya recorrerá las claves nuevas) y las llamadas de más se
+// ignoran.
+let warming = false;
 async function warmAll(keys) {
-  for (const key of keys) {
-    // eslint-disable-next-line no-await-in-loop
-    await getMetadata(key);
+  if (warming) return;
+  warming = true;
+  try {
+    for (const key of keys) {
+      // eslint-disable-next-line no-await-in-loop
+      await getMetadata(key);
+    }
+  } finally {
+    warming = false;
   }
 }
 
