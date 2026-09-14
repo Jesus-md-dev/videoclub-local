@@ -207,8 +207,24 @@ const progress = new Map(); // video.id -> { percent: 0-99 | null, startedAt }
 // (se borra en cuanto se reintenta o se genera con éxito).
 const lastError = new Map();
 
+// Un master.m3u8 puede existir en disco y aun así estar incompleto: visto
+// en producción, un ffmpeg que terminó con código 0 (éxito) pero sin
+// escribir la línea que declara la pista de vídeo (STREAM-INF), con los
+// segmentos de vídeo y audio ya generados bien de todas formas. Fiarse
+// solo de que el archivo exista no bastaba para darlo por servible de
+// verdad.
+function hasValidMasterPlaylist(video) {
+  const file = masterPlaylistFor(video);
+  if (!fs.existsSync(file)) return false;
+  try {
+    return fs.readFileSync(file, 'utf-8').includes('#EXT-X-STREAM-INF');
+  } catch {
+    return false;
+  }
+}
+
 function getStatus(video) {
-  if (fs.existsSync(masterPlaylistFor(video))) return 'ready';
+  if (hasValidMasterPlaylist(video)) return 'ready';
   return status.get(video.id) || 'unknown';
 }
 
@@ -234,7 +250,7 @@ function getProgress(video) {
 // carpeta data/hls se borró a mano para liberar espacio sin saber que para
 // estos era la única copia que quedaba).
 function isLost(video) {
-  return archivedVideos.isArchived(video.id) && !fs.existsSync(masterPlaylistFor(video)) && !fs.existsSync(inputPathFor(video));
+  return archivedVideos.isArchived(video.id) && !hasValidMasterPlaylist(video) && !fs.existsSync(inputPathFor(video));
 }
 
 // Arranca la generación si hace falta (no bloquea: se lanza en segundo
@@ -244,7 +260,7 @@ function isLost(video) {
 // ahora mismo (adelanta en la cola compartida de ffmpeg al precalentamiento
 // en segundo plano), 'low' en caso contrario.
 function ensureGenerating(video, priority = 'low') {
-  if (fs.existsSync(masterPlaylistFor(video))) {
+  if (hasValidMasterPlaylist(video)) {
     status.set(video.id, 'ready');
     return 'ready';
   }
