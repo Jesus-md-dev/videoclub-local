@@ -130,7 +130,13 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
   return new Promise((resolve, reject) => {
     fs.mkdirSync(outDir, { recursive: true });
 
-    const args = ['-y', '-i', inputPath, '-map', '0:v:0'];
+    const args = ['-y'];
+    // Descodifica también por GPU, no solo codifica: sin esto, un origen
+    // pesado (HEVC/10 bits) se descodifica por CPU y ese es el cuello de
+    // botella real aunque la codificación ya use NVENC. Solo tiene sentido
+    // si además se va a recodificar (videoCopy no decodifica ni un frame).
+    if (useGpu && !videoCopy) args.push('-hwaccel', 'cuda');
+    args.push('-i', inputPath, '-map', '0:v:0');
     audioStreams.forEach((stream) => {
       args.push('-map', `0:${stream.index}`);
     });
@@ -144,9 +150,17 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
       }
       args.push('-pix_fmt', 'yuv420p');
     }
+    // Por pista, no en bloque: si una pista ya es AAC (el caso normal en
+    // esta biblioteca), copiarla es prácticamente instantáneo - antes se
+    // recodificaban todas siempre, aunque ya fueran válidas, sin motivo.
+    audioStreams.forEach((stream, i) => {
+      if (stream.codec_name === 'aac') {
+        args.push(`-c:a:${i}`, 'copy');
+      } else {
+        args.push(`-c:a:${i}`, 'aac', `-b:a:${i}`, '160k');
+      }
+    });
     args.push(
-      '-c:a', 'aac',
-      '-b:a', '160k',
       '-f', 'hls',
       '-hls_time', String(SEGMENT_SECONDS),
       '-hls_playlist_type', 'vod',
@@ -406,13 +420,24 @@ async function generateHls(video, priority = 'low') {
   return master;
 }
 
-// Precalienta en segundo plano toda la biblioteca, uno detrás de otro (no
-// todos a la vez), en prioridad 'low': si alguien le da a play mientras
-// tanto, esa petición 'high' adelanta en la cola compartida de ffmpeg (ver
-// ffmpeg-limiter.js) y se sirve antes, sin esperar a que termine el
-// precalentamiento. Así lo ya generado está listo al momento y lo demás se
-// va poniendo al día solo, sin perder la prioridad de "quien está viendo
-// ahora" que tenía sentido quitarle al pipeline antiguo (#61).
+// Precalienta en segundo plano toda la biblioteca, en prioridad 'low': si
+// alguien le da a play mientras tanto, esa petición 'high' adelanta en la
+// cola compartida de ffmpeg (ver ffmpeg-limiter.js) y se sirve antes, sin
+// esperar a que termine el precalentamiento. Así lo ya generado está listo
+// al momento y lo demás se va poniendo al día solo, sin perder la
+// prioridad de "quien está viendo ahora" que tenía sentido quitarle al
+// pipeline antiguo (#61).
+//
+// Varios vídeos a la vez (no uno detrás de otro): antes, aunque el tope
+// compartido (ffmpeg-limiter.js) permite hasta 10 procesos ffmpeg a la
+// vez, el precalentamiento en sí solo tenía UNO en marcha, dejando 9
+// huecos libres sin usar la mayor parte del tiempo - con una biblioteca de
+// miles de vídeos, eso significaba tardar muchísimo más de lo necesario en
+// ponerse al día. 4 a la vez dan un buen margen de mejora sin acaparar
+// todo el tope compartido (deja hueco para carátulas/trickplay/"sin
+// convertir" y sobre todo para quien esté viendo algo ahora mismo).
+const WARM_CONCURRENCY = 4;
+
 // Un reescaneo automático puede llamar a esto mientras la pasada anterior
 // sigue en marcha (mismo motivo que el guard de metadata.js): sin esto, se
 // acumulaban pasadas paralelas todas recorriendo la biblioteca entera
@@ -422,8 +447,12 @@ async function warmAll(videos) {
   if (warming) return;
   warming = true;
   const ordered = [...videos].sort((a, b) => (a.size || 0) - (b.size || 0));
-  try {
-    for (const video of ordered) {
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const video = ordered[next];
+      next += 1;
+      if (!video) return;
       try {
         // eslint-disable-next-line no-await-in-loop
         await generateHls(video, 'low');
@@ -431,6 +460,9 @@ async function warmAll(videos) {
         console.warn(`HLS: no se pudo precalentar "${video.title}": ${err.message}`);
       }
     }
+  };
+  try {
+    await Promise.all(Array.from({ length: WARM_CONCURRENCY }, worker));
   } finally {
     warming = false;
   }
