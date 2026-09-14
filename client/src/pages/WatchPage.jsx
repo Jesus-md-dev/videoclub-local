@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import Hls from 'hls.js';
 import VideoControls from '../components/VideoControls';
 import { getActiveProfileId } from '../profile';
 import { track } from '../analytics';
@@ -60,10 +61,9 @@ export default function WatchPage() {
   const [prevEpisodeId, setPrevEpisodeId] = useState(null);
   const [nextEpisodeId, setNextEpisodeId] = useState(null);
   const [autoAdvanceIn, setAutoAdvanceIn] = useState(null);
-  const [forcing, setForcing] = useState(false);
-  const [forced, setForced] = useState(false);
   const [rawMode, setRawMode] = useState(false);
   const playerRef = useRef(null);
+  const hlsRef = useRef(null);
   const shellRef = useRef(null);
   const resumeTimeRef = useRef(null);
   const savedProgressRef = useRef(null);
@@ -99,7 +99,6 @@ export default function WatchPage() {
     }
 
     setAutoAdvanceIn(null);
-    setForced(false);
     setRawMode(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -141,11 +140,19 @@ export default function WatchPage() {
     setReady(false);
     setPrepProgress(null);
 
-    const params = new URLSearchParams();
-    if (audioIndex != null) params.set('audio', audioIndex);
-    if (rawMode) params.set('raw', '1');
-    const query = params.toString();
-    const streamUrl = `/api/stream/${id}/status${query ? `?${query}` : ''}`;
+    // Modo normal: HLS (server/hls.js), no depende de audioIndex (todas las
+    // pistas de audio van en el mismo manifiesto, se elige luego sin
+    // recargar). Modo "sin convertir": pipeline antiguo, sí depende de la
+    // pista de audio elegida (cada una es un remux aparte).
+    let streamUrl;
+    if (rawMode) {
+      const params = new URLSearchParams();
+      if (audioIndex != null) params.set('audio', audioIndex);
+      params.set('raw', '1');
+      streamUrl = `/api/stream/${id}/status?${params.toString()}`;
+    } else {
+      streamUrl = `/api/hls/${id}/status`;
+    }
 
     const checkStatus = () => {
       fetch(streamUrl)
@@ -177,6 +184,43 @@ export default function WatchPage() {
     if (ready && video) track('play_start', { videoId: id, title: video.title });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, id]);
+
+  // Conecta hls.js al <video> (modo normal, no "sin convertir"): sustituye
+  // al <video src=...> directo. Chrome/Firefox necesitan hls.js; Safari
+  // reproduce HLS de forma nativa, sin librería. El cambio de pista de
+  // audio (handleAudioChange) usa la API de pistas de hls.js en vez de
+  // cambiar el src, así no hay recarga ni se pierde la posición.
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!video || !ready || !player || rawMode) return undefined;
+
+    const masterUrl = `/api/hls/${id}/master.m3u8`;
+
+    if (Hls.isSupported()) {
+      const instance = new Hls();
+      hlsRef.current = instance;
+      instance.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) console.warn(`hls.js: error fatal (${data.type}): ${data.details}`);
+      });
+      instance.loadSource(masterUrl);
+      instance.attachMedia(player);
+      return () => {
+        instance.destroy();
+        if (hlsRef.current === instance) hlsRef.current = null;
+      };
+    }
+
+    if (player.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari: soporte nativo, sin hls.js. El cambio de pista de audio en
+      // Safari usa player.audioTracks (ver handleAudioChange) en vez de la
+      // API de hls.js.
+      player.src = masterUrl;
+      return undefined;
+    }
+
+    setError('Este navegador no puede reproducir vídeo HLS.');
+    return undefined;
+  }, [video, ready, id, playbackKey, rawMode]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -270,19 +314,31 @@ export default function WatchPage() {
 
   const handleAudioChange = (e) => {
     const value = e.target.value;
+    const newIndex = value === '' ? null : Number(value);
+
+    // Modo normal (HLS): cambia de pista sin recargar el vídeo ni perder la
+    // posición, usando la API de pistas del reproductor en marcha.
+    if (!rawMode) {
+      const position = tracks.audio.findIndex((t) => t.index === newIndex);
+      if (position >= 0) {
+        if (hlsRef.current) {
+          hlsRef.current.audioTrack = position;
+        } else if (playerRef.current?.audioTracks) {
+          // Safari nativo: sin hls.js, la selección va por audioTracks.
+          for (let i = 0; i < playerRef.current.audioTracks.length; i += 1) {
+            playerRef.current.audioTracks[i].enabled = i === position;
+          }
+        }
+      }
+      setAudioIndex(newIndex);
+      return;
+    }
+
+    // Modo "sin convertir" (pipeline antiguo): cada pista es un archivo
+    // remuxado aparte, así que sí hace falta recargar.
     const player = playerRef.current;
     resumeTimeRef.current = player ? player.currentTime : null;
-    setAudioIndex(value === '' ? null : Number(value));
-  };
-
-  const handleForcePriority = () => {
-    setForcing(true);
-    const url = `/api/stream/${id}/priority${audioIndex != null ? `?audio=${audioIndex}` : ''}`;
-    fetch(url, { method: 'POST' })
-      .then((res) => res.json())
-      .then(() => setForced(true))
-      .catch(() => {})
-      .finally(() => setForcing(false));
+    setAudioIndex(newIndex);
   };
 
   const retryPlayback = () => {
@@ -349,13 +405,6 @@ export default function WatchPage() {
                   : 'Analizando el vídeo, puede tardar unos minutos la primera vez...'}
               </p>
             )}
-            {!rawMode && (forced ? (
-              <p className="prep-detail">Priorizado. Si había otra conversión en marcha, se ha interrumpido para dar paso a esta.</p>
-            ) : (
-              <button onClick={handleForcePriority} disabled={forcing}>
-                {forcing ? 'Priorizando...' : 'Forzar prioridad'}
-              </button>
-            ))}
             {!rawMode && (
               <>
                 <button className="raw-mode-btn" onClick={() => setRawMode(true)}>
@@ -375,7 +424,7 @@ export default function WatchPage() {
                 ref={playerRef}
                 autoPlay
                 playsInline
-                src={streamSrc}
+                src={rawMode ? streamSrc : undefined}
                 onClick={(e) => (e.currentTarget.paused ? e.currentTarget.play() : e.currentTarget.pause())}
               >
                 {tracks.subtitles.map((track) => (
