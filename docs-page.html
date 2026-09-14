@@ -1,0 +1,496 @@
+<title>Videoclub Local</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap"
+  rel="stylesheet"
+/>
+<style>
+  :root {
+    --bg: #120a16;
+    --surface: #1b1320;
+    --surface-2: #241a2c;
+    --border: #3a2a44;
+    --text: #f4e9d8;
+    --text-dim: #b8a6c2;
+    --accent: #e63946;
+    --accent-glow: #ff5a68;
+    --ok: #7fb88f;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Sans 3', 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 0 clamp(16px, 5vw, 48px);
+    padding-block: clamp(28px, 6vw, 64px);
+  }
+
+  a {
+    color: var(--accent-glow);
+  }
+
+  .eyebrow {
+    font-family: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-glow);
+    font-size: 15px;
+    margin: 0 0 6px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    letter-spacing: 0.02em;
+    font-weight: 400;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  /* ---------- hero ---------- */
+
+  .hero {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: clamp(24px, 5vw, 56px);
+    align-items: center;
+    padding-block: clamp(12px, 4vw, 28px) clamp(36px, 6vw, 56px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  @media (max-width: 700px) {
+    .hero {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .wordmark {
+    font-size: clamp(40px, 8vw, 68px);
+    line-height: 0.95;
+    color: var(--text);
+    text-shadow: 0 0 24px rgba(230, 57, 70, 0.35);
+  }
+
+  .wordmark span {
+    color: var(--accent);
+  }
+
+  .tagline {
+    margin: 14px 0 0;
+    color: var(--text-dim);
+    font-size: 17px;
+    max-width: 46ch;
+    line-height: 1.55;
+  }
+
+  .access-card {
+    background: linear-gradient(165deg, var(--surface-2), var(--surface));
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    text-align: center;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2), 0 18px 40px -20px rgba(0, 0, 0, 0.6);
+  }
+
+  #qr {
+    background: #fff;
+    padding: 10px;
+    border-radius: 10px;
+    line-height: 0;
+  }
+
+  .access-card .eyebrow {
+    margin: 0;
+  }
+
+  .url-readout {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(19px, 3.2vw, 23px);
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    word-break: break-all;
+  }
+
+  .url-readout .proto {
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+
+  .access-hint {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin: 0;
+  }
+
+  /* ---------- shared section rhythm ---------- */
+
+  section {
+    padding-block: clamp(28px, 5vw, 44px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  section:last-of-type {
+    border-bottom: none;
+  }
+
+  section > h2 {
+    font-size: clamp(26px, 4.5vw, 34px);
+    margin-bottom: 6px;
+  }
+
+  .section-lead {
+    color: var(--text-dim);
+    max-width: 62ch;
+    line-height: 1.6;
+    margin: 0 0 26px;
+  }
+
+  /* ---------- cómo entrar: pasos ---------- */
+
+  .steps {
+    display: grid;
+    gap: 14px;
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .step-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 26px;
+    color: var(--accent);
+    line-height: 1.3;
+    text-align: right;
+  }
+
+  .step h3 {
+    font-family: 'Source Sans 3', sans-serif;
+    font-weight: 600;
+    font-size: 17px;
+    letter-spacing: 0;
+    margin-bottom: 3px;
+  }
+
+  .step p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .step code {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.92em;
+    color: var(--text);
+  }
+
+  /* ---------- feature grid ---------- */
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 16px;
+  }
+
+  .feature {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+
+  .feature h3 {
+    font-family: 'Source Sans 3', sans-serif;
+    font-weight: 600;
+    letter-spacing: 0;
+    font-size: 16px;
+    color: var(--accent-glow);
+    margin-bottom: 6px;
+  }
+
+  .feature p {
+    margin: 0;
+    font-size: 14.5px;
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+
+  /* ---------- panel admin (tabla clave/valor) ---------- */
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .panel-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 220px) 1fr;
+    gap: 16px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-row:last-child {
+    border-bottom: none;
+  }
+
+  @media (max-width: 560px) {
+    .panel-row {
+      grid-template-columns: 1fr;
+      gap: 4px;
+    }
+  }
+
+  .panel-key {
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding-top: 2px;
+  }
+
+  .panel-value {
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .panel-value code,
+  .panel-value a.mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.95em;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  /* ---------- aviso ---------- */
+
+  .notice {
+    display: flex;
+    gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 16px 18px;
+  }
+
+  .notice-mark {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  .notice p {
+    margin: 0;
+    font-size: 14.5px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  .notice strong {
+    color: var(--text);
+  }
+
+  footer {
+    padding-block: 28px 8px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  footer .logo-mini {
+    font-family: 'Bebas Neue', sans-serif;
+    color: var(--accent-glow);
+    letter-spacing: 0.08em;
+  }
+</style>
+
+<div class="wrap">
+  <div class="hero">
+    <div>
+      <p class="eyebrow">Guía de acceso y uso</p>
+      <h1 class="wordmark">VIDEO<span>CLUB</span><br />LOCAL</h1>
+      <p class="tagline">
+        El catálogo de vídeos de casa, con carátulas, "Continuar viendo", perfiles y
+        selección de idioma — servido desde este PC, visible solo dentro de tu red
+        Wi‑Fi/LAN. Nada sale a Internet.
+      </p>
+    </div>
+    <div class="access-card">
+      <p class="eyebrow">Entra desde el móvil</p>
+      <div id="qr"></div>
+      <div class="url-readout"><span class="proto">http://</span>192.168.1.47:3000</div>
+      <p class="access-hint">Escanea el código o teclea la dirección — mismo Wi‑Fi que este PC.</p>
+    </div>
+  </div>
+
+  <section>
+    <h2>Cómo entrar</h2>
+    <p class="section-lead">
+      Cuatro pasos, la primera vez en cada aparato nuevo. Después el navegador lo recuerda.
+    </p>
+    <div class="steps">
+      <div class="step">
+        <span class="step-num">1</span>
+        <div>
+          <h3>Conéctate a la misma red</h3>
+          <p>Wi‑Fi o cable, da igual — el mismo router que este PC.</p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">2</span>
+        <div>
+          <h3>Abre la dirección</h3>
+          <p>
+            <code>http://192.168.1.47:3000</code> en el navegador, o el HTTPS de abajo si
+            prefieres la conexión cifrada.
+          </p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">3</span>
+        <div>
+          <h3>Si usas HTTPS, acepta el aviso</h3>
+          <p>
+            El certificado es propio de esta casa (autofirmado): el navegador avisa de
+            "conexión no privada" la primera vez — es normal, dale a continuar. Se puede
+            instalar como de confianza descargándolo desde <code>/cert</code>.
+          </p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">4</span>
+        <div>
+          <h3>Elige tu perfil</h3>
+          <p>Cada persona tiene su propio "Continuar viendo", guardado en el servidor.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Qué puedes hacer</h2>
+    <p class="section-lead">Todo lo que trae el catálogo, de un vistazo.</p>
+    <div class="grid">
+      <div class="feature">
+        <h3>Buscar y filtrar</h3>
+        <p>Buscador por título y filtro por género — Anime se distingue de Series automáticamente.</p>
+      </div>
+      <div class="feature">
+        <h3>Continuar viendo</h3>
+        <p>Retoma cada vídeo donde lo dejaste, por perfil, desde cualquier dispositivo de la red.</p>
+      </div>
+      <div class="feature">
+        <h3>Series y películas</h3>
+        <p>Carpetas navegables por episodios; anterior/siguiente y avance automático al terminar.</p>
+      </div>
+      <div class="feature">
+        <h3>Idioma y subtítulos</h3>
+        <p>Cambia de pista de audio sin cortes ni recargas — y recuerda tu idioma para el próximo episodio.</p>
+      </div>
+      <div class="feature">
+        <h3>Reproduce en cualquier sitio</h3>
+        <p>Streaming HLS: se adapta al dispositivo (TV, móvil, portátil) sin depender del formato original.</p>
+      </div>
+      <div class="feature">
+        <h3>Carátulas automáticas</h3>
+        <p>Un fotograma de cada vídeo, generado solo, sin tocar nada a mano.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Detrás del telón</h2>
+    <p class="section-lead">Páginas sin enlace visible en el catálogo, para quien administra esto.</p>
+    <div class="panel">
+      <div class="panel-row">
+        <span class="panel-key">Carpeta de vídeos</span>
+        <span class="panel-value"><a class="mono" href="/config">/config</a> — cambiarla o ver la actual, sin reiniciar el servidor.</span>
+      </div>
+      <div class="panel-row">
+        <span class="panel-key">Preparación (HLS)</span>
+        <span class="panel-value"><a class="mono" href="/queue">/queue</a> — qué se está procesando en segundo plano ahora mismo.</span>
+      </div>
+      <div class="panel-row">
+        <span class="panel-key">Estadísticas de uso</span>
+        <span class="panel-value"><a class="mono" href="/stats">/stats</a> — qué se ve más, qué se busca, fallos de reproducción.</span>
+      </div>
+      <div class="panel-row">
+        <span class="panel-key">Puerto HTTP</span>
+        <span class="panel-value"><code>3000</code></span>
+      </div>
+      <div class="panel-row">
+        <span class="panel-key">Puerto HTTPS</span>
+        <span class="panel-value"><code>3443</code> — certificado autofirmado, propio de este servidor.</span>
+      </div>
+      <div class="panel-row">
+        <span class="panel-key">Arrancar / parar</span>
+        <span class="panel-value"><code>iniciar.bat</code> / <code>detener.bat</code>, en la carpeta del proyecto.</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="notice">
+      <span class="notice-mark">!</span>
+      <p>
+        <strong>Solo para tu red doméstica.</strong> Esta app no tiene usuario ni
+        contraseña: cualquiera dentro de tu Wi‑Fi puede abrirla. No abras estos puertos
+        al router hacia Internet.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <span class="logo-mini">VIDEOCLUB LOCAL</span> · guía de acceso, generada para esta instalación
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  new QRCode(document.getElementById('qr'), {
+    text: 'http://192.168.1.47:3000',
+    width: 132,
+    height: 132,
+    colorDark: '#120a16',
+    colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.M,
+  });
+</script>
