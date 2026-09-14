@@ -1,6 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config();
+// Sin `path`, dotenv busca ".env" relativo al directorio de trabajo desde
+// el que se lanzó "node" (process.cwd()), no a la carpeta del proyecto:
+// arrancar el servidor desde otro sitio (p.ej. "cd client && ... && cd ..
+// && node server\index.js" en la misma sesión de terminal, sin volver a
+// "cd" explícito) hacía que TRANSCODED_PATH/HLS_PATH del .env se
+// ignorasen en silencio (dotenv no avisa si no encuentra el archivo) y
+// todo volviera a generarse dentro de data/, local a esta máquina.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 3443;

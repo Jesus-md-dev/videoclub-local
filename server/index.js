@@ -2,7 +2,9 @@ const express = require('express');
 const https = require('https');
 const os = require('os');
 const path = require('path');
-const { PORT, HTTPS_PORT, getVideosPath } = require('./config');
+const { PORT, HTTPS_PORT, DATA_PATH, TRANSCODED_PATH, HLS_PATH, getVideosPath } = require('./config');
+console.log(`Convertidos en: ${TRANSCODED_PATH}${TRANSCODED_PATH.startsWith(DATA_PATH) ? ' (local a este PC)' : ''}`);
+console.log(`HLS en: ${HLS_PATH}${HLS_PATH.startsWith(DATA_PATH) ? ' (local a este PC)' : ''}`);
 const backup = require('./backup');
 // Antes de que cualquier otro módulo lea sus ficheros de data/ (algunos,
 // como la caché de géneros, los cargan en memoria nada más arrancar), se
