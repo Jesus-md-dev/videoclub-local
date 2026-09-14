@@ -196,6 +196,18 @@ export default function WatchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, id]);
 
+  // Pantalla completa automática al empezar a reproducir, como una app de
+  // streaming (Netflix/Prime), no una web con reproductor incrustado. Los
+  // navegadores solo permiten pedirla con una interacción reciente del
+  // usuario (el clic que trajo hasta aquí, normalmente): si no la conceden,
+  // falla en silencio y se sigue viendo en modo normal sin más.
+  useEffect(() => {
+    if (!ready) return;
+    const shell = shellRef.current;
+    if (!shell || document.fullscreenElement) return;
+    shell.requestFullscreen?.().catch(() => {});
+  }, [ready, playbackKey]);
+
   // Conecta hls.js al <video> (modo normal, no "sin convertir"): sustituye
   // al <video src=...> directo. Chrome/Firefox necesitan hls.js; Safari
   // reproduce HLS de forma nativa, sin librería. El cambio de pista de
@@ -393,34 +405,43 @@ export default function WatchPage() {
   const backTo = video?.seriesKey ? `/?dir=${encodeURIComponent(video.seriesKey)}` : '/';
   const backLabel = video?.seriesKey ? '← Volver a episodios' : '← Volver al catálogo';
 
+  // La cabecera fija solo hace falta mientras no hay reproductor todavía
+  // (cargando/preparando/error): en cuanto hay vídeo listo, todo eso pasa a
+  // vivir dentro del reproductor como una barra superior que aparece y
+  // desaparece con el resto de controles (estilo Netflix/Prime), no una
+  // cabecera aparte siempre visible.
+  const showFixedHeader = !ready || error;
+
   return (
     <>
-      <div className="watch-header">
-        <Link className="back-link" to={backTo}>
-          {backLabel}
-        </Link>
-        <h1 className="watch-title">{error ? 'Error' : video ? video.title : 'Cargando...'}</h1>
-        {(prevEpisodeId || nextEpisodeId) && (
-          <div className="episode-nav">
-            <button disabled={!prevEpisodeId} onClick={() => navigate(`/watch/${prevEpisodeId}`)}>
-              ← Anterior
-            </button>
-            <button disabled={!nextEpisodeId} onClick={() => navigate(`/watch/${nextEpisodeId}`)}>
-              Siguiente →
-            </button>
-          </div>
-        )}
-        {tracks.audio.length > 1 && (
-          <select className="track-select" value={audioIndex ?? ''} onChange={handleAudioChange}>
-            {tracks.audio.map((track) => (
-              <option key={track.index} value={track.index}>
-                Audio: {trackLabel(track)}
-              </option>
-            ))}
-          </select>
-        )}
-        <HiddenMenu />
-      </div>
+      {showFixedHeader && (
+        <div className="watch-header">
+          <Link className="back-link" to={backTo}>
+            {backLabel}
+          </Link>
+          <h1 className="watch-title">{error ? 'Error' : video ? video.title : 'Cargando...'}</h1>
+          {(prevEpisodeId || nextEpisodeId) && (
+            <div className="episode-nav">
+              <button disabled={!prevEpisodeId} onClick={() => navigate(`/watch/${prevEpisodeId}`)}>
+                ← Anterior
+              </button>
+              <button disabled={!nextEpisodeId} onClick={() => navigate(`/watch/${nextEpisodeId}`)}>
+                Siguiente →
+              </button>
+            </div>
+          )}
+          {tracks.audio.length > 1 && (
+            <select className="track-select" value={audioIndex ?? ''} onChange={handleAudioChange}>
+              {tracks.audio.map((track) => (
+                <option key={track.index} value={track.index}>
+                  Audio: {trackLabel(track)}
+                </option>
+              ))}
+            </select>
+          )}
+          <HiddenMenu />
+        </div>
+      )}
       <div className="player-wrap">
         {error && <div className="error-box">{error}</div>}
         {!error && video && !ready && (
@@ -481,6 +502,15 @@ export default function WatchPage() {
                 shellRef={shellRef}
                 id={id}
                 subtitleTracks={tracks.subtitles}
+                title={video?.title}
+                backTo={backTo}
+                backLabel={backLabel}
+                prevEpisodeId={prevEpisodeId}
+                nextEpisodeId={nextEpisodeId}
+                onNavigate={navigate}
+                audioTracks={tracks.audio}
+                audioIndex={audioIndex}
+                onAudioChange={handleAudioChange}
               />
             </div>
             {stuck && (

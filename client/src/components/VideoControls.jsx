@@ -1,4 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import HiddenMenu from './HiddenMenu';
+
+function trackLabel(track) {
+  return track.languageLabel || track.title || `Pista ${track.index}`;
+}
 
 function formatTime(seconds) {
   if (!Number.isFinite(seconds)) return '0:00';
@@ -16,7 +22,21 @@ function formatTime(seconds) {
 // progreso, estilo Netflix/YouTube. El <video> sigue siendo el mismo
 // elemento que maneja WatchPage (progreso, reintentos, etc.); este
 // componente solo lee su estado y lo controla desde fuera.
-export default function VideoControls({ videoRef, shellRef, id, subtitleTracks }) {
+export default function VideoControls({
+  videoRef,
+  shellRef,
+  id,
+  subtitleTracks,
+  title,
+  backTo,
+  backLabel,
+  prevEpisodeId,
+  nextEpisodeId,
+  onNavigate,
+  audioTracks,
+  audioIndex,
+  onAudioChange,
+}) {
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -208,7 +228,36 @@ export default function VideoControls({ videoRef, shellRef, id, subtitleTracks }
   const previewRow = previewCell != null ? Math.floor(previewCell / trickplay.columns) : 0;
 
   return (
-    <div className={`video-controls ${controlsVisible ? '' : 'video-controls-hidden'}`}>
+    <>
+      <div className={`player-topbar ${controlsVisible ? '' : 'player-topbar-hidden'}`}>
+        <Link className="back-link" to={backTo}>
+          {backLabel}
+        </Link>
+        <h1 className="watch-title">{title}</h1>
+        <div className="topbar-actions">
+          {(prevEpisodeId || nextEpisodeId) && (
+            <div className="episode-nav">
+              <button disabled={!prevEpisodeId} onClick={() => onNavigate(`/watch/${prevEpisodeId}`)}>
+                ← Anterior
+              </button>
+              <button disabled={!nextEpisodeId} onClick={() => onNavigate(`/watch/${nextEpisodeId}`)}>
+                Siguiente →
+              </button>
+            </div>
+          )}
+          {audioTracks.length > 1 && (
+            <select className="track-select" value={audioIndex ?? ''} onChange={onAudioChange}>
+              {audioTracks.map((track) => (
+                <option key={track.index} value={track.index}>
+                  Audio: {trackLabel(track)}
+                </option>
+              ))}
+            </select>
+          )}
+          <HiddenMenu />
+        </div>
+      </div>
+      <div className={`video-controls ${controlsVisible ? '' : 'video-controls-hidden'}`}>
       {hover && trickplay && (
         <div
           className="scrub-preview"
@@ -282,6 +331,7 @@ export default function VideoControls({ videoRef, shellRef, id, subtitleTracks }
           {fullscreen ? '⤡' : '⤢'}
         </button>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
