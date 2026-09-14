@@ -689,6 +689,47 @@ video {
   max-width: 100%;
 }
 
+/* ---- "Rellena la ventana" (no pantalla completa real del sistema): al
+   reproducir, ocupa todo el visor del navegador como una app de streaming,
+   pero sin pedir la Fullscreen API (así no depende de que el navegador
+   conceda el permiso, ni oculta las pestañas/la barra del navegador - el
+   usuario puede seguir usando pantalla completa real a mano con el botón
+   ⤢ si quiere). ---- */
+.player-column-fill {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  justify-content: center;
+  background: #000;
+  padding: 0;
+  gap: 0;
+}
+
+.player-column-fill .player-shell {
+  max-width: 100%;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-column-fill .player-shell video {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+}
+
+.player-column-fill .stall-banner {
+  position: absolute;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+
 /* ---- Barra superior del reproductor (volver, título, episodio, audio,
    menú): overlay sobre el vídeo, aparece/desaparece con el resto de
    controles - como Netflix/Prime, en vez de una cabecera fija aparte. ---- */
@@ -1123,6 +1164,48 @@ video {
 .queue-row-failed {
   border-color: var(--accent);
   opacity: 0.75;
+}
+
+.queue-row-failed-detail {
+  flex-direction: column;
+  align-items: stretch;
+  opacity: 1;
+}
+
+.queue-failed-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.queue-error-detail {
+  margin: 6px 0 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.queue-retry-btn {
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.queue-retry-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-glow);
+}
+
+.queue-retry-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .queue-position {

@@ -196,18 +196,6 @@ export default function WatchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, id]);
 
-  // Pantalla completa automática al empezar a reproducir, como una app de
-  // streaming (Netflix/Prime), no una web con reproductor incrustado. Los
-  // navegadores solo permiten pedirla con una interacción reciente del
-  // usuario (el clic que trajo hasta aquí, normalmente): si no la conceden,
-  // falla en silencio y se sigue viendo en modo normal sin más.
-  useEffect(() => {
-    if (!ready) return;
-    const shell = shellRef.current;
-    if (!shell || document.fullscreenElement) return;
-    shell.requestFullscreen?.().catch(() => {});
-  }, [ready, playbackKey]);
-
   // Conecta hls.js al <video> (modo normal, no "sin convertir"): sustituye
   // al <video src=...> directo. Chrome/Firefox necesitan hls.js; Safari
   // reproduce HLS de forma nativa, sin librería. El cambio de pista de
@@ -475,7 +463,7 @@ export default function WatchPage() {
           </div>
         )}
         {!error && video && ready && (
-          <div className="player-column">
+          <div className="player-column player-column-fill">
             {rawMode && <p className="prep-detail">Reproduciendo en formato original (sin convertir).</p>}
             <div className="player-shell" ref={shellRef}>
               <video

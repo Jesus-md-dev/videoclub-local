@@ -12,6 +12,12 @@ function formatSize(bytes) {
 export default function QueuePage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [retrying, setRetrying] = useState(new Set());
+
+  const handleRetry = (id) => {
+    setRetrying((prev) => new Set(prev).add(id));
+    fetch(`/api/hls/${id}/retry`, { method: 'POST' }).catch(() => {});
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -109,8 +115,18 @@ export default function QueuePage() {
                 <p className="section-title">Fallidos ({data.failed.length})</p>
                 <div className="queue-list">
                   {data.failed.map((item) => (
-                    <div className="queue-row queue-row-failed" key={item.id}>
-                      <span className="queue-title">{item.title}</span>
+                    <div className="queue-row queue-row-failed queue-row-failed-detail" key={item.id}>
+                      <div className="queue-failed-main">
+                        <span className="queue-title">{item.title}</span>
+                        <button
+                          className="queue-retry-btn"
+                          disabled={retrying.has(item.id)}
+                          onClick={() => handleRetry(item.id)}
+                        >
+                          {retrying.has(item.id) ? 'Reintentando…' : 'Reintentar'}
+                        </button>
+                      </div>
+                      {item.error && <p className="queue-error-detail">{item.error}</p>}
                     </div>
                   ))}
                 </div>

@@ -45,6 +45,20 @@ router.get('/hls/:id/status', (req, res) => {
   res.json({ status, progress: status === 'processing' ? hls.getProgress(video) : null });
 });
 
+// Reintenta un vídeo marcado como 'failed' (botón "Reintentar" en /queue):
+// algunos fallos son puntuales (un hipo del disco externo, p.ej.), no
+// corrupción real del archivo, y sin esto se quedaban así hasta reiniciar
+// el servidor entero.
+router.post('/hls/:id/retry', (req, res) => {
+  const video = catalog.getVideoById(req.params.id);
+  if (!video) {
+    res.status(404).json({ error: 'Vídeo no encontrado' });
+    return;
+  }
+  const status = hls.retry(video);
+  res.json({ status });
+});
+
 // Sirve el manifiesto maestro. Se llama solo cuando /status ya ha dicho
 // 'ready' (o se está dispuesto a esperar): si aún no existe, arranca la
 // generación y espera aquí mismo a que termine antes de responder.

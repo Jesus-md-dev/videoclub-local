@@ -187,10 +187,18 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
 // (p.ej. tras un reinicio del servidor, sin pasar otra vez por 'processing').
 const status = new Map();
 const progress = new Map(); // video.id -> { percent: 0-99 | null, startedAt }
+// Por qué falló, para poder verlo en /queue en vez de tener que mirar el
+// log del servidor a mano. Solo tiene sentido mientras status === 'failed'
+// (se borra en cuanto se reintenta o se genera con éxito).
+const lastError = new Map();
 
 function getStatus(video) {
   if (fs.existsSync(masterPlaylistFor(video))) return 'ready';
   return status.get(video.id) || 'unknown';
+}
+
+function getLastError(video) {
+  return lastError.get(video.id) || null;
 }
 
 // El cliente (WatchPage.jsx, formatRemaining) calcula el tiempo restante a
@@ -218,9 +226,20 @@ function ensureGenerating(video, priority = 'low') {
   const current = status.get(video.id);
   if (current === 'checking' || current === 'processing' || current === 'failed') return current;
 
+  lastError.delete(video.id);
   status.set(video.id, 'checking');
   runGeneration(video, priority).catch(() => {}); // el estado ya queda registrado dentro
   return 'checking';
+}
+
+// Para el botón "Reintentar" de /queue: algunos fallos son puntuales (un
+// hipo del disco externo, p.ej.), no corrupción real del archivo - sin
+// esto, un vídeo marcado como 'failed' se queda así para siempre hasta
+// reiniciar el servidor entero.
+function retry(video) {
+  status.delete(video.id);
+  lastError.delete(video.id);
+  return ensureGenerating(video, 'high');
 }
 
 async function runGeneration(video, priority) {
@@ -323,6 +342,7 @@ async function runGeneration(video, priority) {
   } catch (err) {
     console.warn(`HLS: no se pudo generar "${video.title}": ${err.message}`);
     status.set(video.id, 'failed');
+    lastError.set(video.id, err.message);
     progress.delete(video.id);
     throw err;
   }
@@ -416,4 +436,14 @@ async function warmAll(videos) {
   }
 }
 
-module.exports = { generateHls, ensureGenerating, getStatus, getProgress, warmAll, outDirFor, masterPlaylistFor };
+module.exports = {
+  generateHls,
+  ensureGenerating,
+  getStatus,
+  getProgress,
+  getLastError,
+  retry,
+  warmAll,
+  outDirFor,
+  masterPlaylistFor,
+};

@@ -32,7 +32,7 @@ router.get('/queue', (req, res) => {
       });
     } else if (status === 'failed') {
       summary.failed += 1;
-      failed.push({ id: video.id, title: video.title, size: video.size });
+      failed.push({ id: video.id, title: video.title, size: video.size, error: hls.getLastError(video) });
     } else {
       summary.pending += 1;
     }
