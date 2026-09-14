@@ -29,6 +29,18 @@ const ITEMS = [
   { name: 'profiles.json', type: 'file' },
   { name: 'progress', type: 'dir' },
   { name: 'metadata.json', type: 'file' },
+  // Correcciones manuales de carátula/nombre (PosterPicker, overrideFromTmdb):
+  // sin esto, sobrevivían a un reinicio normal pero se perdían al cambiar de
+  // PC/servidor, aunque metadata.json (con el resultado ya aplicado) sí
+  // viajara - solo se notaría la próxima vez que una actualización masiva
+  // volviera a pisar esa clave sin encontrar el override guardado.
+  { name: 'metadata-overrides.json', type: 'file' },
+  // Igual de razonamiento: qué vídeos se dan por perdidos (lostVideos.js) y
+  // qué carpetas se han marcado como "no es una serie, son títulos sueltos"
+  // (catalogOverrides.js) son decisiones tomadas a mano que no se deben
+  // perder al cambiar de PC.
+  { name: 'lost-videos.json', type: 'file' },
+  { name: 'catalog-ungrouped.json', type: 'file' },
   { name: 'codec-checks.json', type: 'file' },
   { name: 'analytics.log', type: 'file' },
   { name: 'thumbnails', type: 'dir' },
