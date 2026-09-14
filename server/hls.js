@@ -153,10 +153,27 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
   });
 }
 
+// Generaciones en curso por video.id: si dos peticiones piden el mismo
+// vídeo a la vez (dos pestañas, un reintento del navegador...) antes de
+// que exista el master.m3u8, deben esperar al mismo ffmpeg en vez de
+// lanzar dos procesos en paralelo escribiendo al mismo directorio
+// temporal (se corromperían entre sí).
+const inFlight = new Map();
+
 // Genera el paquete HLS completo (vídeo + todas las pistas de audio) para
 // un vídeo. Idempotente: si el manifiesto maestro ya existe, no repite el
 // trabajo. Devuelve la ruta al master.m3u8 una vez listo.
-async function generateHls(video) {
+function generateHls(video) {
+  const master = masterPlaylistFor(video);
+  if (fs.existsSync(master)) return Promise.resolve(master);
+
+  if (inFlight.has(video.id)) return inFlight.get(video.id);
+  const promise = generateHlsNow(video).finally(() => inFlight.delete(video.id));
+  inFlight.set(video.id, promise);
+  return promise;
+}
+
+async function generateHlsNow(video) {
   const outDir = outDirFor(video);
   const master = masterPlaylistFor(video);
   if (fs.existsSync(master)) return master;

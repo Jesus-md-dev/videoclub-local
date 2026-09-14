@@ -27,6 +27,7 @@ const queueRouter = require('./routes/queue');
 const metadataRouter = require('./routes/metadata');
 const dedupeRouter = require('./routes/dedupe');
 const analyticsRouter = require('./routes/analytics');
+const hlsRouter = require('./routes/hls');
 
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
@@ -56,6 +57,7 @@ app.use('/api', queueRouter);
 app.use('/api', metadataRouter);
 app.use('/api', dedupeRouter);
 app.use('/api', analyticsRouter);
+app.use('/api', hlsRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
