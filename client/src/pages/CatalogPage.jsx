@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import Hls from 'hls.js';
 import { getActiveProfileId } from '../profile';
 import { track } from '../analytics';
 import HiddenMenu from '../components/HiddenMenu';
+import Row from '../components/Row';
+import QuickInfoModal from '../components/QuickInfoModal';
 
 function processingBadgeLabel(state, percent) {
   if (state === 'active') return `Procesando… ${typeof percent === 'number' ? `${percent}%` : ''}`.trim();
@@ -23,7 +26,11 @@ function continueWatchingIds(progressMap) {
   return entries.map((e) => e.id);
 }
 
-function VideoCard({ video, progress, onRemove }) {
+// Cuánto hay que mantener el ratón encima antes de arrancar la vista
+// previa (como Netflix: no salta a la primera pasada rápida del ratón).
+const HOVER_PREVIEW_DELAY_MS = 500;
+
+function VideoCard({ video, progress, onRemove, onQuickInfo }) {
   const showProgress = progress && progress.ratio < 0.95;
   // Terminado del todo (no a medias, eso ya lo cubre "Continuar"): se
   // excluyen del todo los mismos que "showProgress", así que nunca
@@ -35,8 +42,52 @@ function VideoCard({ video, progress, onRemove }) {
   const displayTitle = video.seriesKey ? video.title : video.cleanName || video.title;
   const processingLabel = processingBadgeLabel(video.processingState, video.processingPercent);
 
+  // Vista previa en movimiento al pasar el ratón (estilo Netflix): solo si
+  // el HLS de este vídeo ya está generado (si no, tocaría esperar a que
+  // termine solo por pasar el ratón por encima, mala idea).
+  const [previewing, setPreviewing] = useState(false);
+  const hoverTimer = useRef(null);
+  const videoElRef = useRef(null);
+  const hlsRef = useRef(null);
+
+  const startHover = () => {
+    if (!video.hlsReady) return;
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setPreviewing(true), HOVER_PREVIEW_DELAY_MS);
+  };
+  const endHover = () => {
+    clearTimeout(hoverTimer.current);
+    setPreviewing(false);
+  };
+  useEffect(() => () => clearTimeout(hoverTimer.current), []);
+
+  useEffect(() => {
+    if (!previewing) return undefined;
+    const el = videoElRef.current;
+    if (!el) return undefined;
+    const masterUrl = `/api/hls/${video.id}/master.m3u8`;
+
+    if (Hls.isSupported()) {
+      const instance = new Hls();
+      hlsRef.current = instance;
+      // Sin manejo de error: es solo una vista previa silenciosa, si falla
+      // simplemente se queda en la carátula fija, no hace falta avisar.
+      instance.on(Hls.Events.ERROR, () => {});
+      instance.loadSource(masterUrl);
+      instance.attachMedia(el);
+    } else if (el.canPlayType('application/vnd.apple.mpegurl')) {
+      el.src = masterUrl;
+    }
+    el.play?.().catch(() => {});
+
+    return () => {
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
+    };
+  }, [previewing, video.id]);
+
   return (
-    <Link className="card" to={`/watch/${video.id}`}>
+    <Link className="card" to={`/watch/${video.id}`} onMouseEnter={startHover} onMouseLeave={endHover}>
       {showProgress && <span className="badge">Continuar</span>}
       {showWatched && <span className="badge badge-watched">✓ Visto</span>}
       {processingLabel && (
@@ -55,16 +106,36 @@ function VideoCard({ video, progress, onRemove }) {
           ✕
         </button>
       )}
-      <img
-        className="poster"
-        src={posterSrc}
-        alt={displayTitle}
-        loading="lazy"
-        onError={(e) => {
-          e.currentTarget.onerror = null;
-          e.currentTarget.src = '/placeholder.svg';
+      <button
+        className="card-info-btn"
+        title="Más información"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onQuickInfo();
         }}
-      />
+      >
+        ⓘ
+      </button>
+      {previewing ? (
+        <video ref={videoElRef} className="poster poster-preview" muted loop playsInline autoPlay />
+      ) : (
+        <img
+          className="poster"
+          src={posterSrc}
+          alt={displayTitle}
+          loading="lazy"
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = '/placeholder.svg';
+          }}
+        />
+      )}
+      {showProgress && (
+        <div className="card-resume-overlay">
+          <span className="card-resume-play">▶</span>
+        </div>
+      )}
       {showProgress && (
         <div className="progress-bar">
           <div style={{ width: `${Math.round(progress.ratio * 100)}%` }} />
@@ -77,7 +148,7 @@ function VideoCard({ video, progress, onRemove }) {
   );
 }
 
-function FolderCard({ folder, onOpen }) {
+function FolderCard({ folder, onOpen, onQuickInfo }) {
   const posterSrc = folder.poster || (folder.thumbnailId ? `/api/thumbnail/${folder.thumbnailId}` : null);
   const displayName = folder.cleanName || folder.name;
   const processingLabel = processingBadgeLabel(folder.processingState, folder.processingPercent);
@@ -94,6 +165,26 @@ function FolderCard({ folder, onOpen }) {
       {processingLabel && (
         <span className={`badge badge-processing badge-${folder.processingState}`}>{processingLabel}</span>
       )}
+      <span
+        className="card-info-btn"
+        role="button"
+        tabIndex={0}
+        title="Más información"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onQuickInfo();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            e.stopPropagation();
+            onQuickInfo();
+          }
+        }}
+      >
+        ⓘ
+      </span>
       {posterSrc ? (
         <img
           className="poster"
@@ -175,6 +266,7 @@ export default function CatalogPage() {
   const [allVideos, setAllVideos] = useState([]);
   const [genres, setGenres] = useState([]);
   const [error, setError] = useState(null);
+  const [quickInfoTarget, setQuickInfoTarget] = useState(null);
 
   const searching = term.trim().length > 0;
 
@@ -330,7 +422,12 @@ export default function CatalogPage() {
             <p className="section-title">Resultados</p>
             <div className="grid">
               {list.map((video) => (
-                <VideoCard key={video.id} video={video} progress={progressMap[video.id]} />
+                <VideoCard
+                  key={video.id}
+                  video={video}
+                  progress={progressMap[video.id]}
+                  onQuickInfo={() => setQuickInfoTarget({ type: 'video', data: video, progress: progressMap[video.id] })}
+                />
               ))}
             </div>
           </>
@@ -339,52 +436,56 @@ export default function CatalogPage() {
         {!searching && (
           <>
             {continueWatching.length > 0 && (
-              <>
-                <p className="section-title">Continuar viendo</p>
-                <div className="grid">
-                  {continueWatching.map((video) => (
-                    <VideoCard
-                      key={video.id}
-                      video={video}
-                      progress={progressMap[video.id]}
-                      onRemove={handleRemoveFromContinueWatching}
-                    />
-                  ))}
-                </div>
-              </>
+              <Row title="Continuar viendo">
+                {continueWatching.map((video) => (
+                  <VideoCard
+                    key={video.id}
+                    video={video}
+                    progress={progressMap[video.id]}
+                    onRemove={handleRemoveFromContinueWatching}
+                    onQuickInfo={() => setQuickInfoTarget({ type: 'video', data: video, progress: progressMap[video.id] })}
+                  />
+                ))}
+              </Row>
             )}
 
             {visibleVideos.length > 0 && (
-              <>
-                <p className="section-title">{dir ? 'Vídeos' : 'Películas'}</p>
-                <div className="grid">
-                  {visibleVideos.map((video) => (
-                    <VideoCard key={video.id} video={video} progress={progressMap[video.id]} />
-                  ))}
-                </div>
-              </>
+              <Row title={dir ? 'Vídeos' : 'Películas'}>
+                {visibleVideos.map((video) => (
+                  <VideoCard
+                    key={video.id}
+                    video={video}
+                    progress={progressMap[video.id]}
+                    onQuickInfo={() => setQuickInfoTarget({ type: 'video', data: video, progress: progressMap[video.id] })}
+                  />
+                ))}
+              </Row>
             )}
 
             {showFolders && seriesFolders.length > 0 && (
-              <>
-                <p className="section-title">{dir ? 'Carpetas' : 'Series'}</p>
-                <div className="grid folder-grid">
-                  {seriesFolders.map((folder) => (
-                    <FolderCard key={folder.path} folder={folder} onOpen={goToDir} />
-                  ))}
-                </div>
-              </>
+              <Row title={dir ? 'Carpetas' : 'Series'}>
+                {seriesFolders.map((folder) => (
+                  <FolderCard
+                    key={folder.path}
+                    folder={folder}
+                    onOpen={goToDir}
+                    onQuickInfo={() => setQuickInfoTarget({ type: 'folder', data: folder })}
+                  />
+                ))}
+              </Row>
             )}
 
             {showFolders && animeFolders.length > 0 && (
-              <>
-                <p className="section-title">Animes</p>
-                <div className="grid folder-grid">
-                  {animeFolders.map((folder) => (
-                    <FolderCard key={folder.path} folder={folder} onOpen={goToDir} />
-                  ))}
-                </div>
-              </>
+              <Row title="Animes">
+                {animeFolders.map((folder) => (
+                  <FolderCard
+                    key={folder.path}
+                    folder={folder}
+                    onOpen={goToDir}
+                    onQuickInfo={() => setQuickInfoTarget({ type: 'folder', data: folder })}
+                  />
+                ))}
+              </Row>
             )}
           </>
         )}
@@ -396,6 +497,7 @@ export default function CatalogPage() {
           </p>
         )}
       </main>
+      <QuickInfoModal target={quickInfoTarget} onClose={() => setQuickInfoTarget(null)} onOpenFolder={goToDir} />
     </>
   );
 }

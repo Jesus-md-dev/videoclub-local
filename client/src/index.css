@@ -196,6 +196,59 @@ main {
   gap: 20px;
 }
 
+/* ---- Carril horizontal (Row.jsx): cada categoría es una cinta deslizable
+   en vez de una rejilla que se corta en varias filas, como Netflix. ---- */
+.row {
+  margin-bottom: 8px;
+}
+
+.row-viewport {
+  position: relative;
+}
+
+.row-track {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scroll-behavior: smooth;
+  padding: 4px 4px 12px;
+  /* Oculta la barra de scroll (el deslizamiento en sí sigue funcionando):
+     el carril ya se lee visualmente como "esto sigue hacia el lado". */
+  scrollbar-width: none;
+}
+
+.row-track::-webkit-scrollbar {
+  display: none;
+}
+
+.row-track > .card {
+  flex: 0 0 150px;
+  scroll-snap-align: start;
+}
+
+.row-arrow {
+  position: absolute;
+  top: 0;
+  bottom: 12px;
+  width: 44px;
+  border: none;
+  background: linear-gradient(to right, var(--bg) 20%, transparent);
+  color: var(--text);
+  font-size: 28px;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.row-arrow-right {
+  right: 0;
+  background: linear-gradient(to left, var(--bg) 20%, transparent);
+}
+
+.row-arrow-left {
+  left: 0;
+}
+
 .card {
   display: block;
   text-decoration: none;
@@ -300,6 +353,159 @@ main {
 .card-remove:hover {
   background: var(--accent);
   color: #fff;
+}
+
+.card-info-btn {
+  position: absolute;
+  bottom: 44px;
+  right: 6px;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--text);
+  border: none;
+  border-radius: 50%;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.card:hover .card-info-btn,
+.card:focus-within .card-info-btn {
+  opacity: 1;
+}
+
+.card-info-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.poster-preview {
+  background: #000;
+}
+
+.card-resume-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.card:hover .card-resume-overlay,
+.card:focus-within .card-resume-overlay {
+  opacity: 1;
+}
+
+.card-resume-play {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid var(--text);
+  color: var(--text);
+  font-size: 20px;
+  padding-left: 3px;
+}
+
+/* ---- Ficha rápida (QuickInfoModal.jsx): "más info" sin salir del
+   catálogo, como el popup de Netflix al pasar el ratón. ---- */
+.quickinfo-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 2, 7, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.quickinfo-card {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+}
+
+.quickinfo-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.quickinfo-poster {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: #000;
+}
+
+.quickinfo-body {
+  padding: 20px;
+}
+
+.quickinfo-body h2 {
+  margin: 0 0 10px;
+  font-size: 22px;
+}
+
+.quickinfo-genres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.quickinfo-actions {
+  margin-top: 16px;
+}
+
+.quickinfo-play {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 22px;
+  font-size: 15px;
+  font-weight: bold;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.quickinfo-play:hover {
+  background: var(--accent-glow);
 }
 
 .progress-bar {
@@ -1036,6 +1242,14 @@ video {
     gap: 12px;
   }
 
+  .row-track > .card {
+    flex-basis: 105px;
+  }
+
+  .row-track {
+    gap: 12px;
+  }
+
   .card-remove {
     opacity: 1;
   }
@@ -1088,6 +1302,10 @@ video {
   .grid {
     grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
   }
+
+  .row-track > .card {
+    flex-basis: 175px;
+  }
 }
 
 /* ---- Pantallas grandes / smart TV: UI "a 3 metros", más grande y legible,
@@ -1109,6 +1327,14 @@ video {
 
   .grid {
     grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 28px;
+  }
+
+  .row-track > .card {
+    flex-basis: 210px;
+  }
+
+  .row-track {
     gap: 28px;
   }
 

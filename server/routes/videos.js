@@ -36,6 +36,10 @@ function toPublicVideo(video) {
     seriesKey: catalog.getShowKeyFor(video),
     processingState: hlsProcessingState(video),
     processingPercent: hls.getProgress(video)?.percent ?? null,
+    // Para la vista previa al pasar el ratón sobre la carátula: solo tiene
+    // sentido intentarla si el HLS ya está generado (si no, habría que
+    // esperar a que termine solo por pasar el ratón por encima).
+    hlsReady: hls.getStatus(video) === 'ready',
     // El original se borró (era H.264 compatible, el HLS ya es el mismo
     // vídeo, ver hls.js): "Reproducir sin convertir" no puede funcionar.
     archived: video.archived === true,
