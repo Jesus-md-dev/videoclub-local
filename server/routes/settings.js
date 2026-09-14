@@ -32,7 +32,7 @@ router.post('/settings', async (req, res) => {
   }
 
   try {
-    const videos = catalog.scan();
+    const videos = await catalog.scan();
     mediaInfo.pruneStore(videos.map((v) => v.id));
     thumbnails.generateMissingThumbnails(videos);
     metadata.warmAll(catalog.getAllGroupKeys());

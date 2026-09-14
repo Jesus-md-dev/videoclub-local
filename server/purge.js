@@ -3,6 +3,8 @@ const path = require('path');
 const catalog = require('./catalog');
 const archivedVideos = require('./archivedVideos');
 const lostVideos = require('./lostVideos');
+const hls = require('./hls');
+const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
 const { DATA_PATH, HLS_PATH, THUMBNAILS_PATH } = require('./config');
 
@@ -37,7 +39,7 @@ function removeProgressFor(ids) {
 // (HLS sin original, ver archivedVideos.js) sobreviven a propósito a que
 // su carpeta desaparezca del escaneo, así que sin esto seguirían
 // apareciendo en el catálogo para siempre por mucho que se borre en disco.
-function purgeKey(key) {
+async function purgeKey(key) {
   const { videos } = catalog.listDir(key);
   if (!videos.length) return { removed: 0 };
 
@@ -45,6 +47,8 @@ function purgeKey(key) {
   for (const video of videos) {
     archivedVideos.forget(video.id);
     lostVideos.forget(video.id);
+    hls.forget(video.id);
+    thumbnails.forget(video.id);
     fs.rmSync(path.join(HLS_PATH, video.id), { recursive: true, force: true });
     fs.rmSync(path.join(THUMBNAILS_PATH, `${video.id}.jpg`), { force: true });
     fs.rmSync(path.join(TRICKPLAY_DIR, `${video.id}.json`), { force: true });
@@ -52,7 +56,7 @@ function purgeKey(key) {
   }
   removeProgressFor(ids);
   metadata.forgetMetadata(key);
-  catalog.scan();
+  await catalog.scan();
   return { removed: ids.length };
 }
 

@@ -71,25 +71,34 @@ function groupKeyFor(video) {
   return video.title;
 }
 
-function walk(dir, baseDir, results) {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
+// Asíncrono a propósito (fs.promises, no fs...Sync): con la carpeta de
+// vídeos en un disco externo, una sola llamada síncrona lenta (el disco
+// saturado por streaming/conversión/copia a la vez) bloqueaba el bucle de
+// eventos de Node entero mientras duraba - el servidor se quedaba sin
+// responder a NINGUNA petición, a veces varios segundos, a veces mucho
+// más. Con await, solo esta función concreta espera; el resto del
+// servidor sigue atendiendo peticiones mientras tanto.
+async function walk(baseDir) {
+  const entries = await fs.promises.readdir(baseDir, { recursive: true, withFileTypes: true });
+  const results = [];
   for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(fullPath, baseDir, results);
-    } else if (VIDEO_EXTENSIONS.includes(path.extname(entry.name).toLowerCase())) {
-      const relativePath = path.relative(baseDir, fullPath);
-      const stat = fs.statSync(fullPath);
-      const id = makeId(relativePath);
-      results.push({
-        id,
-        title: cleanTitle(entry.name),
-        relativePath,
-        size: stat.size,
-        modifiedAt: stat.mtime,
-      });
-    }
+    if (!entry.isFile()) continue;
+    if (!VIDEO_EXTENSIONS.includes(path.extname(entry.name).toLowerCase())) continue;
+    const parentDir = entry.parentPath ?? entry.path;
+    const fullPath = path.join(parentDir, entry.name);
+    const relativePath = path.relative(baseDir, fullPath);
+    // eslint-disable-next-line no-await-in-loop
+    const stat = await fs.promises.stat(fullPath);
+    const id = makeId(relativePath);
+    results.push({
+      id,
+      title: cleanTitle(entry.name),
+      relativePath,
+      size: stat.size,
+      modifiedAt: stat.mtime,
+    });
   }
+  return results;
 }
 
 // Agrupa el catálogo por `groupKeyFor`: las claves con más de un vídeo se
@@ -123,7 +132,7 @@ function buildLibrary() {
   moviesList.sort((a, b) => a.title.localeCompare(b.title, 'es'));
 }
 
-function scan() {
+async function scan() {
   const videosPath = getVideosPath();
   if (!videosPath) {
     throw new Error('No hay carpeta de vídeos configurada. Ajústala en /config.html o en .env');
@@ -132,8 +141,7 @@ function scan() {
     throw new Error(`La carpeta configurada no existe: ${videosPath}`);
   }
 
-  const results = [];
-  walk(videosPath, videosPath, results);
+  const results = await walk(videosPath);
 
   // Vídeos cuyo original se borró tras generar su HLS (ver hls.js): siguen
   // en el catálogo a partir del registro, no del escaneo, porque el

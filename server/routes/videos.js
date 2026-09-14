@@ -134,7 +134,7 @@ router.get('/genres', (req, res) => {
 
 router.post('/scan', async (req, res) => {
   try {
-    const videos = catalog.scan();
+    const videos = await catalog.scan();
     // Generar carátulas, precalentar géneros y HLS en segundo plano, sin bloquear la respuesta.
     thumbnails.generateMissingThumbnails(videos);
     metadata.warmAll(catalog.getAllGroupKeys());

@@ -18,16 +18,24 @@ const DEBOUNCE_MS = 30000;
 
 let watcher = null;
 let debounceTimer = null;
+// Por si el temporizador de abajo dispara un reescaneo nuevo mientras el
+// anterior todavía sigue esperando al disco (catalog.scan es asíncrono
+// pero no instantáneo): evita dos reescaneos completos solapados a la vez.
+let scanning = false;
 
-function rescan() {
+async function rescan() {
+  if (scanning) return;
+  scanning = true;
   try {
-    const videos = catalog.scan();
+    const videos = await catalog.scan();
     console.log(`Catálogo actualizado automáticamente: ${videos.length} vídeo(s)`);
     thumbnails.generateMissingThumbnails(videos);
     metadata.warmAll(catalog.getAllGroupKeys());
     hls.warmAll(videos);
   } catch (err) {
     console.error(`Error al reescanear automáticamente: ${err.message}`);
+  } finally {
+    scanning = false;
   }
 }
 

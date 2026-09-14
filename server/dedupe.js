@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { DATA_PATH, THUMBNAILS_PATH, getVideosPath } = require('./config');
 const catalog = require('./catalog');
+const thumbnails = require('./thumbnails');
 
 const PROGRESS_DIR = path.join(DATA_PATH, 'progress');
 const TRICKPLAY_DIR = path.join(DATA_PATH, 'trickplay');
@@ -75,12 +76,13 @@ async function replaceWithTranscoded(video, transcodedFile, { keepBackup = true 
 
   // Re-escanea para que el catálogo calcule el id (nuevo o el mismo, según
   // si cambió la extensión) a partir del archivo ya sustituido en su sitio.
-  catalog.scan();
+  await catalog.scan();
   const newVideo = catalog.getCatalog().find((v) => v.relativePath === newRelativePath);
   const newId = newVideo ? newVideo.id : oldId;
 
   if (newId !== oldId) {
     migrateProgress(oldId, newId);
+    thumbnails.forget(oldId);
     migrateFile(path.join(THUMBNAILS_PATH, `${oldId}.jpg`), path.join(THUMBNAILS_PATH, `${newId}.jpg`));
     migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.json`), path.join(TRICKPLAY_DIR, `${newId}.json`));
     migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.jpg`), path.join(TRICKPLAY_DIR, `${newId}.jpg`));

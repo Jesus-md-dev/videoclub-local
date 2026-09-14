@@ -68,7 +68,19 @@ process.on('uncaughtException', (err) => {
 
 const app = express();
 
-app.use(express.static(CLIENT_DIST));
+// Sin caché en el navegador para el frontend: en una app que se
+// actualiza a menudo (git pull + reiniciar), un "el botón no hace nada"
+// podía ser en realidad el navegador sirviendo JS de una versión
+// anterior desde su propia caché, sin que recargar la página (ni F5)
+// lo notara siempre. Prioriza tener siempre lo último sin ambigüedad
+// por encima del ahorro de ancho de banda, irrelevante en LAN.
+app.use(
+  express.static(CLIENT_DIST, {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
+  })
+);
 app.use('/api', videosRouter);
 app.use('/api', streamRouter);
 app.use('/api', thumbnailRouter);
@@ -115,14 +127,14 @@ function localIps() {
   return ips;
 }
 
-function scanIfConfigured() {
+async function scanIfConfigured() {
   const videosPath = getVideosPath();
   if (!videosPath) {
     console.warn('No hay carpeta de vídeos configurada todavía. Ajústala en /config');
     return;
   }
   try {
-    const videos = catalog.scan();
+    const videos = await catalog.scan();
     console.log(`Catálogo: ${videos.length} vídeo(s) encontrados en ${videosPath}`);
     mediaInfo.pruneStore(videos.map((v) => v.id));
     thumbnails.generateMissingThumbnails(videos);
@@ -153,7 +165,7 @@ function scheduleShutdownBackup() {
 }
 
 async function start() {
-  scanIfConfigured();
+  await scanIfConfigured();
   backup.backupNow();
   setInterval(backup.backupNow, BACKUP_INTERVAL_MS).unref();
   scheduleShutdownBackup();
