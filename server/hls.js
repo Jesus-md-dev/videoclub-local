@@ -154,11 +154,20 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
     // Por pista, no en bloque: si una pista ya es AAC (el caso normal en
     // esta biblioteca), copiarla es prácticamente instantáneo - antes se
     // recodificaban todas siempre, aunque ya fueran válidas, sin motivo.
+    //
+    // Las pistas que SÍ hay que recodificar se fuerzan a estéreo (-ac 2):
+    // visto en directo con una edición de fans con audio 5.1 en una pista
+    // (japonés) y estéreo en otra (castellano) - cambiar de pista en pleno
+    // visionado hacía que Chrome fallara al añadir el nuevo audio al mismo
+    // SourceBuffer (bufferFullError) y hls.js revertía solo a la pista
+    // anterior sin avisar, dando la sensación de que el cambio de idioma
+    // "no hacía nada". Las pistas HLS de un mismo grupo de audio deben
+    // compartir formato para poder alternar entre ellas sin recargar nada.
     audioStreams.forEach((stream, i) => {
       if (stream.codec_name === 'aac') {
         args.push(`-c:a:${i}`, 'copy');
       } else {
-        args.push(`-c:a:${i}`, 'aac', `-b:a:${i}`, '160k');
+        args.push(`-c:a:${i}`, 'aac', `-b:a:${i}`, '160k', `-ac:a:${i}`, '2');
       }
     });
     args.push(

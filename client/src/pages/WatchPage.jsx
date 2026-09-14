@@ -55,6 +55,23 @@ function findByLanguage(list, language) {
   return -1;
 }
 
+// Algunos archivos (ediciones de fans, sobre todo) no llevan la pista de
+// audio etiquetada con un idioma real en el contenedor, solo un "título"
+// (p.ej. "Castellano"/"Japones Flac") - ahí no hay idioma con el que
+// buscar en ninguno de los dos lados. Además ffmpeg no traslada ese
+// título tal cual al NAME del manifiesto HLS (siempre pone "audio_N"
+// genérico), así que tampoco sirve para buscar por nombre. En ese caso se
+// cae a la posición ordinal entre pistas de audio: sí es consistente
+// entre tracks.audio y el manifiesto/audioTracks del reproductor, porque
+// ambos se derivan del mismo análisis del archivo en el mismo orden.
+function findAudioTrackPosition(list, wantedTrack, ordinalPosition) {
+  if (!list) return -1;
+  const byLanguage = findByLanguage(list, wantedTrack?.language);
+  if (byLanguage >= 0) return byLanguage;
+  if (ordinalPosition != null && ordinalPosition >= 0 && ordinalPosition < list.length) return ordinalPosition;
+  return -1;
+}
+
 function formatRemaining(progress) {
   if (!progress || !progress.percent) return null;
   const { percent, elapsedMs } = progress;
@@ -225,7 +242,18 @@ export default function WatchPage() {
     const masterUrl = `/api/hls/${id}/master.m3u8`;
 
     if (Hls.isSupported()) {
-      const instance = new Hls();
+      // Por defecto hls.js precarga tan por delante como la red permita
+      // (hasta 600s / ~60MB) - con una red local rápida y un archivo pesado
+      // (BD 1080p), eso llena el SourceBuffer del navegador en pocos
+      // segundos de verdad reproducidos, mucho antes de que la posición
+      // avance lo suficiente para poder liberar espacio. El resultado
+      // ("SourceBuffer is full") es un error no fatal que hls.js sabe
+      // recuperar solo para que el vídeo no se corte, pero como efecto
+      // colateral reinicia también la pista de audio a la de por defecto -
+      // dando la sensación de que cambiar de idioma "no hacía nada" en
+      // archivos grandes. Un margen de precarga más conservador evita
+      // llegar a ese límite sin perder fluidez real.
+      const instance = new Hls({ maxBufferLength: 60, maxMaxBufferLength: 90 });
       hlsRef.current = instance;
       instance.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) console.warn(`hls.js: error fatal (${data.type}): ${data.details}`);
@@ -237,7 +265,8 @@ export default function WatchPage() {
       instance.on(Hls.Events.MANIFEST_PARSED, () => {
         if (audioIndex == null) return;
         const wanted = tracks.audio.find((t) => t.index === audioIndex);
-        const position = findByLanguage(instance.audioTracks, wanted?.language);
+        const ordinal = tracks.audio.findIndex((t) => t.index === audioIndex);
+        const position = findAudioTrackPosition(instance.audioTracks, wanted, ordinal);
         if (position >= 0 && instance.audioTrack !== position) instance.audioTrack = position;
       });
       instance.loadSource(masterUrl);
@@ -255,8 +284,9 @@ export default function WatchPage() {
       player.src = masterUrl;
       if (audioIndex != null) {
         const wanted = tracks.audio.find((t) => t.index === audioIndex);
+        const ordinal = tracks.audio.findIndex((t) => t.index === audioIndex);
         const onLoadedMeta = () => {
-          const position = findByLanguage(player.audioTracks, wanted?.language);
+          const position = findAudioTrackPosition(player.audioTracks, wanted, ordinal);
           if (position >= 0 && player.audioTracks) {
             for (let i = 0; i < player.audioTracks.length; i += 1) {
               player.audioTracks[i].enabled = i === position;
@@ -374,16 +404,20 @@ export default function WatchPage() {
 
     // Modo normal (HLS): cambia de pista sin recargar el vídeo ni perder la
     // posición, usando la API de pistas del reproductor en marcha. Se busca
-    // por idioma dentro de la lista real del reproductor (ver
-    // findByLanguage): el índice de tracks.audio (ffprobe) no tiene por qué
-    // coincidir con el de hls.js/audioTracks nativo.
+    // por idioma dentro de la lista real del reproductor cuando el archivo
+    // lo trae etiquetado, y si no (ediciones de fans sin idioma en el
+    // contenedor) por posición ordinal (ver findAudioTrackPosition): el
+    // índice de tracks.audio (ffprobe) no tiene por qué coincidir con el de
+    // hls.js/audioTracks nativo, pero su ORDEN sí, al venir ambos del mismo
+    // análisis del archivo.
     if (!rawMode) {
+      const ordinal = tracks.audio.findIndex((t) => t.index === newIndex);
       if (hlsRef.current) {
-        const position = findByLanguage(hlsRef.current.audioTracks, chosenTrack?.language);
+        const position = findAudioTrackPosition(hlsRef.current.audioTracks, chosenTrack, ordinal);
         if (position >= 0) hlsRef.current.audioTrack = position;
       } else if (playerRef.current?.audioTracks) {
         // Safari nativo: sin hls.js, la selección va por audioTracks.
-        const position = findByLanguage(playerRef.current.audioTracks, chosenTrack?.language);
+        const position = findAudioTrackPosition(playerRef.current.audioTracks, chosenTrack, ordinal);
         if (position >= 0) {
           for (let i = 0; i < playerRef.current.audioTracks.length; i += 1) {
             playerRef.current.audioTracks[i].enabled = i === position;
