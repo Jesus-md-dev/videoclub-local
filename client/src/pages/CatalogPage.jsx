@@ -23,6 +23,10 @@ function continueWatchingIds(progressMap) {
 
 function VideoCard({ video, progress, onRemove }) {
   const showProgress = progress && progress.ratio < 0.95;
+  // Terminado del todo (no a medias, eso ya lo cubre "Continuar"): se
+  // excluyen del todo los mismos que "showProgress", así que nunca
+  // coinciden en la misma carátula.
+  const showWatched = progress && progress.ratio >= 0.95;
   const posterSrc = video.poster || `/api/thumbnail/${video.id}`;
   // El nombre limpio es el de la serie (mismo para todos sus episodios), así
   // que en un episodio taparía el número; solo se usa en películas sueltas.
@@ -32,6 +36,7 @@ function VideoCard({ video, progress, onRemove }) {
   return (
     <Link className="card" to={`/watch/${video.id}`}>
       {showProgress && <span className="badge">Continuar</span>}
+      {showWatched && <span className="badge badge-watched">✓ Visto</span>}
       {processingLabel && (
         <span className={`badge badge-processing badge-${video.processingState}`}>{processingLabel}</span>
       )}
@@ -79,9 +84,11 @@ function FolderCard({ folder, onOpen }) {
   // activo, o si aún no se ha empezado ninguno.
   const seriesProgress = folder.seriesProgress;
   const showSeriesProgress = seriesProgress && seriesProgress.watched > 0;
+  const showSeriesWatched = seriesProgress && seriesProgress.ratio >= 1;
 
   return (
     <button className="card folder-card" onClick={() => onOpen(folder.path)}>
+      {showSeriesWatched && <span className="badge badge-watched">✓ Completa</span>}
       {processingLabel && (
         <span className={`badge badge-processing badge-${folder.processingState}`}>{processingLabel}</span>
       )}

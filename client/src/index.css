@@ -194,6 +194,10 @@ main {
   opacity: 0.85;
 }
 
+.badge-watched {
+  background: #2a9d8f;
+}
+
 .card-remove {
   position: absolute;
   top: 6px;
