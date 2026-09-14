@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import Hls from 'hls.js';
 import VideoControls from '../components/VideoControls';
 import { getActiveProfileId } from '../profile';
+import { getPreferredAudioLanguage, setPreferredAudioLanguage } from '../audioPreference';
 import { track } from '../analytics';
 
 // El progreso se guarda en el servidor por perfil (no en localStorage), así
@@ -85,7 +86,16 @@ export default function WatchPage() {
 
     fetch(`/api/tracks/${id}`)
       .then((res) => res.json())
-      .then(setTracks)
+      .then((t) => {
+        setTracks(t);
+        // Aplica el idioma elegido la última vez (en otro episodio/vídeo,
+        // los índices de pista no tienen por qué coincidir entre archivos,
+        // así que se busca por idioma, no por índice) - si no hay uno
+        // igual, se deja la pista por defecto del archivo.
+        const preferredLang = getPreferredAudioLanguage();
+        const match = preferredLang && t.audio.find((track) => track.language === preferredLang);
+        setAudioIndex(match ? match.index : null);
+      })
       .catch(() => {});
 
     savedProgressRef.current = null;
@@ -202,6 +212,15 @@ export default function WatchPage() {
       instance.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) console.warn(`hls.js: error fatal (${data.type}): ${data.details}`);
       });
+      // Si el idioma preferido (guardado de otro episodio) no es el que
+      // trae por defecto este archivo, se aplica en cuanto se conocen las
+      // pistas reales del manifiesto - así el primer episodio que se abre
+      // ya suena en el idioma guardado, no solo los siguientes cambios.
+      instance.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (audioIndex == null) return;
+        const position = tracks.audio.findIndex((t) => t.index === audioIndex);
+        if (position >= 0 && instance.audioTrack !== position) instance.audioTrack = position;
+      });
       instance.loadSource(masterUrl);
       instance.attachMedia(player);
       return () => {
@@ -215,6 +234,18 @@ export default function WatchPage() {
       // Safari usa player.audioTracks (ver handleAudioChange) en vez de la
       // API de hls.js.
       player.src = masterUrl;
+      if (audioIndex != null) {
+        const position = tracks.audio.findIndex((t) => t.index === audioIndex);
+        const onLoadedMeta = () => {
+          if (position >= 0 && player.audioTracks) {
+            for (let i = 0; i < player.audioTracks.length; i += 1) {
+              player.audioTracks[i].enabled = i === position;
+            }
+          }
+        };
+        player.addEventListener('loadedmetadata', onLoadedMeta, { once: true });
+        return () => player.removeEventListener('loadedmetadata', onLoadedMeta);
+      }
       return undefined;
     }
 
@@ -315,6 +346,11 @@ export default function WatchPage() {
   const handleAudioChange = (e) => {
     const value = e.target.value;
     const newIndex = value === '' ? null : Number(value);
+
+    // Se recuerda por idioma (no por índice) para aplicarlo solo al
+    // siguiente episodio/vídeo que se abra.
+    const chosenTrack = tracks.audio.find((t) => t.index === newIndex);
+    setPreferredAudioLanguage(chosenTrack?.language || null);
 
     // Modo normal (HLS): cambia de pista sin recargar el vídeo ni perder la
     // posición, usando la API de pistas del reproductor en marcha.
