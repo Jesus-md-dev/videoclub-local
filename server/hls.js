@@ -40,9 +40,23 @@ const LANGUAGE_NAMES = {
   por: 'Portugués',
 };
 
+// El nombre de variante acaba tal cual dentro de "-var_stream_map" (que usa
+// espacios para separar variantes y comas para separar atributos dentro de
+// cada una) y, vía %v, como nombre de carpeta. Un título de pista con
+// espacio, coma o comilla (metadatos del propio archivo, no de fiar: p.ej.
+// el respaldo "Pista 1" cuando no hay idioma, o un título así puesto por
+// quien codificó el archivo) rompía el parseo de ffmpeg y hacía fallar la
+// generación entera con un error opaco ("Nothing was written..."), sin
+// relación aparente con la causa real - visto en directo con una película
+// sin idioma en su única pista de audio.
+function sanitizeLabel(text) {
+  return text.replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'audio';
+}
+
 function labelFor(stream, fallbackIndex) {
   const lang = stream.tags?.language;
-  return (lang && LANGUAGE_NAMES[lang]) || stream.tags?.title || lang || `Pista ${fallbackIndex + 1}`;
+  const raw = (lang && LANGUAGE_NAMES[lang]) || stream.tags?.title || lang || `Pista${fallbackIndex + 1}`;
+  return sanitizeLabel(raw);
 }
 
 // Detección de GPU (NVENC) igual que transcode.js: se prueba una vez y se
@@ -87,7 +101,8 @@ function buildVarStreamMap(audioStreams, defaultIndex) {
   const parts = ['v:0,agroup:aud'];
   audioStreams.forEach((stream, i) => {
     const attrs = [`a:${i}`, 'agroup:aud', `name:${labelFor(stream, i)}`];
-    if (stream.tags?.language) attrs.push(`language:${stream.tags.language}`);
+    const lang = stream.tags?.language;
+    if (lang) attrs.push(`language:${sanitizeLabel(lang)}`);
     if (i === defaultIndex) attrs.push('default:yes');
     parts.push(attrs.join(','));
   });
@@ -227,21 +242,40 @@ async function runGeneration(video, priority) {
     };
 
     const tmpDir = `${outDir}.tmp`;
-    fs.rmSync(tmpDir, { recursive: true, force: true });
 
-    try {
-      await runLimited(
-        () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu, durationSeconds, onProgress }),
-        priority
-      );
-    } catch (err) {
+    // Un archivo grande en un disco externo puede fallar de forma puntual
+    // (contención de E/S, la GPU ya saturada por otra sesión NVENC a la
+    // vez...), no solo por estar realmente mal formado - visto en directo
+    // con una película 4K que falló así y, al repetir el mismo comando
+    // suelto un momento después, funcionó sin cambiar nada. GPU una vez (si
+    // hay) y CPU hasta dos veces más antes de darse por vencido, en vez de
+    // marcarlo como fallido para siempre a la primera.
+    const attempts = useGpu ? [true, false, false] : [false, false, false];
+    let lastErr;
+    for (let i = 0; i < attempts.length; i += 1) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (!useGpu) throw err;
-      console.warn(`HLS: fallo con GPU para "${video.title}", reintentando con CPU: ${err.message}`);
-      await runLimited(
-        () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu: false, durationSeconds, onProgress }),
-        priority
-      );
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await runLimited(
+          () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu: attempts[i], durationSeconds, onProgress }),
+          priority
+        );
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(
+          `HLS: fallo con ${attempts[i] ? 'GPU' : 'CPU'} para "${video.title}" (intento ${i + 1}/${attempts.length}): ${err.message}`
+        );
+        if (i < attempts.length - 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+    }
+    if (lastErr) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      throw lastErr;
     }
 
     fs.rmSync(outDir, { recursive: true, force: true });
