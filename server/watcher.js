@@ -5,7 +5,16 @@ const metadata = require('./metadata');
 const hls = require('./hls');
 const { getVideosPath } = require('./config');
 
-const DEBOUNCE_MS = 8000;
+// Cada reescaneo es síncrono sobre toda la biblioteca (miles de vídeos) y
+// bloquea el servidor entero mientras dura - con la carpeta de vídeos en
+// un disco externo, y sobre todo durante rachas largas de archivado en
+// segundo plano (que borra el original de cada vídeo compatible, un
+// cambio detectado por este mismo vigilante), 8s de margen no bastaba:
+// llegaban cambios sueltos más separados que eso, así que cada uno
+// disparaba su propio reescaneo, y varios seguidos dejaban el servidor
+// sin responder ratos largos. Con más margen, una racha de cambios se
+// agrupa en muchos menos reescaneos.
+const DEBOUNCE_MS = 30000;
 
 let watcher = null;
 let debounceTimer = null;
