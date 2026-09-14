@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { getVideosPath, VIDEO_EXTENSIONS } = require('./config');
+const archivedVideos = require('./archivedVideos');
 
 let cache = [];
 let byId = new Map();
@@ -126,6 +127,23 @@ function scan() {
 
   const results = [];
   walk(videosPath, videosPath, results);
+
+  // Vídeos cuyo original se borró tras generar su HLS (ver hls.js): siguen
+  // en el catálogo a partir del registro, no del escaneo, porque el
+  // archivo ya no está en disco.
+  const seenIds = new Set(results.map((v) => v.id));
+  for (const [id, info] of Object.entries(archivedVideos.getAll())) {
+    if (seenIds.has(id)) continue; // no debería pasar, pero por si acaso
+    results.push({
+      id,
+      title: info.title,
+      relativePath: info.relativePath,
+      size: info.size,
+      modifiedAt: info.modifiedAt,
+      archived: true,
+    });
+  }
+
   results.sort((a, b) => a.title.localeCompare(b.title, 'es'));
 
   cache = results;

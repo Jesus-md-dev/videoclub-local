@@ -15,10 +15,15 @@ const BACKUP_DIRNAME = '.videoclub-datos';
 // Ahí se guarda una copia de todo lo que sería caro o lento de rehacer
 // desde cero: perfiles, progreso de "Continuar viendo"/visto, carpeta
 // configurada, carátulas generadas, caché de géneros/análisis de códecs y
-// analítica. Los vídeos convertidos, subtítulos extraídos y el certificado
-// HTTPS se quedan fuera: son caché regenerable bajo demanda (o, en el caso
-// de los convertidos, demasiado grandes para duplicarlos).
-
+// analítica. Los vídeos convertidos y el certificado HTTPS se quedan
+// fuera: son caché regenerable bajo demanda (o, en el caso de los
+// convertidos, demasiado grandes para duplicarlos).
+//
+// subtitles/, trickplay/ y hls-archived.json sí se respaldan (a
+// diferencia de antes): cuando el HLS de un vídeo sustituye a su
+// original (ver hls.js), esos dejan de ser caché regenerable para ese
+// vídeo en concreto - sin el original ya no hay forma de volver a
+// extraerlos, así que perderlos sería perderlos para siempre.
 const ITEMS = [
   { name: 'settings.json', type: 'file' },
   { name: 'profiles.json', type: 'file' },
@@ -27,6 +32,9 @@ const ITEMS = [
   { name: 'codec-checks.json', type: 'file' },
   { name: 'analytics.log', type: 'file' },
   { name: 'thumbnails', type: 'dir' },
+  { name: 'subtitles', type: 'dir' },
+  { name: 'trickplay', type: 'dir' },
+  { name: 'hls-archived.json', type: 'file' },
 ];
 
 function backupDir() {

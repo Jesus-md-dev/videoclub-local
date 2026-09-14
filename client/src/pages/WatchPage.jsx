@@ -441,7 +441,7 @@ export default function WatchPage() {
                   : 'Analizando el vídeo, puede tardar unos minutos la primera vez...'}
               </p>
             )}
-            {!rawMode && (
+            {!rawMode && !video?.archived && (
               <>
                 <button className="raw-mode-btn" onClick={() => setRawMode(true)}>
                   Reproducir sin convertir

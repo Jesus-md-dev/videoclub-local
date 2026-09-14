@@ -5,6 +5,9 @@ const ffmpegPath = require('ffmpeg-static');
 const { ffmpeg, getMediaInfo, inputPathFor } = require('./mediaInfo');
 const { HLS_PATH } = require('./config');
 const { runLimited } = require('./ffmpeg-limiter');
+const subtitles = require('./subtitles');
+const trickplay = require('./trickplay');
+const archivedVideos = require('./archivedVideos');
 
 // Issue #58/#59/#61 del plan HLS: generación + estado/progreso/prioridad.
 // Las rutas HTTP están en routes/hls.js, el reproductor (#60) en el cliente.
@@ -284,10 +287,38 @@ async function runGeneration(video, priority) {
       throw lastErr;
     }
 
-    fs.rmSync(outDir, { recursive: true, force: true });
-    fs.renameSync(tmpDir, outDir);
+    // ffmpeg puede terminar con éxito (código 0) y aun así el rename
+    // fallar con ENOENT justo después - visto en directo en un disco
+    // externo, sin relación con nada del comando en sí (el tmpDir estaba
+    // vacío/no existía ya en el momento del rename, probablemente por un
+    // hueco de E/S del propio disco). Un par de reintentos cortos antes de
+    // darse por vencido, en vez de tirar todo el trabajo de ffmpeg ya
+    // hecho por un fallo de mover la carpeta.
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        fs.rmSync(outDir, { recursive: true, force: true });
+        fs.renameSync(tmpDir, outDir);
+        break;
+      } catch (err) {
+        if (attempt >= 3) throw err;
+        console.warn(`HLS: fallo moviendo el resultado de "${video.title}" (intento ${attempt}/3): ${err.message}`);
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
     status.set(video.id, 'ready');
     progress.delete(video.id);
+
+    // Solo cuando el original ya era H.264 compatible: ahí el HLS es un
+    // simple remux, el mismo vídeo dos veces en disco. En segundo plano
+    // (no bloquea el "ready", ya se puede reproducir) para no hacer
+    // esperar al primer play por esto.
+    if (videoCopy) {
+      archiveIfCompatible(video).catch((err) => {
+        console.warn(`HLS: no se pudo archivar "${video.title}": ${err.message}`);
+      });
+    }
+
     return master;
   } catch (err) {
     console.warn(`HLS: no se pudo generar "${video.title}": ${err.message}`);
@@ -295,6 +326,47 @@ async function runGeneration(video, priority) {
     progress.delete(video.id);
     throw err;
   }
+}
+
+// Antes de borrar el original: guarda aparte, de forma permanente (no
+// caché de sesión), lo que depende de él y que si no se perdería para
+// siempre - subtítulos y la vista previa de arrastre en la barra de
+// progreso. El listado de pistas (audio/subtítulos) no hace falta
+// pre-generarlo: ya queda cacheado el análisis de ffprobe (codec-checks.json,
+// ver mediaInfo.js) desde la generación del HLS.
+async function archiveIfCompatible(video) {
+  const info = await getMediaInfo(video);
+  const subtitleStreams = info.streams.filter((s) => s.codec_type === 'subtitle');
+  for (const stream of subtitleStreams) {
+    // eslint-disable-next-line no-await-in-loop
+    await subtitles.extractSubtitle(video, stream.index).catch((err) => {
+      console.warn(`HLS: no se pudo extraer el subtítulo ${stream.index} de "${video.title}" antes de archivar: ${err.message}`);
+    });
+  }
+  await trickplay.ensureTrickplay(video);
+
+  const originalPath = inputPathFor(video);
+  // El disco externo puede tener hipos puntuales (visto en directo: un
+  // fs.rm que no dio error pero el archivo seguía ahí después). No basta
+  // con fiarse de que fs.rm no fallara: hay que comprobar que el original
+  // ha desaparecido de verdad antes de registrarlo como archivado - si no,
+  // se pierde el rastro de un original que en realidad sigue ahí, con el
+  // espacio sin liberar y el catálogo sin saberlo.
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      fs.rmSync(originalPath, { force: true });
+    } catch (err) {
+      console.warn(`HLS: fallo borrando el original de "${video.title}" (intento ${attempt}/3): ${err.message}`);
+    }
+    if (!fs.existsSync(originalPath)) {
+      archivedVideos.archive(video);
+      console.log(`HLS: original de "${video.title}" borrado (el HLS ya es el mismo vídeo, sin duplicarlo)`);
+      return;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  console.warn(`HLS: no se pudo confirmar el borrado del original de "${video.title}" tras varios intentos; se deja tal cual (con los dos)`);
 }
 
 // Genera (si hace falta, esperando a que termine) y devuelve la ruta al

@@ -36,6 +36,9 @@ function toPublicVideo(video) {
     seriesKey: catalog.getShowKeyFor(video),
     processingState: hlsProcessingState(video),
     processingPercent: hls.getProgress(video)?.percent ?? null,
+    // El original se borró (era H.264 compatible, el HLS ya es el mismo
+    // vídeo, ver hls.js): "Reproducir sin convertir" no puede funcionar.
+    archived: video.archived === true,
   };
 }
 
