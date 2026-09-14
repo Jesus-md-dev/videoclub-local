@@ -107,9 +107,12 @@ router.post('/scan', async (req, res) => {
   try {
     const videos = catalog.scan();
     // Generar carátulas y precalentar géneros en segundo plano, sin bloquear la respuesta.
+    // El pipeline antiguo de transcode.js ya no se precalienta en segundo
+    // plano: el reproductor usa HLS (server/hls.js), que se genera bajo
+    // demanda al darle a play. Solo se sigue usando para el modo "sin
+    // convertir" (ensureRawAudio), que no necesita precalentamiento.
     thumbnails.generateMissingThumbnails(videos);
     metadata.warmAll(catalog.getAllGroupKeys());
-    transcode.warmAll(videos);
     res.json({ count: videos.length });
   } catch (err) {
     res.status(500).json({ error: err.message });

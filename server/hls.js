@@ -6,10 +6,8 @@ const { ffmpeg, getMediaInfo, inputPathFor } = require('./mediaInfo');
 const { HLS_PATH } = require('./config');
 const { runLimited } = require('./ffmpeg-limiter');
 
-// Issue #58 del plan HLS: solo el pipeline de generación (vídeo + una
-// pista de audio por idioma, sin duplicar el vídeo por cada una). Las
-// rutas HTTP que sirven esto (#59), el reproductor (#60) y la cola de
-// prioridad/progreso (#61) van en issues aparte.
+// Issue #58/#59/#61 del plan HLS: generación + estado/progreso/prioridad.
+// Las rutas HTTP están en routes/hls.js, el reproductor (#60) en el cliente.
 
 const COMPATIBLE_VIDEO_CODECS = ['h264'];
 const SEGMENT_SECONDS = 6;
@@ -96,13 +94,21 @@ function buildVarStreamMap(audioStreams, defaultIndex) {
   return parts.join(' ');
 }
 
+// "time=01:23:45.67" en la salida de ffmpeg -> segundos.
+const TIME_RE = /time=(\d+):(\d+):(\d+\.\d+)/;
+function parseProgressSeconds(chunk) {
+  const match = TIME_RE.exec(chunk);
+  if (!match) return null;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+
 // Se usa child_process.spawn directamente (no fluent-ffmpeg) para este
 // comando en concreto: fluent-ffmpeg parte cada opción por espacios de
 // forma poco fiable (con arreglos, no shell), y el valor de
 // "-var_stream_map" necesita viajar como un único argumento aunque
 // contenga espacios (uno separando cada variante). Con spawn + un array de
 // argumentos no hay ambigüedad: cada elemento es un argv exacto.
-function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy, useGpu }) {
+function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy, useGpu, durationSeconds, onProgress }) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(outDir, { recursive: true });
 
@@ -142,8 +148,13 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
     const proc = spawn(ffmpegPath, args, { windowsHide: true });
     let stderr = '';
     proc.stderr.on('data', (chunk) => {
-      stderr += chunk;
+      const text = chunk.toString();
+      stderr += text;
       if (stderr.length > 8000) stderr = stderr.slice(-8000); // no acumular sin límite
+      if (onProgress && durationSeconds) {
+        const seconds = parseProgressSeconds(text);
+        if (seconds != null) onProgress(Math.min(99, Math.max(0, Math.round((seconds / durationSeconds) * 100))));
+      }
     });
     proc.on('error', reject);
     proc.on('close', (code) => {
@@ -153,62 +164,114 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
   });
 }
 
-// Generaciones en curso por video.id: si dos peticiones piden el mismo
-// vídeo a la vez (dos pestañas, un reintento del navegador...) antes de
-// que exista el master.m3u8, deben esperar al mismo ffmpeg en vez de
-// lanzar dos procesos en paralelo escribiendo al mismo directorio
-// temporal (se corromperían entre sí).
-const inFlight = new Map();
+// Estado por video.id: 'checking' | 'processing' | 'ready' | 'failed'.
+// 'ready' también se puede inferir de que exista master.m3u8 en disco
+// (p.ej. tras un reinicio del servidor, sin pasar otra vez por 'processing').
+const status = new Map();
+const progress = new Map(); // video.id -> { percent: 0-99 | null, startedAt }
 
-// Genera el paquete HLS completo (vídeo + todas las pistas de audio) para
-// un vídeo. Idempotente: si el manifiesto maestro ya existe, no repite el
-// trabajo. Devuelve la ruta al master.m3u8 una vez listo.
-function generateHls(video) {
-  const master = masterPlaylistFor(video);
-  if (fs.existsSync(master)) return Promise.resolve(master);
-
-  if (inFlight.has(video.id)) return inFlight.get(video.id);
-  const promise = generateHlsNow(video).finally(() => inFlight.delete(video.id));
-  inFlight.set(video.id, promise);
-  return promise;
+function getStatus(video) {
+  if (fs.existsSync(masterPlaylistFor(video))) return 'ready';
+  return status.get(video.id) || 'unknown';
 }
 
-async function generateHlsNow(video) {
-  const outDir = outDirFor(video);
-  const master = masterPlaylistFor(video);
-  if (fs.existsSync(master)) return master;
+function getProgress(video) {
+  return progress.get(video.id) || null;
+}
 
-  const info = await getMediaInfo(video);
-  const videoStream = info.streams.find((s) => s.codec_type === 'video');
-  const audioStreams = info.streams.filter((s) => s.codec_type === 'audio');
-  if (!videoStream) throw new Error('El archivo no tiene pista de vídeo.');
-  if (audioStreams.length === 0) throw new Error('El archivo no tiene ninguna pista de audio.');
-
-  const defaultIndex = Math.max(
-    0,
-    audioStreams.findIndex((s) => s.disposition?.default === 1)
-  );
-
-  const videoCopy = COMPATIBLE_VIDEO_CODECS.includes(videoStream.codec_name) && !isTenBit(videoStream);
-  const useGpu = !videoCopy && (await checkGpuAvailable());
-
-  const tmpDir = `${outDir}.tmp`;
-  fs.rmSync(tmpDir, { recursive: true, force: true });
-
-  try {
-    await runLimited(() => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu }));
-  } catch (err) {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    if (!useGpu) throw err;
-    console.warn(`HLS: fallo con GPU para "${video.title}", reintentando con CPU: ${err.message}`);
-    await runLimited(() =>
-      runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu: false })
-    );
+// Arranca la generación si hace falta (no bloquea: se lanza en segundo
+// plano) y devuelve el estado actual al instante, para poder ofrecer una
+// pantalla de "preparando..." igual que ya hace /api/stream/:id/status con
+// el pipeline antiguo. 'priority': 'high' para quien le ha dado a play
+// ahora mismo (adelanta en la cola compartida de ffmpeg al precalentamiento
+// en segundo plano), 'low' en caso contrario.
+function ensureGenerating(video, priority = 'low') {
+  if (fs.existsSync(masterPlaylistFor(video))) {
+    status.set(video.id, 'ready');
+    return 'ready';
   }
 
-  fs.rmSync(outDir, { recursive: true, force: true });
-  fs.renameSync(tmpDir, outDir);
+  const current = status.get(video.id);
+  if (current === 'checking' || current === 'processing' || current === 'failed') return current;
+
+  status.set(video.id, 'checking');
+  runGeneration(video, priority).catch(() => {}); // el estado ya queda registrado dentro
+  return 'checking';
+}
+
+async function runGeneration(video, priority) {
+  const outDir = outDirFor(video);
+  const master = masterPlaylistFor(video);
+
+  try {
+    const info = await getMediaInfo(video);
+    const videoStream = info.streams.find((s) => s.codec_type === 'video');
+    const audioStreams = info.streams.filter((s) => s.codec_type === 'audio');
+    if (!videoStream) throw new Error('El archivo no tiene pista de vídeo.');
+    if (audioStreams.length === 0) throw new Error('El archivo no tiene ninguna pista de audio.');
+
+    const defaultIndex = Math.max(
+      0,
+      audioStreams.findIndex((s) => s.disposition?.default === 1)
+    );
+    const durationSeconds = Number(info.format?.duration) || null;
+
+    const videoCopy = COMPATIBLE_VIDEO_CODECS.includes(videoStream.codec_name) && !isTenBit(videoStream);
+    const useGpu = !videoCopy && (await checkGpuAvailable());
+
+    status.set(video.id, 'processing');
+    progress.set(video.id, { percent: videoCopy ? null : 0, startedAt: Date.now() });
+    const onProgress = (percent) => {
+      const entry = progress.get(video.id);
+      progress.set(video.id, { ...entry, percent });
+    };
+
+    const tmpDir = `${outDir}.tmp`;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+
+    try {
+      await runLimited(
+        () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu, durationSeconds, onProgress }),
+        priority
+      );
+    } catch (err) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      if (!useGpu) throw err;
+      console.warn(`HLS: fallo con GPU para "${video.title}", reintentando con CPU: ${err.message}`);
+      await runLimited(
+        () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu: false, durationSeconds, onProgress }),
+        priority
+      );
+    }
+
+    fs.rmSync(outDir, { recursive: true, force: true });
+    fs.renameSync(tmpDir, outDir);
+    status.set(video.id, 'ready');
+    progress.delete(video.id);
+    return master;
+  } catch (err) {
+    console.warn(`HLS: no se pudo generar "${video.title}": ${err.message}`);
+    status.set(video.id, 'failed');
+    progress.delete(video.id);
+    throw err;
+  }
+}
+
+// Genera (si hace falta, esperando a que termine) y devuelve la ruta al
+// master.m3u8. Para servirlo bajo demanda cuando ya se sabe que está listo
+// (o se está dispuesto a esperar); las rutas normales usan ensureGenerating
+// + getStatus para no bloquear la petición mientras tanto.
+async function generateHls(video, priority = 'low') {
+  const master = masterPlaylistFor(video);
+  if (fs.existsSync(master)) return master;
+  ensureGenerating(video, priority);
+  // Reutiliza el mismo runGeneration en marcha en vez de lanzar otro.
+  while (getStatus(video) !== 'ready') {
+    if (getStatus(video) === 'failed') throw new Error('No se pudo generar el HLS de este vídeo.');
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, 300));
+  }
   return master;
 }
 
-module.exports = { generateHls, outDirFor, masterPlaylistFor };
+module.exports = { generateHls, ensureGenerating, getStatus, getProgress, outDirFor, masterPlaylistFor };

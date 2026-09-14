@@ -29,10 +29,25 @@ function sendPlaylist(res, filePath) {
   });
 }
 
-// Genera (si hace falta) y sirve el manifiesto maestro. Nota: esto espera
-// aquí mismo a que ffmpeg termine antes de responder - para un vídeo que
-// necesite recodificar puede tardar. La cola/progreso con el mismo patrón
-// que ya usa /api/stream/:id/status es el alcance de #61, no de esta issue.
+// Estado de la generación, para pintar "preparando..." en vez de dejar al
+// reproductor esperando el manifiesto a ciegas (igual que
+// /api/stream/:id/status con el pipeline antiguo). 'high': quien pregunta
+// esto es alguien con el reproductor abierto ahora mismo, así que arrancar
+// la generación (si hace falta) adelanta al precalentamiento en segundo
+// plano en la cola compartida de ffmpeg.
+router.get('/hls/:id/status', (req, res) => {
+  const video = catalog.getVideoById(req.params.id);
+  if (!video) {
+    res.status(404).json({ error: 'Vídeo no encontrado' });
+    return;
+  }
+  const status = hls.ensureGenerating(video, 'high');
+  res.json({ status, progress: status === 'processing' ? hls.getProgress(video) : null });
+});
+
+// Sirve el manifiesto maestro. Se llama solo cuando /status ya ha dicho
+// 'ready' (o se está dispuesto a esperar): si aún no existe, arranca la
+// generación y espera aquí mismo a que termine antes de responder.
 router.get('/hls/:id/master.m3u8', async (req, res) => {
   const video = catalog.getVideoById(req.params.id);
   if (!video) {
@@ -40,7 +55,7 @@ router.get('/hls/:id/master.m3u8', async (req, res) => {
     return;
   }
   try {
-    const master = await hls.generateHls(video);
+    const master = await hls.generateHls(video, 'high');
     sendPlaylist(res, master);
   } catch (err) {
     res.status(500).json({ error: err.message });
