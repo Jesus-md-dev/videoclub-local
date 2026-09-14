@@ -225,6 +225,17 @@ function getProgress(video) {
   return { percent: entry.percent, elapsedMs: Date.now() - entry.startedAt };
 }
 
+// Un vídeo "archivado" (#61: original borrado porque el HLS ya era el mismo
+// vídeo, sin duplicarlo) cuya carpeta de HLS ha desaparecido de todas formas
+// no tiene ya ni original ni copia: no hay nada que (re)generar, a
+// diferencia de un fallo puntual de ffmpeg. Pasó de verdad en producción
+// (ver `E:\Volver a descargar\episodios-perdidos.txt`, ~180 episodios cuya
+// carpeta data/hls se borró a mano para liberar espacio sin saber que para
+// estos era la única copia que quedaba).
+function isLost(video) {
+  return archivedVideos.isArchived(video.id) && !fs.existsSync(masterPlaylistFor(video)) && !fs.existsSync(inputPathFor(video));
+}
+
 // Arranca la generación si hace falta (no bloquea: se lanza en segundo
 // plano) y devuelve el estado actual al instante, para poder ofrecer una
 // pantalla de "preparando..." igual que ya hace /api/stream/:id/status con
@@ -240,6 +251,15 @@ function ensureGenerating(video, priority = 'low') {
   const current = status.get(video.id);
   if (current === 'checking' || current === 'processing' || current === 'failed') return current;
 
+  if (isLost(video)) {
+    status.set(video.id, 'failed');
+    lastError.set(
+      video.id,
+      'Vídeo perdido: no queda ni el original ni la copia generada, no hay nada que regenerar. Está en la lista de "E:\\Volver a descargar\\episodios-perdidos.txt".'
+    );
+    return 'failed';
+  }
+
   lastError.delete(video.id);
   status.set(video.id, 'checking');
   runGeneration(video, priority).catch(() => {}); // el estado ya queda registrado dentro
@@ -249,8 +269,10 @@ function ensureGenerating(video, priority = 'low') {
 // Para el botón "Reintentar" de /queue: algunos fallos son puntuales (un
 // hipo del disco externo, p.ej.), no corrupción real del archivo - sin
 // esto, un vídeo marcado como 'failed' se queda así para siempre hasta
-// reiniciar el servidor entero.
+// reiniciar el servidor entero. Para uno "perdido" (ver isLost) reintentar
+// no tiene sentido: no hay archivo de origen con el que hacer nada.
 function retry(video) {
+  if (isLost(video)) return 'failed';
   status.delete(video.id);
   lastError.delete(video.id);
   return ensureGenerating(video, 'high');

@@ -68,6 +68,11 @@ Desde cualquier otro dispositivo conectado a la misma red Wi-Fi/LAN, abre la URL
 - `POST /api/scan` para volver a escanear la carpeta sin reiniciar el servidor.
 - Copia de seguridad automática: perfiles, progreso ("Continuar viendo"/visto), carpeta configurada, caché de géneros y analítica se guardan también en `<carpeta de vídeos>/.videoclub-datos/`. Al arrancar en un PC nuevo (o tras reinstalar), si `data/` está vacío se recupera automáticamente de ahí, sin perder el historial al cambiar de máquina.
 
+## Cuidado al liberar espacio en disco
+
+- `data/transcoded` (o `TRANSCODED_PATH` si está configurada) **sí es caché desechable**: si se borra, esos vídeos se vuelven a convertir la próxima vez que se reproduzcan. Segura de borrar/mover.
+- `data/hls` **NO siempre es caché desechable**. Cuando un vídeo ya era compatible con el navegador, su HLS es un simple remux (mismo vídeo, sin recodificar) y el original se borra automáticamente para no duplicarlo (ver `archivedVideos.js`). Para esos vídeos, `data/hls/<id>/` es la **única copia que queda** — borrarla los pierde para siempre, sin forma de regenerarlos. Antes de tocar `data/hls` a mano, comprobar `data/hls-archived.json`: cualquier id que aparezca ahí no se debe borrar de `data/hls` sin haber puesto el vídeo a buen recaudo antes.
+
 ## Desarrollo
 
 Para trabajar en el frontend con recarga en caliente:

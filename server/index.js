@@ -1,10 +1,32 @@
 const express = require('express');
 const https = require('https');
 const os = require('os');
+const fs = require('fs');
 const path = require('path');
 const { PORT, HTTPS_PORT, DATA_PATH, TRANSCODED_PATH, HLS_PATH, getVideosPath } = require('./config');
 console.log(`Convertidos en: ${TRANSCODED_PATH}${TRANSCODED_PATH.startsWith(DATA_PATH) ? ' (local a este PC)' : ''}`);
 console.log(`HLS en: ${HLS_PATH}${HLS_PATH.startsWith(DATA_PATH) ? ' (local a este PC)' : ''}`);
+
+// Aviso in-situ para quien vaya a "liberar espacio" borrando carpetas a
+// mano: a diferencia de TRANSCODED_PATH, esta carpeta NO es toda caché
+// desechable (ver README.md, "Cuidado al liberar espacio en disco") - ya
+// pasó una vez (~180 episodios perdidos sin forma de recuperarlos).
+try {
+  fs.mkdirSync(HLS_PATH, { recursive: true });
+  fs.writeFileSync(
+    path.join(HLS_PATH, 'NO_BORRAR_SIN_LEER.txt'),
+    'AVISO: esta carpeta no siempre es caché desechable.\n\n' +
+      'Para los vídeos que aparecen en data/hls-archived.json, el original ya se\n' +
+      'borró automáticamente (porque el HLS aquí era el mismo vídeo, sin\n' +
+      'recodificar): la carpeta de ese id dentro de este directorio es la UNICA\n' +
+      'copia que queda. Borrarla los pierde para siempre.\n\n' +
+      'Los vídeos que SÍ se pueden borrar sin miedo son los que NO aparecen en\n' +
+      'data/hls-archived.json: se regeneran solos la próxima vez que se reproduzcan.\n\n' +
+      'Ver README.md, sección "Cuidado al liberar espacio en disco".\n'
+  );
+} catch {
+  // No es crítico: si falla (permisos, disco lleno...), no debe impedir arrancar.
+}
 const backup = require('./backup');
 // Antes de que cualquier otro módulo lea sus ficheros de data/ (algunos,
 // como la caché de géneros, los cargan en memoria nada más arrancar), se
