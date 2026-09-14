@@ -15,12 +15,26 @@ if (ffprobePath) {
 
 const generating = new Set();
 
+// Mismo motivo que readyIds en hls.js: hasThumbnail se llama una vez por
+// vídeo en cada petición a /api/videos (miles de fs.existsSync síncronos
+// sobre el catálogo completo) - con el disco externo ocupado eso puede
+// bloquear el hilo principal de Node entero (#65). Una carátula que ya
+// existe no desaparece salvo purga explícita (ver forget()).
+const existingIds = new Set();
+
 function thumbnailFile(id) {
   return path.join(THUMBNAILS_PATH, `${id}.jpg`);
 }
 
 function hasThumbnail(id) {
-  return fs.existsSync(thumbnailFile(id));
+  if (existingIds.has(id)) return true;
+  const exists = fs.existsSync(thumbnailFile(id));
+  if (exists) existingIds.add(id);
+  return exists;
+}
+
+function forget(id) {
+  existingIds.delete(id);
 }
 
 function generateThumbnail(video) {
@@ -68,4 +82,4 @@ async function generateMissingThumbnails(videos) {
   }
 }
 
-module.exports = { generateMissingThumbnails, hasThumbnail, thumbnailFile };
+module.exports = { generateMissingThumbnails, hasThumbnail, thumbnailFile, forget };
