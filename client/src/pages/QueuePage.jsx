@@ -50,7 +50,7 @@ export default function QueuePage() {
         </Link>
       </header>
       <div className="config-wrap queue-wrap">
-        <p className="section-title">Cola de conversión</p>
+        <p className="section-title">Preparación de HLS</p>
 
         {error && <p className="config-message error">{error}</p>}
 
@@ -58,19 +58,16 @@ export default function QueuePage() {
           <>
             <div className="queue-summary">
               <span>
-                Listos: <strong>{data.summary.ready + data.summary.compatible}</strong>
+                Listos: <strong>{data.summary.ready}</strong>
               </span>
               <span>
-                Procesando: <strong>{data.summary.active}</strong>
-              </span>
-              <span>
-                En cola: <strong>{data.summary.queued}</strong>
+                Procesando: <strong>{data.summary.processing}</strong>
               </span>
               <span>
                 Fallidos: <strong>{data.summary.failed}</strong>
               </span>
               <span>
-                Sin comprobar: <strong>{data.summary.unknown}</strong>
+                Pendientes: <strong>{data.summary.pending}</strong>
               </span>
               <span>
                 Total: <strong>{data.summary.total}</strong>
@@ -78,43 +75,29 @@ export default function QueuePage() {
             </div>
 
             <p className="hint">
-              Hasta {data.maxConcurrent} conversiones a la vez; sin forzar prioridad
-              manualmente sobre ningún vídeo, se procesan primero los archivos más ligeros.
+              Hasta {data.maxConcurrentFfmpeg} procesos de ffmpeg a la vez en toda la app
+              (carátulas, subtítulos y esto comparten el mismo tope); sin forzar nada, se
+              procesan primero los archivos más ligeros. Un vídeo abierto para verlo ahora
+              mismo siempre adelanta a este precalentamiento de fondo.
             </p>
 
-            {data.active.length > 0 ? (
+            {data.processing.length > 0 ? (
               <>
-                <p className="section-title">Convirtiéndose ahora ({data.active.length})</p>
+                <p className="section-title">Procesando ({data.processing.length})</p>
                 <div className="queue-list">
-                  {data.active.map((item) => (
-                    <div className="queue-row queue-row-active" key={item.key}>
+                  {data.processing.map((item) => (
+                    <div className="queue-row queue-row-active" key={item.id}>
                       <span className="queue-title">{item.title}</span>
                       <span className="queue-meta">
-                        {formatSize(item.size)} · {item.percent ?? 0}%
+                        {formatSize(item.size)}
+                        {item.percent != null ? ` · ${item.percent}%` : ''}
                       </span>
                     </div>
                   ))}
                 </div>
               </>
             ) : (
-              <p className="hint">Nada convirtiéndose ahora mismo.</p>
-            )}
-
-            <p className="section-title">
-              En cola ({data.queued.length}, por orden de turno)
-            </p>
-            {data.queued.length === 0 ? (
-              <p className="hint">La cola está vacía.</p>
-            ) : (
-              <div className="queue-list">
-                {data.queued.map((item) => (
-                  <div className="queue-row" key={item.key}>
-                    <span className="queue-position">{item.position}</span>
-                    <span className="queue-title">{item.title}</span>
-                    <span className="queue-meta">{formatSize(item.size)}</span>
-                  </div>
-                ))}
-              </div>
+              <p className="hint">Nada procesándose ahora mismo.</p>
             )}
 
             {data.failed.length > 0 && (
@@ -122,7 +105,7 @@ export default function QueuePage() {
                 <p className="section-title">Fallidos ({data.failed.length})</p>
                 <div className="queue-list">
                   {data.failed.map((item) => (
-                    <div className="queue-row queue-row-failed" key={item.key}>
+                    <div className="queue-row queue-row-failed" key={item.id}>
                       <span className="queue-title">{item.title}</span>
                     </div>
                   ))}

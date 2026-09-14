@@ -190,8 +190,14 @@ function getStatus(video) {
   return status.get(video.id) || 'unknown';
 }
 
+// El cliente (WatchPage.jsx, formatRemaining) calcula el tiempo restante a
+// partir de "elapsedMs" (mismo formato que ya usaba el pipeline antiguo):
+// sin esto, la resta salía NaN y el mensaje "preparando..." mostraba
+// "~NaNm NaNs restantes" en vez del tiempo estimado.
 function getProgress(video) {
-  return progress.get(video.id) || null;
+  const entry = progress.get(video.id);
+  if (!entry) return null;
+  return { percent: entry.percent, elapsedMs: Date.now() - entry.startedAt };
 }
 
 // Arranca la generación si hace falta (no bloquea: se lanza en segundo
@@ -308,4 +314,34 @@ async function generateHls(video, priority = 'low') {
   return master;
 }
 
-module.exports = { generateHls, ensureGenerating, getStatus, getProgress, outDirFor, masterPlaylistFor };
+// Precalienta en segundo plano toda la biblioteca, uno detrás de otro (no
+// todos a la vez), en prioridad 'low': si alguien le da a play mientras
+// tanto, esa petición 'high' adelanta en la cola compartida de ffmpeg (ver
+// ffmpeg-limiter.js) y se sirve antes, sin esperar a que termine el
+// precalentamiento. Así lo ya generado está listo al momento y lo demás se
+// va poniendo al día solo, sin perder la prioridad de "quien está viendo
+// ahora" que tenía sentido quitarle al pipeline antiguo (#61).
+// Un reescaneo automático puede llamar a esto mientras la pasada anterior
+// sigue en marcha (mismo motivo que el guard de metadata.js): sin esto, se
+// acumulaban pasadas paralelas todas recorriendo la biblioteca entera
+// detrás de la primera sin aportar nada.
+let warming = false;
+async function warmAll(videos) {
+  if (warming) return;
+  warming = true;
+  const ordered = [...videos].sort((a, b) => (a.size || 0) - (b.size || 0));
+  try {
+    for (const video of ordered) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await generateHls(video, 'low');
+      } catch (err) {
+        console.warn(`HLS: no se pudo precalentar "${video.title}": ${err.message}`);
+      }
+    }
+  } finally {
+    warming = false;
+  }
+}
+
+module.exports = { generateHls, ensureGenerating, getStatus, getProgress, warmAll, outDirFor, masterPlaylistFor };

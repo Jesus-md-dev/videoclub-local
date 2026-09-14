@@ -1,44 +1,49 @@
 const express = require('express');
 const catalog = require('../catalog');
-const transcode = require('../transcode');
+const hls = require('../hls');
+const { MAX_CONCURRENT_FFMPEG } = require('../ffmpeg-limiter');
 
 const router = express.Router();
 
-// Para una clave de transcode.js (video.id, video.id#aN, o
-// video.id__rawaudio_aN) recupera el vídeo original del catálogo.
-function videoForKey(key) {
-  const id = key.split('#')[0].split('__')[0];
-  return catalog.getVideoById(id);
-}
-
+// Antes esto reflejaba el pipeline antiguo (transcode.js), con su propia
+// cola visible de "activo ahora" vs "en cola, en tal posición". HLS
+// comparte la cola global de ffmpeg (ffmpeg-limiter.js) con carátulas y
+// trickplay, que no distingue "encolado, esperando hueco" de "activo ahora
+// mismo" por trabajo concreto - así que aquí solo se puede mostrar
+// "procesando" en conjunto (con su % cuando se conoce) y cuántos quedan
+// por empezar, no una posición exacta en la cola.
 router.get('/queue', (req, res) => {
   const videos = catalog.getCatalog();
-  const summary = { total: videos.length, ready: 0, compatible: 0, active: 0, queued: 0, failed: 0, unknown: 0 };
+  const summary = { total: videos.length, ready: 0, processing: 0, failed: 0, pending: 0 };
+  const processing = [];
+  const failed = [];
+
   for (const video of videos) {
-    const procState = transcode.peekProcessingState(video);
-    if (procState === 'active') {
-      summary.active += 1;
-      continue;
+    const status = hls.getStatus(video);
+    if (status === 'ready') {
+      summary.ready += 1;
+    } else if (status === 'processing' || status === 'checking') {
+      summary.processing += 1;
+      processing.push({
+        id: video.id,
+        title: video.title,
+        size: video.size,
+        percent: hls.getProgress(video)?.percent ?? null,
+      });
+    } else if (status === 'failed') {
+      summary.failed += 1;
+      failed.push({ id: video.id, title: video.title, size: video.size });
+    } else {
+      summary.pending += 1;
     }
-    if (procState === 'queued') {
-      summary.queued += 1;
-      continue;
-    }
-    const st = transcode.peekStatus(video);
-    if (st === 'ready' || st === 'compatible' || st === 'failed') summary[st] += 1;
-    else summary.unknown += 1;
   }
 
-  const { active, queued } = transcode.getQueueSnapshot();
-  const failed = transcode
-    .getFailedKeys()
-    .map((key) => {
-      const video = videoForKey(key);
-      return video ? { key, id: video.id, title: video.title, size: video.size } : { key, title: key };
-    })
-    .slice(0, 200);
+  // Los que sí se conoce que están en marcha (con progreso o ya iniciados)
+  // antes que los recién marcados "checking", para que lo más relevante
+  // salga arriba en una lista que puede tener varios a la vez.
+  processing.sort((a, b) => (b.percent ?? -1) - (a.percent ?? -1));
 
-  res.json({ summary, active, queued, failed, maxConcurrent: transcode.MAX_CONCURRENT_JOBS });
+  res.json({ summary, processing, failed: failed.slice(0, 200), maxConcurrentFfmpeg: MAX_CONCURRENT_FFMPEG });
 });
 
 module.exports = router;

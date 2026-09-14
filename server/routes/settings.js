@@ -4,6 +4,7 @@ const catalog = require('../catalog');
 const mediaInfo = require('../mediaInfo');
 const thumbnails = require('../thumbnails');
 const metadata = require('../metadata');
+const hls = require('../hls');
 const watcher = require('../watcher');
 const backup = require('../backup');
 
@@ -35,8 +36,7 @@ router.post('/settings', async (req, res) => {
     mediaInfo.pruneStore(videos.map((v) => v.id));
     thumbnails.generateMissingThumbnails(videos);
     metadata.warmAll(catalog.getAllGroupKeys());
-    // El pipeline antiguo de transcode.js ya no se precalienta en segundo
-    // plano (ver index.js): el reproductor usa HLS bajo demanda.
+    hls.warmAll(videos);
     watcher.start();
     res.json({ videosPath: getVideosPath(), count: videos.length });
   } catch (err) {

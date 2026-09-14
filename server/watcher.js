@@ -2,6 +2,7 @@ const fs = require('fs');
 const catalog = require('./catalog');
 const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
+const hls = require('./hls');
 const { getVideosPath } = require('./config');
 
 const DEBOUNCE_MS = 8000;
@@ -15,8 +16,7 @@ function rescan() {
     console.log(`Catálogo actualizado automáticamente: ${videos.length} vídeo(s)`);
     thumbnails.generateMissingThumbnails(videos);
     metadata.warmAll(catalog.getAllGroupKeys());
-    // El pipeline antiguo de transcode.js ya no se precalienta en segundo
-    // plano (ver index.js): el reproductor usa HLS bajo demanda.
+    hls.warmAll(videos);
   } catch (err) {
     console.error(`Error al reescanear automáticamente: ${err.message}`);
   }

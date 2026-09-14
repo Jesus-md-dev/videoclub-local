@@ -13,6 +13,7 @@ const catalog = require('./catalog');
 const mediaInfo = require('./mediaInfo');
 const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
+const hls = require('./hls');
 const watcher = require('./watcher');
 const videosRouter = require('./routes/videos');
 const streamRouter = require('./routes/stream');
@@ -104,10 +105,10 @@ function scanIfConfigured() {
     // Precalienta la caché de géneros en segundo plano (puede tardar si hay
     // muchas series/películas); el catálogo funciona igual mientras tanto.
     metadata.warmAll(catalog.getAllGroupKeys());
-    // El pipeline antiguo de transcode.js ya no se precalienta en segundo
-    // plano: el reproductor usa HLS (hls.js), que se genera bajo demanda al
-    // darle a play. Precalentarlo de fondo competía por los mismos huecos
-    // de ffmpeg que HLS, dejando sin efecto la prioridad alta al reproducir.
+    // Precalienta HLS en segundo plano (prioridad baja: quien le da a play
+    // ahora mismo sigue adelantando en la cola, ver #61/ffmpeg-limiter.js).
+    // El pipeline antiguo de transcode.js ya no se usa para esto.
+    hls.warmAll(videos);
     watcher.start();
   } catch (err) {
     console.error(`Error al escanear la carpeta de vídeos: ${err.message}`);
