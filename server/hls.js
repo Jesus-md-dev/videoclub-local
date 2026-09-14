@@ -8,6 +8,7 @@ const { runLimited } = require('./ffmpeg-limiter');
 const subtitles = require('./subtitles');
 const trickplay = require('./trickplay');
 const archivedVideos = require('./archivedVideos');
+const lostVideos = require('./lostVideos');
 
 // Issue #58/#59/#61 del plan HLS: generación + estado/progreso/prioridad.
 // Las rutas HTTP están en routes/hls.js, el reproductor (#60) en el cliente.
@@ -255,8 +256,9 @@ function ensureGenerating(video, priority = 'low') {
     status.set(video.id, 'failed');
     lastError.set(
       video.id,
-      'Vídeo perdido: no queda ni el original ni la copia generada, no hay nada que regenerar. Está en la lista de "E:\\Volver a descargar\\episodios-perdidos.txt".'
+      'Vídeo perdido: no queda ni el original ni la copia generada, no hay nada que regenerar. Apuntado en la lista de "Volver a descargar" (ver README).'
     );
+    lostVideos.recordLost(video);
     return 'failed';
   }
 

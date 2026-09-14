@@ -72,6 +72,7 @@ Desde cualquier otro dispositivo conectado a la misma red Wi-Fi/LAN, abre la URL
 
 - `data/transcoded` (o `TRANSCODED_PATH` si está configurada) **sí es caché desechable**: si se borra, esos vídeos se vuelven a convertir la próxima vez que se reproduzcan. Segura de borrar/mover.
 - `data/hls` **NO siempre es caché desechable**. Cuando un vídeo ya era compatible con el navegador, su HLS es un simple remux (mismo vídeo, sin recodificar) y el original se borra automáticamente para no duplicarlo (ver `archivedVideos.js`). Para esos vídeos, `data/hls/<id>/` es la **única copia que queda** — borrarla los pierde para siempre, sin forma de regenerarlos. Antes de tocar `data/hls` a mano, comprobar `data/hls-archived.json`: cualquier id que aparezca ahí no se debe borrar de `data/hls` sin haber puesto el vídeo a buen recaudo antes.
+- Si un vídeo archivado se queda sin original y sin copia HLS (p.ej. porque ya se borró `data/hls` a mano sin saber esto), el servidor lo detecta solo, deja de intentar regenerarlo, y lo apunta automáticamente en `<disco de la carpeta de vídeos>\Volver a descargar\episodios-perdidos.txt` (agrupado por serie, con su carpeta original) para saber qué hay que volver a conseguir. Esa lista se mantiene sola (`server/lostVideos.js`): no hace falta editarla a mano.
 
 ## Desarrollo
 
