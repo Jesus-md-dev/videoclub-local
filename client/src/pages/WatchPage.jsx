@@ -38,6 +38,23 @@ function trackLabel(track) {
   return track.languageLabel || track.title || `Pista ${track.index}`;
 }
 
+// La posición de una pista en tracks.audio (venida de ffprobe, vía
+// /api/tracks/:id) NO tiene por qué coincidir con la posición de esa misma
+// pista en hls.js/audioTracks nativo del navegador (su propio análisis del
+// manifiesto, con su propio orden interno) - usar el índice de una lista
+// para indexar la otra podía acabar sin querer siempre en la pista por
+// defecto, por mucho idioma distinto que se eligiera. Se busca por idioma
+// (LANGUAGE="jpn", etc., el mismo valor en ambos sitios) directamente
+// dentro de la lista real del reproductor, nunca por posición prestada.
+function findByLanguage(list, language) {
+  if (!language || !list) return -1;
+  for (let i = 0; i < list.length; i += 1) {
+    const trackLang = list[i].lang || list[i].language;
+    if (trackLang && trackLang.toLowerCase() === language.toLowerCase()) return i;
+  }
+  return -1;
+}
+
 function formatRemaining(progress) {
   if (!progress || !progress.percent) return null;
   const { percent, elapsedMs } = progress;
@@ -219,7 +236,8 @@ export default function WatchPage() {
       // ya suena en el idioma guardado, no solo los siguientes cambios.
       instance.on(Hls.Events.MANIFEST_PARSED, () => {
         if (audioIndex == null) return;
-        const position = tracks.audio.findIndex((t) => t.index === audioIndex);
+        const wanted = tracks.audio.find((t) => t.index === audioIndex);
+        const position = findByLanguage(instance.audioTracks, wanted?.language);
         if (position >= 0 && instance.audioTrack !== position) instance.audioTrack = position;
       });
       instance.loadSource(masterUrl);
@@ -236,8 +254,9 @@ export default function WatchPage() {
       // API de hls.js.
       player.src = masterUrl;
       if (audioIndex != null) {
-        const position = tracks.audio.findIndex((t) => t.index === audioIndex);
+        const wanted = tracks.audio.find((t) => t.index === audioIndex);
         const onLoadedMeta = () => {
+          const position = findByLanguage(player.audioTracks, wanted?.language);
           if (position >= 0 && player.audioTracks) {
             for (let i = 0; i < player.audioTracks.length; i += 1) {
               player.audioTracks[i].enabled = i === position;
@@ -354,14 +373,18 @@ export default function WatchPage() {
     setPreferredAudioLanguage(chosenTrack?.language || null);
 
     // Modo normal (HLS): cambia de pista sin recargar el vídeo ni perder la
-    // posición, usando la API de pistas del reproductor en marcha.
+    // posición, usando la API de pistas del reproductor en marcha. Se busca
+    // por idioma dentro de la lista real del reproductor (ver
+    // findByLanguage): el índice de tracks.audio (ffprobe) no tiene por qué
+    // coincidir con el de hls.js/audioTracks nativo.
     if (!rawMode) {
-      const position = tracks.audio.findIndex((t) => t.index === newIndex);
-      if (position >= 0) {
-        if (hlsRef.current) {
-          hlsRef.current.audioTrack = position;
-        } else if (playerRef.current?.audioTracks) {
-          // Safari nativo: sin hls.js, la selección va por audioTracks.
+      if (hlsRef.current) {
+        const position = findByLanguage(hlsRef.current.audioTracks, chosenTrack?.language);
+        if (position >= 0) hlsRef.current.audioTrack = position;
+      } else if (playerRef.current?.audioTracks) {
+        // Safari nativo: sin hls.js, la selección va por audioTracks.
+        const position = findByLanguage(playerRef.current.audioTracks, chosenTrack?.language);
+        if (position >= 0) {
           for (let i = 0; i < playerRef.current.audioTracks.length; i += 1) {
             playerRef.current.audioTracks[i].enabled = i === position;
           }
