@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { getActiveProfileId } from '../profile';
+import { track } from '../analytics';
 
 function processingBadgeLabel(state, percent) {
   if (state === 'active') return `Procesando… ${typeof percent === 'number' ? `${percent}%` : ''}`.trim();
@@ -274,9 +275,21 @@ export default function CatalogPage() {
   const toggleGenre = (g) => {
     const params = {};
     if (dir) params.dir = dir;
-    if (g !== genre) params.genre = g;
+    if (g !== genre) {
+      params.genre = g;
+      track('genre_filter', { genre: g });
+    }
     setSearchParams(params);
   };
+
+  // Se registra la búsqueda solo cuando el usuario deja de teclear un
+  // momento (no en cada pulsación), para saber qué se busca sin llenar el
+  // registro de eventos a medio escribir.
+  useEffect(() => {
+    if (!term.trim()) return undefined;
+    const timer = setTimeout(() => track('search', { term: term.trim() }), 800);
+    return () => clearTimeout(timer);
+  }, [term]);
 
   const visibleFolders = genre ? folders.filter((f) => f.genres?.includes(genre)) : folders;
   const visibleVideos = genre ? videos.filter((v) => v.genres?.includes(genre)) : videos;

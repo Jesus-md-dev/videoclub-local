@@ -20,6 +20,7 @@ const profilesRouter = require('./routes/profiles');
 const queueRouter = require('./routes/queue');
 const metadataRouter = require('./routes/metadata');
 const dedupeRouter = require('./routes/dedupe');
+const analyticsRouter = require('./routes/analytics');
 
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
@@ -48,6 +49,7 @@ app.use('/api', profilesRouter);
 app.use('/api', queueRouter);
 app.use('/api', metadataRouter);
 app.use('/api', dedupeRouter);
+app.use('/api', analyticsRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });

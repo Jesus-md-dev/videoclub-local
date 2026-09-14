@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import VideoControls from '../components/VideoControls';
 import { getActiveProfileId } from '../profile';
+import { track } from '../analytics';
 
 // El progreso se guarda en el servidor por perfil (no en localStorage), así
 // que se retoma igual desde cualquier dispositivo de la red.
@@ -173,6 +174,11 @@ export default function WatchPage() {
   }, [video, id, audioIndex, rawMode]);
 
   useEffect(() => {
+    if (ready && video) track('play_start', { videoId: id, title: video.title });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, id]);
+
+  useEffect(() => {
     const player = playerRef.current;
     if (!video || !ready || !player) return undefined;
 
@@ -194,6 +200,7 @@ export default function WatchPage() {
           body: JSON.stringify({ time: 0, ratio: 1 }),
         }).catch(() => {});
       }
+      track('play_complete', { videoId: id, title: video.title });
       if (nextEpisodeId) {
         setAutoAdvanceIn(5);
       }
@@ -216,6 +223,7 @@ export default function WatchPage() {
           doRetry();
         } else {
           setStuck(true);
+          track('stall', { videoId: id, title: video.title });
         }
       }, 15000);
     };
@@ -224,6 +232,7 @@ export default function WatchPage() {
       setStuck(false);
     };
     const onError = () => {
+      track('play_error', { videoId: id, title: video.title });
       if (!autoRetried) {
         autoRetried = true;
         doRetry();
