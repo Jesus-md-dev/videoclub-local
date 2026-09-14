@@ -9,7 +9,15 @@ const router = express.Router();
 const CONTENT_TYPES = {
   '.m3u8': 'application/vnd.apple.mpegurl',
   '.ts': 'video/mp2t',
+  // fMP4 (ver hls.js): segmentos ".m4s" + un archivo de inicialización
+  // ".mp4" por variante (init_<variante>.mp4), en vez de MPEG-TS.
+  '.m4s': 'video/iso.segment',
+  '.mp4': 'video/mp4',
 };
+
+// Segmentos binarios (no manifiestos): cacheables de forma agresiva e
+// inmutable, ya generados y fijos para siempre (VOD).
+const SEGMENT_EXTENSIONS = new Set(['.ts', '.m4s', '.mp4']);
 
 // Los nombres de variante (carpetas) salen del idioma/título de la pista
 // de audio original, que viene del propio archivo de vídeo (metadatos no
@@ -82,7 +90,11 @@ router.get('/hls/:id/master.m3u8', async (req, res) => {
 router.get('/hls/:id/:variant/:file', (req, res) => {
   const { id, variant, file } = req.params;
   const ext = path.extname(file);
-  if (!CONTENT_TYPES[ext] || (ext === '.ts' && !/^seg_\d+\.ts$/.test(file)) || (ext === '.m3u8' && file !== 'prog.m3u8')) {
+  const isKnownSegment =
+    (ext === '.ts' && /^seg_\d+\.ts$/.test(file)) ||
+    (ext === '.m4s' && /^seg_\d+\.m4s$/.test(file)) ||
+    (ext === '.mp4' && /^init_.+\.mp4$/.test(file));
+  if (!CONTENT_TYPES[ext] || (SEGMENT_EXTENSIONS.has(ext) && !isKnownSegment) || (ext === '.m3u8' && file !== 'prog.m3u8')) {
     res.status(400).end();
     return;
   }
@@ -93,9 +105,9 @@ router.get('/hls/:id/:variant/:file', (req, res) => {
     return;
   }
 
-  if (ext === '.ts') {
+  if (SEGMENT_EXTENSIONS.has(ext)) {
     res.set('Cache-Control', 'public, max-age=31536000, immutable');
-    res.set('Content-Type', CONTENT_TYPES['.ts']);
+    res.set('Content-Type', CONTENT_TYPES[ext]);
     res.sendFile(target, (err) => {
       if (err && !res.headersSent) res.status(err.status || 500).end();
     });

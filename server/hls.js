@@ -170,20 +170,34 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
         args.push(`-c:a:${i}`, 'aac', `-b:a:${i}`, '160k', `-ac:a:${i}`, '2');
       }
     });
+    // El audio AAC de un origen MKV/TS suele venir en formato ADTS, que
+    // fMP4 no admite tal cual (error "Malformed AAC bitstream") - hace
+    // falta convertirlo a ASC. No estorba a las pistas que se recodifican
+    // (ffmpeg ya las genera en el formato correcto), así que se aplica a
+    // todas por igual en vez de distinguir cuáles.
+    args.push('-bsf:a', 'aac_adtstoasc');
     args.push(
       '-f', 'hls',
       '-hls_time', String(SEGMENT_SECONDS),
       '-hls_playlist_type', 'vod',
       '-hls_list_size', '0',
       '-hls_flags', 'independent_segments',
-      '-hls_segment_type', 'mpegts',
+      // fMP4, no MPEG-TS: verificado en directo que el cambio de pista de
+      // audio alternativa en pleno visionado no funcionaba de verdad con
+      // TS (la pista "seleccionada" y las peticiones de red eran
+      // correctas, pero el sonido seguía siendo el de la pista por
+      // defecto sin importar cuál se eligiera) - un problema conocido de
+      // compatibilidad de los navegadores con audio alternativo sobre TS.
+      // fMP4 es el empaquetado que los navegadores soportan de forma
+      // nativa para esto, sin conversión intermedia de por medio.
+      '-hls_segment_type', 'fmp4',
       '-master_pl_name', 'master.m3u8',
       '-var_stream_map', buildVarStreamMap(audioStreams, defaultIndex),
       // Con "/" a propósito, no path.join: ffmpeg calcula a partir de estas
       // rutas las URIs relativas que escribe dentro del .m3u8, y esas son
       // URLs (las sirve el navegador), no rutas de Windows — con "\" el
       // manifiesto queda inválido (el reproductor no encuentra el archivo).
-      '-hls_segment_filename', `${toPosix(outDir)}/%v/seg_%03d.ts`,
+      '-hls_segment_filename', `${toPosix(outDir)}/%v/seg_%03d.m4s`,
       `${toPosix(outDir)}/%v/prog.m3u8`
     );
 
@@ -216,6 +230,16 @@ const progress = new Map(); // video.id -> { percent: 0-99 | null, startedAt }
 // (se borra en cuanto se reintenta o se genera con éxito).
 const lastError = new Map();
 
+// Vídeos cuyo master.m3u8 ya se comprobó válido una vez. hasValidMasterPlaylist
+// se llama por cada vídeo (dos veces) en cada carga de /api/videos: sin este
+// caché, con 2000+ vídeos eso son miles de existsSync+readFileSync síncronos
+// por request, y con el disco externo ocupado a la vez por varias
+// generaciones ffmpeg en paralelo eso bastaba para bloquear el hilo principal
+// de Node varios segundos (o más) - la web entera dejaba de responder aunque
+// el proceso siguiera vivo. Un vídeo ya listo no deja de estarlo salvo que se
+// purgue (ver purge.js, que llama a forget()).
+const readyIds = new Set();
+
 // Un master.m3u8 puede existir en disco y aun así estar incompleto: visto
 // en producción, un ffmpeg que terminó con código 0 (éxito) pero sin
 // escribir la línea que declara la pista de vídeo (STREAM-INF), con los
@@ -223,13 +247,22 @@ const lastError = new Map();
 // solo de que el archivo exista no bastaba para darlo por servible de
 // verdad.
 function hasValidMasterPlaylist(video) {
+  if (readyIds.has(video.id)) return true;
   const file = masterPlaylistFor(video);
   if (!fs.existsSync(file)) return false;
   try {
-    return fs.readFileSync(file, 'utf-8').includes('#EXT-X-STREAM-INF');
+    const valid = fs.readFileSync(file, 'utf-8').includes('#EXT-X-STREAM-INF');
+    if (valid) readyIds.add(video.id);
+    return valid;
   } catch {
     return false;
   }
+}
+
+// Llamado al purgar un vídeo (borra su carpeta HLS de disco): sin esto el
+// caché seguiría diciendo "listo" para un vídeo cuyo master.m3u8 ya no existe.
+function forget(videoId) {
+  readyIds.delete(videoId);
 }
 
 function getStatus(video) {
@@ -527,4 +560,5 @@ module.exports = {
   warmAll,
   outDirFor,
   masterPlaylistFor,
+  forget,
 };

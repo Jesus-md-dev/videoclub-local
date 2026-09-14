@@ -256,13 +256,18 @@ export default function WatchPage() {
       const instance = new Hls({ maxBufferLength: 60, maxMaxBufferLength: 90 });
       hlsRef.current = instance;
       instance.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) console.warn(`hls.js: error fatal (${data.type}): ${data.details}`);
+        if (data.fatal) console.warn(`hls.js FATAL (${data.type}): ${data.details}`);
       });
       // Si el idioma preferido (guardado de otro episodio) no es el que
       // trae por defecto este archivo, se aplica en cuanto se conocen las
-      // pistas reales del manifiesto - así el primer episodio que se abre
-      // ya suena en el idioma guardado, no solo los siguientes cambios.
-      instance.on(Hls.Events.MANIFEST_PARSED, () => {
+      // pistas reales - así el primer episodio que se abre ya suena en el
+      // idioma guardado, no solo los siguientes cambios. AUDIO_TRACKS_UPDATED,
+      // no MANIFEST_PARSED: verificado en directo que en el momento exacto
+      // de MANIFEST_PARSED "instance.audioTracks" todavía puede estar vacío
+      // (hls.js lo rellena en un paso posterior), así que la búsqueda por
+      // idioma fallaba siempre en silencio (position=-1) y se quedaba con
+      // la pista por defecto sin que nada avisara del fallo.
+      instance.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
         if (audioIndex == null) return;
         const wanted = tracks.audio.find((t) => t.index === audioIndex);
         const ordinal = tracks.audio.findIndex((t) => t.index === audioIndex);
@@ -402,29 +407,20 @@ export default function WatchPage() {
     const chosenTrack = tracks.audio.find((t) => t.index === newIndex);
     setPreferredAudioLanguage(chosenTrack?.language || null);
 
-    // Modo normal (HLS): cambia de pista sin recargar el vídeo ni perder la
-    // posición, usando la API de pistas del reproductor en marcha. Se busca
-    // por idioma dentro de la lista real del reproductor cuando el archivo
-    // lo trae etiquetado, y si no (ediciones de fans sin idioma en el
-    // contenedor) por posición ordinal (ver findAudioTrackPosition): el
-    // índice de tracks.audio (ffprobe) no tiene por qué coincidir con el de
-    // hls.js/audioTracks nativo, pero su ORDEN sí, al venir ambos del mismo
-    // análisis del archivo.
+    // Modo normal (HLS): el cambio "en caliente" (hls.audioTrack = posición,
+    // sin recargar nada) resultó NO ser fiable en la práctica - verificado
+    // en directo: la pista pedida por red y la seleccionada en hls.js eran
+    // las correctas, pero el sonido seguía siendo el de la pista anterior.
+    // En vez de perseguir ese fallo de hls.js/el navegador, se fuerza una
+    // recarga completa del reproductor (mismo mecanismo que la recuperación
+    // ante un corte, ver retryPlayback) con la posición actual guardada: la
+    // ruta de "carga inicial con idioma preferido" (ver MANIFEST_PARSED más
+    // abajo) sí aplica bien la pista desde el principio.
     if (!rawMode) {
-      const ordinal = tracks.audio.findIndex((t) => t.index === newIndex);
-      if (hlsRef.current) {
-        const position = findAudioTrackPosition(hlsRef.current.audioTracks, chosenTrack, ordinal);
-        if (position >= 0) hlsRef.current.audioTrack = position;
-      } else if (playerRef.current?.audioTracks) {
-        // Safari nativo: sin hls.js, la selección va por audioTracks.
-        const position = findAudioTrackPosition(playerRef.current.audioTracks, chosenTrack, ordinal);
-        if (position >= 0) {
-          for (let i = 0; i < playerRef.current.audioTracks.length; i += 1) {
-            playerRef.current.audioTracks[i].enabled = i === position;
-          }
-        }
-      }
+      const player = playerRef.current;
+      resumeTimeRef.current = player ? player.currentTime : null;
       setAudioIndex(newIndex);
+      setPlaybackKey((k) => k + 1);
       return;
     }
 
