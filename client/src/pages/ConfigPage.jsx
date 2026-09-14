@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import FolderBrowser from '../components/FolderBrowser';
+import HiddenMenu from '../components/HiddenMenu';
 
 export default function ConfigPage() {
   const [videosPath, setVideosPath] = useState('');
@@ -48,9 +49,12 @@ export default function ConfigPage() {
         <Link className="logo" to="/">
           VIDEO<span>CLUB</span>
         </Link>
-        <Link className="back-link" to="/">
-          &larr; Volver al catálogo
-        </Link>
+        <div className="header-actions">
+          <Link className="back-link" to="/">
+            &larr; Volver al catálogo
+          </Link>
+          <HiddenMenu />
+        </div>
       </header>
       <div className="config-wrap">
         <p className="section-title">Configuración</p>

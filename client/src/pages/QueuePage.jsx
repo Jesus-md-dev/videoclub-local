@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import HiddenMenu from '../components/HiddenMenu';
 
 function formatSize(bytes) {
   if (!bytes) return '';
@@ -45,9 +46,12 @@ export default function QueuePage() {
         <Link className="logo" to="/">
           VIDEO<span>CLUB</span>
         </Link>
-        <Link className="back-link" to="/">
-          &larr; Volver al catálogo
-        </Link>
+        <div className="header-actions">
+          <Link className="back-link" to="/">
+            &larr; Volver al catálogo
+          </Link>
+          <HiddenMenu />
+        </div>
       </header>
       <div className="config-wrap queue-wrap">
         <p className="section-title">Preparación de HLS</p>

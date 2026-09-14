@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { getActiveProfileId } from '../profile';
 import { track } from '../analytics';
+import HiddenMenu from '../components/HiddenMenu';
 
 function processingBadgeLabel(state, percent) {
   if (state === 'active') return `Procesando… ${typeof percent === 'number' ? `${percent}%` : ''}`.trim();
@@ -318,9 +319,7 @@ export default function CatalogPage() {
           value={term}
           onChange={(e) => handleSearch(e.target.value)}
         />
-        <Link className="switch-profile-link" to="/profiles">
-          Cambiar perfil
-        </Link>
+        <HiddenMenu />
       </header>
       <main>
         {!searching && <Breadcrumb dir={dir} onNavigate={goToDir} />}

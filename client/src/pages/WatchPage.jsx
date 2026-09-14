@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Hls from 'hls.js';
 import VideoControls from '../components/VideoControls';
+import HiddenMenu from '../components/HiddenMenu';
 import { getActiveProfileId } from '../profile';
 import { getPreferredAudioLanguage, setPreferredAudioLanguage } from '../audioPreference';
 import { track } from '../analytics';
@@ -418,6 +419,7 @@ export default function WatchPage() {
             ))}
           </select>
         )}
+        <HiddenMenu />
       </div>
       <div className="player-wrap">
         {error && <div className="error-box">{error}</div>}
