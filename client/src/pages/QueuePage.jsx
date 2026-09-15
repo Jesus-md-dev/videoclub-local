@@ -9,6 +9,31 @@ function formatSize(bytes) {
   return `${(bytes / 1e6).toFixed(0)} MB`;
 }
 
+function formatDuration(ms) {
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
+// Misma fórmula que WatchPage.jsx (pantalla de "preparando..." al abrir un
+// vídeo): con el % ya avanzado y el tiempo que ha llevado llegar hasta ahí,
+// se estima linealmente cuánto falta. Un vídeo compatible con copia directa
+// (sin recodificar, la mayoría) se remuxea tan rápido que el % casi nunca
+// llega a rellenarse a tiempo (ver hls.js) - para esos se muestra al menos
+// el tiempo ya transcurrido, más honesto que no mostrar nada.
+function formatRemaining(item) {
+  if (!item.elapsedMs) return null;
+  if (!item.percent) return `${formatDuration(item.elapsedMs)} transcurridos`;
+  const totalEstimate = item.elapsedMs / (item.percent / 100);
+  const remainingSec = Math.max(0, Math.round((totalEstimate - item.elapsedMs) / 1000));
+  if (remainingSec < 60) return `~${remainingSec}s restantes`;
+  const minutes = Math.floor(remainingSec / 60);
+  const seconds = remainingSec % 60;
+  return `~${minutes}m ${seconds}s restantes`;
+}
+
 export default function QueuePage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -101,6 +126,7 @@ export default function QueuePage() {
                       <span className="queue-meta">
                         {formatSize(item.size)}
                         {item.percent != null ? ` · ${item.percent}%` : ''}
+                        {formatRemaining(item) ? ` · ${formatRemaining(item)}` : ''}
                       </span>
                     </div>
                   ))}

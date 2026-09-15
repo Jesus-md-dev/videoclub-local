@@ -24,11 +24,13 @@ router.get('/queue', (req, res) => {
       summary.ready += 1;
     } else if (status === 'processing' || status === 'checking') {
       summary.processing += 1;
+      const progress = hls.getProgress(video);
       processing.push({
         id: video.id,
         title: video.title,
         size: video.size,
-        percent: hls.getProgress(video)?.percent ?? null,
+        percent: progress?.percent ?? null,
+        elapsedMs: progress?.elapsedMs ?? null,
       });
     } else if (status === 'failed') {
       summary.failed += 1;
