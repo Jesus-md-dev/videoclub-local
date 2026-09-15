@@ -246,6 +246,36 @@ function GenreFilter({ genres, active, onToggle }) {
   );
 }
 
+// Dentro de una serie todos los episodios comparten género/tipo (son la
+// misma obra), así que el filtro de género no aporta nada ahí - solo tiene
+// sentido en la raíz del catálogo, donde sí se mezclan obras distintas. Lo
+// único que puede variar dentro de una serie es la temporada.
+function SeasonFilter({ seasons, active, onToggle }) {
+  if (seasons.length < 2) return null;
+  return (
+    <div className="genre-filter">
+      {seasons.map((season) => (
+        <button
+          key={season}
+          className={`chip ${active === season ? 'chip-active' : ''}`}
+          onClick={() => onToggle(season)}
+        >
+          Temporada {season}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// El catálogo no modela "temporada" como campo propio (ver catalog.js:
+// groupKeyFor trata las subcarpetas de temporada como genéricas, agrupando
+// todo bajo la obra) - se extrae del propio título del episodio, con el
+// patrón "SxxEyy" ya usado en toda la biblioteca (p.ej. "S01E02").
+function extractSeason(title) {
+  const m = title.match(/S(\d{1,2})E\d{1,3}/i);
+  return m ? Number(m[1]) : null;
+}
+
 function Breadcrumb({ dir, onNavigate }) {
   const segments = dir ? dir.split('/') : [];
   return (
@@ -274,6 +304,7 @@ export default function CatalogPage() {
   const term = searchParams.get('q') || '';
 
   const genre = searchParams.get('genre') || '';
+  const season = searchParams.get('season') ? Number(searchParams.get('season')) : null;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -427,6 +458,14 @@ export default function CatalogPage() {
     }
     setSearchParams(params);
   };
+  const toggleSeason = (s) => {
+    const params = { dir };
+    if (s !== season) {
+      params.season = String(s);
+      track('season_filter', { season: s });
+    }
+    setSearchParams(params);
+  };
 
   // Se registra la búsqueda solo cuando el usuario deja de teclear un
   // momento (no en cada pulsación), para saber qué se busca sin llenar el
@@ -438,7 +477,22 @@ export default function CatalogPage() {
   }, [term]);
 
   const visibleFolders = genre ? folders.filter((f) => f.genres?.includes(genre)) : folders;
-  const visibleVideos = genre ? videos.filter((v) => v.genres?.includes(genre)) : videos;
+  const genreFilteredVideos = genre ? videos.filter((v) => v.genres?.includes(genre)) : videos;
+
+  // Solo tiene sentido dentro de una serie (fuera de ahí "genre" ya filtra
+  // obras completas, no episodios sueltos de una misma obra).
+  const seasons = useMemo(() => {
+    if (!dir) return [];
+    const set = new Set();
+    for (const v of videos) {
+      const s = extractSeason(v.title);
+      if (s != null) set.add(s);
+    }
+    return [...set].sort((a, b) => a - b);
+  }, [dir, videos]);
+
+  const visibleVideos =
+    dir && season != null ? genreFilteredVideos.filter((v) => extractSeason(v.title) === season) : genreFilteredVideos;
 
   // En la raíz, las carpetas (series/anime) se separan en dos filas según
   // el tipo detectado por las fuentes de metadatos; dentro de una carpeta
@@ -468,7 +522,8 @@ export default function CatalogPage() {
       </header>
       <main>
         {!searching && <Breadcrumb dir={dir} onNavigate={goToDir} />}
-        {!searching && <GenreFilter genres={genres} active={genre} onToggle={toggleGenre} />}
+        {!searching && !dir && <GenreFilter genres={genres} active={genre} onToggle={toggleGenre} />}
+        {!searching && dir && <SeasonFilter seasons={seasons} active={season} onToggle={toggleSeason} />}
 
         {searching && (
           <>
