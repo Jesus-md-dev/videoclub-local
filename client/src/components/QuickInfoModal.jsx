@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PosterPicker from './PosterPicker';
 
@@ -7,6 +7,18 @@ import PosterPicker from './PosterPicker';
 // género o cuántos episodios lleva vistos una serie.
 export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetadataChanged }) {
   const [pickingPoster, setPickingPoster] = useState(false);
+
+  // Como cualquier modal: Escape también cierra, no solo el botón ✕ o
+  // hacer clic fuera.
+  useEffect(() => {
+    if (!target) return undefined;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [target, onClose]);
+
   if (!target) return null;
   const { type, data, progress } = target;
   const isFolder = type === 'folder';

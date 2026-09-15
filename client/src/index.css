@@ -245,7 +245,11 @@ main {
   overflow-x: auto;
   scroll-snap-type: x proximity;
   scroll-behavior: smooth;
-  padding: 4px 4px 12px;
+  /* "overflow-x: auto" obliga al navegador a tratar también el eje Y como
+     "auto" (no se puede dejar solo ese en "visible"), así que sin este
+     margen vertical de sobra la carátula se recorta por arriba al
+     agrandarse en hover (translateY + scale). */
+  padding: 20px 4px 16px;
   /* Oculta la barra de scroll (el deslizamiento en sí sigue funcionando):
      el carril ya se lee visualmente como "esto sigue hacia el lado". */
   scrollbar-width: none;
@@ -302,7 +306,10 @@ main {
   transform: translateY(-6px) scale(1.03);
   border-color: var(--accent);
   box-shadow: 5px 5px 0 var(--border-strong), 0 12px 24px rgba(0, 0, 0, 0.5);
-  z-index: 1;
+  /* Por encima de .row-arrow (z-index: 2): si no, la flecha de desplazar el
+     carril tapaba un poco la carátula ampliada cuando quedaba cerca del
+     borde. */
+  z-index: 3;
 }
 
 .card:focus-visible {
@@ -1479,6 +1486,9 @@ video {
 
   .card-remove {
     opacity: 1;
+    /* Sin esto, se solapaba con la insignia "Continuar" (misma esquina
+       superior, carátulas de 105px demasiado estrechas para las dos). */
+    top: 34px;
   }
 
   .chip,
