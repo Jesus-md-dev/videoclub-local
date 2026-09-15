@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { DATA_PATH, reloadVideosPath, reloadTmdbApiKey } = require('./config');
+const { DATA_PATH, reloadVideosPath, reloadTmdbApiKey, reloadSubdlApiKey, reloadOpenSubtitlesConfig } = require('./config');
 
 // DATA_PATH ahora vive en el disco externo (ver .env: DATA_PATH=D:\...),
 // para que viaje solo con la biblioteca al cambiar de PC/servidor. Pero ese
@@ -116,6 +116,8 @@ function restoreIfNeeded() {
   if (restoredSettings) {
     reloadVideosPath();
     reloadTmdbApiKey();
+    reloadSubdlApiKey();
+    reloadOpenSubtitlesConfig();
   }
 }
 

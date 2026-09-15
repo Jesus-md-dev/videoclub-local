@@ -119,6 +119,15 @@ export default function WatchPage() {
     });
   };
 
+  // Tras descargar un subtítulo de OpenSubtitles hace falta volver a pedir
+  // /api/tracks (ya lo incluirá) para que aparezca en el selector - se
+  // reutiliza tanto al cargar la página como después de una descarga.
+  const reloadTracks = () =>
+    fetch(`/api/tracks/${id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((t) => t && setTracks(t))
+      .catch(() => {});
+
   useEffect(() => {
     fetch('/api/videos')
       .then((res) => res.json())
@@ -585,6 +594,7 @@ export default function WatchPage() {
                 onAudioChange={handleAudioChange}
                 subtitlePrefs={subtitlePrefs}
                 onSubtitlePrefsChange={handleSubtitlePrefsChange}
+                onSubtitlesDownloaded={reloadTracks}
               />
             </div>
             {stuck && (

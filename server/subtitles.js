@@ -39,4 +39,4 @@ function extractSubtitle(video, streamIndex) {
   return promise;
 }
 
-module.exports = { extractSubtitle };
+module.exports = { extractSubtitle, outputFile };

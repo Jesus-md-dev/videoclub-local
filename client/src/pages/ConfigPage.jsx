@@ -10,6 +10,14 @@ export default function ConfigPage() {
   const [browsing, setBrowsing] = useState(false);
   const [tmdbProgress, setTmdbProgress] = useState(null);
   const [normalizeProgress, setNormalizeProgress] = useState(null);
+  const [subdlApiKey, setSubdlApiKey] = useState('');
+  const [osApiKey, setOsApiKey] = useState('');
+  const [osUsername, setOsUsername] = useState('');
+  const [osPassword, setOsPassword] = useState('');
+  const [osHasPassword, setOsHasPassword] = useState(false);
+  const [subtitlesStatus, setSubtitlesStatus] = useState(null);
+  const [subtitlesSaving, setSubtitlesSaving] = useState(false);
+  const [subtitlesMessage, setSubtitlesMessage] = useState(null);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -81,6 +89,57 @@ export default function ConfigPage() {
       setTmdbProgress({ running: true, total: data.total, done: 0, updated: 0 });
     } catch (err) {
       setMessage({ text: err.message, ok: false });
+    }
+  };
+
+  const loadSubtitlesConfig = () => {
+    fetch('/api/subdl/config')
+      .then((res) => res.json())
+      .then((data) => {
+        setSubdlApiKey(data.apiKey || '');
+        setOsApiKey(data.openSubtitles?.apiKey || '');
+        setOsUsername(data.openSubtitles?.username || '');
+        setOsHasPassword(Boolean(data.openSubtitles?.hasPassword));
+      })
+      .catch(() => {});
+    fetch('/api/subdl/status')
+      .then((res) => res.json())
+      .then(setSubtitlesStatus)
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadSubtitlesConfig();
+  }, []);
+
+  const handleSaveSubtitles = async () => {
+    setSubtitlesSaving(true);
+    setSubtitlesMessage(null);
+    try {
+      const openSubtitlesBody = { apiKey: osApiKey, username: osUsername };
+      // Solo se manda la contraseña si se ha escrito una nueva - en blanco
+      // significa "no tocar la que ya había guardada" (el servidor nunca
+      // la devuelve, solo dice si hay una).
+      if (osPassword) openSubtitlesBody.password = osPassword;
+      const res = await fetch('/api/subdl/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: subdlApiKey, openSubtitles: openSubtitlesBody }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setOsPassword('');
+      setSubtitlesMessage({
+        text: data.subdl
+          ? 'Guardado. SubDL listo (prioritario); OpenSubtitles queda como reserva.'
+          : 'Guardado, pero sin SubDL configurado no se usará como prioritario.',
+        ok: data.configured,
+      });
+      loadSubtitlesConfig();
+    } catch (err) {
+      setSubtitlesMessage({ text: err.message, ok: false });
+    } finally {
+      setSubtitlesSaving(false);
     }
   };
 
@@ -211,6 +270,71 @@ export default function ConfigPage() {
               </p>
             )}
           </>
+        )}
+
+        <p className="section-title" style={{ marginTop: 32 }}>
+          Subtítulos
+        </p>
+        <p className="hint">
+          Para buscar y descargar subtítulos de mejor calidad (o cuando el vídeo no lleva
+          ninguno incrustado) desde el botón 🔍 del reproductor. <strong>SubDL</strong> es la
+          fuente prioritaria (cuota gratuita mucho más generosa); <strong>OpenSubtitles</strong>{' '}
+          solo se consulta como reserva cuando SubDL no encuentra nada.
+        </p>
+        <label htmlFor="subdlApiKey">Clave de API de SubDL (prioritaria)</label>
+        <input
+          type="text"
+          id="subdlApiKey"
+          autoComplete="off"
+          value={subdlApiKey}
+          onChange={(e) => setSubdlApiKey(e.target.value)}
+        />
+        <p className="hint">
+          Gratis en{' '}
+          <a href="https://subdl.com/panel/api" target="_blank" rel="noreferrer">
+            subdl.com/panel/api
+          </a>
+          .
+        </p>
+
+        <label htmlFor="osApiKey" style={{ marginTop: 8 }}>
+          Clave de API de OpenSubtitles (reserva, opcional)
+        </label>
+        <input
+          type="text"
+          id="osApiKey"
+          autoComplete="off"
+          value={osApiKey}
+          onChange={(e) => setOsApiKey(e.target.value)}
+        />
+        <label htmlFor="osUsername">Usuario de opensubtitles.com</label>
+        <input
+          type="text"
+          id="osUsername"
+          autoComplete="off"
+          value={osUsername}
+          onChange={(e) => setOsUsername(e.target.value)}
+        />
+        <label htmlFor="osPassword">Contraseña</label>
+        <input
+          type="password"
+          id="osPassword"
+          autoComplete="off"
+          placeholder={osHasPassword ? '••••••• (ya guardada, deja en blanco para no cambiarla)' : ''}
+          value={osPassword}
+          onChange={(e) => setOsPassword(e.target.value)}
+        />
+        <button type="button" onClick={handleSaveSubtitles} disabled={subtitlesSaving}>
+          Guardar
+        </button>
+        {subtitlesMessage && (
+          <p className={`config-message ${subtitlesMessage.ok ? 'ok' : 'error'}`}>{subtitlesMessage.text}</p>
+        )}
+        {subtitlesStatus && !subtitlesMessage && (
+          <p className="hint">
+            SubDL: {subtitlesStatus.subdl ? 'configurado' : 'sin configurar'} · OpenSubtitles:{' '}
+            {subtitlesStatus.openSubtitles ? 'configurado' : 'sin configurar'}
+          </p>
         )}
       </div>
       {browsing && (

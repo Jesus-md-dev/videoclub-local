@@ -53,6 +53,7 @@ const analyticsRouter = require('./routes/analytics');
 const hlsRouter = require('./routes/hls');
 const purgeRouter = require('./routes/purge');
 const normalizeRouter = require('./routes/normalize');
+const subdlRouter = require('./routes/subdl');
 
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
@@ -96,6 +97,7 @@ app.use('/api', analyticsRouter);
 app.use('/api', hlsRouter);
 app.use('/api', purgeRouter);
 app.use('/api', normalizeRouter);
+app.use('/api', subdlRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
