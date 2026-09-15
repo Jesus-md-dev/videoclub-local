@@ -277,7 +277,7 @@ export default function ConfigPage() {
         </p>
         <p className="hint">
           Para buscar y descargar subtítulos de mejor calidad (o cuando el vídeo no lleva
-          ninguno incrustado) desde el botón 🔍 del reproductor.
+          ninguno incrustado) desde el propio desplegable de subtítulos del reproductor.
         </p>
         <label htmlFor="subdlApiKey">Clave de API de SubDL</label>
         <input

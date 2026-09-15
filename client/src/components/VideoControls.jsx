@@ -333,6 +333,10 @@ export default function VideoControls({
 
   const handleSubtitleChange = (e) => {
     const { value } = e.target;
+    if (value === 'trigger-search') {
+      searchSubtitles();
+      return;
+    }
     if (value.startsWith('search-')) {
       const searchPos = Number(value.slice('search-'.length));
       const result = subtitleSearchResults?.[searchPos];
@@ -451,46 +455,36 @@ export default function VideoControls({
 
         {(subtitleTracks.length > 0 || subtitleSearchReady) && (
           <div className="subtitle-controls" ref={subtitleSettingsRef}>
-            {(subtitleTracks.length > 0 || subtitleSearchResults?.length > 0) && (
-              <select
-                className="track-select"
-                value={selectValue}
-                onChange={handleSubtitleChange}
-                aria-label="Subtítulos"
-              >
-                <option value={-1}>Subtítulos: Desactivados</option>
-                {subtitleTracks.length > 0 && (
-                  <optgroup label="Disponibles">
-                    {subtitleTracks.map((subtitleTrack, i) => (
-                      <option key={subtitleTrack.index} value={i}>
-                        {trackLabel(subtitleTrack)} ({subtitleSourceLabel(subtitleTrack)})
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                {subtitleSearchResults?.length > 0 && (
-                  <optgroup label="Buscar y descargar">
-                    {subtitleSearchResults.map((result, i) => (
-                      <option key={result.fileId} value={`search-${i}`}>
-                        {pendingSearchIndex === i ? 'Descargando… ' : ''}
-                        {result.release} (SubDL)
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            )}
-            {subtitleSearchReady && (
-              <button
-                className={`control-btn ${subtitleSearchLoading ? 'control-btn-active' : ''}`}
-                onClick={searchSubtitles}
-                disabled={subtitleSearchLoading}
-                aria-label="Buscar subtítulos en SubDL"
-                title="Buscar más subtítulos (se añaden como opciones en el desplegable)"
-              >
-                {subtitleSearchLoading ? '…' : '🔍'}
-              </button>
-            )}
+            <select
+              className="track-select"
+              value={selectValue}
+              onChange={handleSubtitleChange}
+              aria-label="Subtítulos"
+            >
+              <option value={-1}>Subtítulos: Desactivados</option>
+              {subtitleTracks.length > 0 && (
+                <optgroup label="Disponibles">
+                  {subtitleTracks.map((subtitleTrack, i) => (
+                    <option key={subtitleTrack.index} value={i}>
+                      {trackLabel(subtitleTrack)} ({subtitleSourceLabel(subtitleTrack)})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {subtitleSearchReady && (
+                <optgroup label="Buscar y descargar">
+                  <option value="trigger-search" disabled={subtitleSearchLoading}>
+                    {subtitleSearchLoading ? 'Buscando…' : '🔍 Buscar más subtítulos'}
+                  </option>
+                  {subtitleSearchResults?.map((result, i) => (
+                    <option key={result.fileId} value={`search-${i}`}>
+                      {pendingSearchIndex === i ? 'Descargando… ' : ''}
+                      {result.release} (SubDL)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
             {subtitleTracks.length > 0 && (
               <button
                 className={`control-btn ${subtitleSettingsOpen ? 'control-btn-active' : ''}`}
