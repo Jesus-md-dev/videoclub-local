@@ -3,7 +3,6 @@ const path = require('path');
 const { getMediaInfo } = require('./mediaInfo');
 const { HLS_PATH, DATA_PATH } = require('./config');
 const subdl = require('./subdl');
-const openSubtitles = require('./opensubtitles');
 
 const SUBTITLES_DIR = path.join(DATA_PATH, 'subtitles');
 
@@ -83,10 +82,9 @@ function readAudioTracksFromMaster(video) {
 // extraído (eso solo lo tenía el análisis perdido), pero sí que existe:
 // se listan los "<id>-<índice>.vtt" ya generados (ver subtitles.js, que
 // los extrae ANTES de archivar el vídeo) con una etiqueta genérica, mejor
-// que no ofrecerlos en absoluto. Se excluyen los "ext<hash>"/"os<id>"
-// (subtítulos descargados de SubDL/OpenSubtitles, ver subdl.js/
-// opensubtitles.js): esos ya los añade listDownloaded con su idioma/nombre
-// de verdad, no hace falta adivinarlos aquí también.
+// que no ofrecerlos en absoluto. Se excluyen los "ext<hash>" (subtítulos
+// descargados de SubDL, ver subdl.js): esos ya los añade listDownloaded
+// con su idioma/nombre de verdad, no hace falta adivinarlos aquí también.
 function readSubtitlesFromDisk(video) {
   let files;
   try {
@@ -110,7 +108,7 @@ function readSubtitlesFromDisk(video) {
 }
 
 async function getTracks(video) {
-  const downloaded = [...subdl.listDownloaded(video.id), ...openSubtitles.listDownloaded(video.id)];
+  const downloaded = subdl.listDownloaded(video.id);
   try {
     const info = await getMediaInfo(video);
     const audio = info.streams.filter((s) => s.codec_type === 'audio').map(describeTrack);

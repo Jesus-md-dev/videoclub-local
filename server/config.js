@@ -111,8 +111,6 @@ function setTmdbApiKey(key) {
 // Clave de API de SubDL (para buscar/descargar subtítulos de mejor calidad
 // que solo los que ya lleve incrustados el archivo, ver subdl.js): igual
 // patrón que TMDB, guardada en settings.json (DATA_PATH, disco externo).
-// A diferencia de OpenSubtitles, no hace falta usuario/contraseña (cuota
-// gratuita mucho más generosa solo con la clave).
 function initialSubdlApiKey() {
   const stored = readSettings().subdlApiKey;
   if (stored) return stored;
@@ -141,44 +139,6 @@ function setSubdlApiKey(key) {
   return currentSubdlApiKey;
 }
 
-// Credenciales de OpenSubtitles (segunda fuente, solo para cuando SubDL no
-// encuentra nada - ver opensubtitles.js): mismo patrón, en settings.json.
-// Hace falta usuario+contraseña además de la clave de API porque su API
-// nueva da muy poca cuota de descarga diaria sin iniciar sesión.
-function initialOpenSubtitlesConfig() {
-  const stored = readSettings().openSubtitles;
-  return {
-    apiKey: stored?.apiKey || process.env.OPENSUBTITLES_API_KEY || null,
-    username: stored?.username || process.env.OPENSUBTITLES_USERNAME || null,
-    password: stored?.password || process.env.OPENSUBTITLES_PASSWORD || null,
-  };
-}
-
-let currentOpenSubtitlesConfig = initialOpenSubtitlesConfig();
-
-function getOpenSubtitlesConfig() {
-  return currentOpenSubtitlesConfig;
-}
-
-function reloadOpenSubtitlesConfig() {
-  currentOpenSubtitlesConfig = initialOpenSubtitlesConfig();
-  return currentOpenSubtitlesConfig;
-}
-
-function setOpenSubtitlesConfig({ apiKey, username, password }) {
-  fs.mkdirSync(DATA_PATH, { recursive: true });
-  const settings = { ...readSettings() };
-  const next = { ...(settings.openSubtitles || {}) };
-  if (apiKey !== undefined) next.apiKey = apiKey?.trim() || undefined;
-  if (username !== undefined) next.username = username?.trim() || undefined;
-  if (password !== undefined) next.password = password || undefined;
-  Object.keys(next).forEach((k) => next[k] === undefined && delete next[k]);
-  settings.openSubtitles = next;
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
-  currentOpenSubtitlesConfig = initialOpenSubtitlesConfig();
-  return currentOpenSubtitlesConfig;
-}
-
 module.exports = {
   PORT,
   HTTPS_PORT,
@@ -196,7 +156,4 @@ module.exports = {
   getSubdlApiKey,
   setSubdlApiKey,
   reloadSubdlApiKey,
-  getOpenSubtitlesConfig,
-  setOpenSubtitlesConfig,
-  reloadOpenSubtitlesConfig,
 };

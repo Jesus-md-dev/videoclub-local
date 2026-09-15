@@ -118,7 +118,7 @@ export default function WatchPage() {
     });
   };
 
-  // Tras descargar un subtítulo de OpenSubtitles hace falta volver a pedir
+  // Tras descargar un subtítulo de SubDL hace falta volver a pedir
   // /api/tracks (ya lo incluirá) para que aparezca en el selector - se
   // reutiliza tanto al cargar la página como después de una descarga.
   const reloadTracks = () =>

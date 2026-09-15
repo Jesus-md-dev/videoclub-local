@@ -13,7 +13,7 @@ const CODEC_CHECKS_FILE = path.join(DATA_PATH, 'codec-checks.json');
 // hls.js) que se haya quedado sin caché de análisis (codec-checks.json) es
 // irrecuperable para siempre - ya no hay ningún archivo del que volver a
 // sacar qué pistas de audio/subtítulos tenía. Mejor detectarlo ahora (y
-// poder al menos buscarle un subtítulo de repuesto con SubDL/OpenSubtitles)
+// poder al menos buscarle un subtítulo de repuesto con SubDL)
 // que enterarse vídeo a vídeo, mucho después, cuando alguien intente verlo.
 router.get('/health/archived-videos', (req, res) => {
   let codecChecks = {};

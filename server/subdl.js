@@ -6,9 +6,9 @@ const { outputFile: subtitleFile } = require('./subtitles');
 
 // Subtítulos de mejor calidad/variedad que los que ya lleve incrustados el
 // archivo (o cuando no lleva ninguno): busca y descarga desde SubDL
-// (https://subdl.com/api-doc) - a diferencia de OpenSubtitles, con solo
-// una clave de API gratuita (sin usuario/contraseña) y una cuota diaria
-// mucho más generosa (miles de búsquedas, cientos de descargas).
+// (https://subdl.com/api-doc), con solo una clave de API gratuita (sin
+// usuario/contraseña) y una cuota diaria generosa (miles de búsquedas,
+// cientos de descargas).
 //
 // Se guardan con el mismo formato de nombre que un subtítulo extraído del
 // propio vídeo ("<id>-<streamIndex>.vtt", ver subtitles.js), usando

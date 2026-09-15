@@ -7,14 +7,12 @@ function trackLabel(track) {
 }
 
 // El origen de una pista de subtítulo se distingue por el prefijo de su
-// "index" (ver server/tracks.js: "ext<hash>" = descargado de SubDL,
-// "os<fileId>" = de OpenSubtitles; un número o "<n>" suelto = incrustado en
-// el propio archivo, o ya extraído de él). Solo tiene sentido para
-// subtítulos, no para audio.
+// "index" (ver server/tracks.js: "ext<hash>" = descargado de SubDL; un
+// número o "<n>" suelto = incrustado en el propio archivo, o ya extraído
+// de él). Solo tiene sentido para subtítulos, no para audio.
 function subtitleSourceLabel(track) {
   const index = String(track.index);
   if (index.startsWith('ext')) return 'SubDL';
-  if (index.startsWith('os')) return 'OpenSubtitles';
   return 'del vídeo';
 }
 
@@ -275,12 +273,11 @@ export default function VideoControls({
     setPendingSearchIndex(null);
   }, [subtitleTracks, pendingActivateStreamIndex, videoRef]);
 
-  // Busca subtítulos usando el título del vídeo (server/routes/subdl.js ya
-  // saca el nombre limpio y la temporada/episodio del catálogo, y prueba
-  // primero SubDL y solo si no hay resultados cae a OpenSubtitles) - sin
-  // caja de texto que rellenar, como el resto de la app. Los resultados se
-  // añaden como opciones más dentro del mismo desplegable de subtítulos,
-  // no en un panel aparte.
+  // Busca subtítulos en SubDL usando el título del vídeo (server/routes/
+  // subdl.js ya saca el nombre limpio y la temporada/episodio del
+  // catálogo) - sin caja de texto que rellenar, como el resto de la app.
+  // Los resultados se añaden como opciones más dentro del mismo
+  // desplegable de subtítulos, no en un panel aparte.
   const searchSubtitles = () => {
     setSubtitleSettingsOpen(false);
     setSubtitleSearchLoading(true);
@@ -310,7 +307,6 @@ export default function VideoControls({
         fileId: result.fileId,
         language: result.language,
         release: result.release,
-        provider: result.provider,
       }),
     })
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
@@ -477,7 +473,7 @@ export default function VideoControls({
                     {subtitleSearchResults.map((result, i) => (
                       <option key={result.fileId} value={`search-${i}`}>
                         {pendingSearchIndex === i ? 'Descargando… ' : ''}
-                        {result.release} ({result.provider === 'opensubtitles' ? 'OpenSubtitles' : 'SubDL'})
+                        {result.release} (SubDL)
                       </option>
                     ))}
                   </optgroup>
@@ -489,7 +485,7 @@ export default function VideoControls({
                 className={`control-btn ${subtitleSearchLoading ? 'control-btn-active' : ''}`}
                 onClick={searchSubtitles}
                 disabled={subtitleSearchLoading}
-                aria-label="Buscar subtítulos en SubDL/OpenSubtitles"
+                aria-label="Buscar subtítulos en SubDL"
                 title="Buscar más subtítulos (se añaden como opciones en el desplegable)"
               >
                 {subtitleSearchLoading ? '…' : '🔍'}
