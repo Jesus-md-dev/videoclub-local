@@ -296,6 +296,16 @@ export default function VideoControls({
       .finally(() => setSubtitleSearchLoading(false));
   };
 
+  // Elegir "Buscar subtítulos" en el <select> cierra el desplegable (así
+  // funciona cualquier <select> nativo al elegir una opción) - había que
+  // volver a abrirlo para ver los resultados. Para no depender de ese clic,
+  // se busca sola en cuanto se sabe que SubDL está configurado: los
+  // resultados ya están dentro del desplegable la primera vez que se abre.
+  useEffect(() => {
+    if (subtitleSearchReady) searchSubtitles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtitleSearchReady]);
+
   const downloadSubtitle = (result, searchPos) => {
     setPendingSearchIndex(searchPos);
     setSubtitleSearchError(null);
@@ -474,7 +484,11 @@ export default function VideoControls({
               {subtitleSearchReady && (
                 <optgroup label="Buscar y descargar">
                   <option value="trigger-search" disabled={subtitleSearchLoading}>
-                    {subtitleSearchLoading ? 'Buscando…' : '🔍 Buscar más subtítulos'}
+                    {subtitleSearchLoading
+                      ? 'Buscando…'
+                      : subtitleSearchResults === null
+                        ? '🔍 Buscar subtítulos'
+                        : '🔄 Buscar de nuevo'}
                   </option>
                   {subtitleSearchResults?.map((result, i) => (
                     <option key={result.fileId} value={`search-${i}`}>
