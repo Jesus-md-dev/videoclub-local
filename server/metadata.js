@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { DATA_PATH } = require('./config');
+const { DATA_PATH, getTmdbApiKey } = require('./config');
 
 const METADATA_FILE = path.join(DATA_PATH, 'metadata.json');
 // Claves corregidas a mano con overrideFromTmdb (id de TMDB conocido, a
@@ -275,16 +275,19 @@ async function fetchJikan(query, priority, attempts = 3) {
 }
 
 // TMDB: mejor que Wikidata para películas (búsqueda mucho más precisa,
-// carátulas siempre en buena calidad); necesita una clave gratuita propia
-// (TMDB_API_KEY en .env). Si no está configurada, se salta sin más y se
-// sigue con Wikidata como respaldo.
-const TMDB_API_KEY = process.env.TMDB_API_KEY;
+// carátulas siempre en buena calidad); necesita una clave gratuita propia,
+// configurable desde /config (se guarda en settings.json, en DATA_PATH -
+// así viaja con la biblioteca al cambiar de PC/servidor) o en TMDB_API_KEY
+// del .env como alternativa. Si no está configurada, se salta sin más y se
+// sigue con Wikidata como respaldo. Es una función (no una constante fija)
+// porque puede cambiar en caliente desde /config, sin reiniciar.
+const TMDB_API_KEY = getTmdbApiKey;
 const tmdbGenreMaps = {}; // 'movie' | 'tv' -> Map<id, nombre en español>
 
 async function tmdbGenreMap(mediaType, priority) {
   if (tmdbGenreMaps[mediaType]) return tmdbGenreMaps[mediaType];
   const res = await throttledFetch(
-    `https://api.themoviedb.org/3/genre/${mediaType}/list?api_key=${TMDB_API_KEY}&language=es-ES`,
+    `https://api.themoviedb.org/3/genre/${mediaType}/list?api_key=${TMDB_API_KEY()}&language=es-ES`,
     undefined,
     350,
     priority
@@ -309,13 +312,13 @@ function exactTitleMatch(results, query, titleKeys) {
 }
 
 async function fetchTmdbMovie(query, priority, year) {
-  if (!TMDB_API_KEY) return null;
+  if (!TMDB_API_KEY()) return null;
   // Sin el año, un título corto/genérico ("Nadie") puede confundirse con
   // otra película homónima distinta; cleanQuery ya lo ha quitado de la
   // consulta en sí, así que se pasa aparte como filtro cuando se conoce.
   const yearParam = year ? `&primary_release_year=${year}` : '';
   const res = await throttledFetch(
-    `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}${yearParam}`,
+    `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY()}&language=es-ES&query=${encodeURIComponent(query)}${yearParam}`,
     undefined,
     350,
     priority
@@ -343,10 +346,10 @@ async function fetchTmdbMovie(query, priority, year) {
 const TMDB_ANIME_GENRE_ID = 16; // "Animación" en la lista de géneros de TMDB
 
 async function fetchTmdbTv(query, priority, year) {
-  if (!TMDB_API_KEY) return null;
+  if (!TMDB_API_KEY()) return null;
   const yearParam = year ? `&first_air_date_year=${year}` : '';
   const res = await throttledFetch(
-    `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}${yearParam}`,
+    `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY()}&language=es-ES&query=${encodeURIComponent(query)}${yearParam}`,
     undefined,
     350,
     priority
@@ -394,7 +397,7 @@ async function fetchTmdbTv(query, priority, year) {
   let poster = match.poster_path ? `https://image.tmdb.org/t/p/w500${match.poster_path}` : null;
   try {
     const seasonRes = await throttledFetch(
-      `https://api.themoviedb.org/3/tv/${match.id}/season/1?api_key=${TMDB_API_KEY}&language=es-ES`,
+      `https://api.themoviedb.org/3/tv/${match.id}/season/1?api_key=${TMDB_API_KEY()}&language=es-ES`,
       undefined,
       350,
       priority
@@ -693,13 +696,13 @@ async function refreshMetadata(key) {
 // búsqueda automática posterior encuentra que la clave tiene un override
 // guardado (ver applyStoredOverrideIfAny).
 async function fetchTmdbFixedEntry({ tmdbType, tmdbId, season }) {
-  if (!TMDB_API_KEY) throw new Error('TMDB_API_KEY no configurada en .env');
+  if (!TMDB_API_KEY()) throw new Error('TMDB_API_KEY no configurada en .env');
   if (!tmdbType || !tmdbId) throw new Error('Faltan "tmdbType" ("tv" o "movie") y "tmdbId"');
 
   let entry;
   if (tmdbType === 'movie') {
     const res = await throttledFetch(
-      `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`,
+      `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY()}&language=es-ES`,
       undefined,
       350,
       'high'
@@ -715,7 +718,7 @@ async function fetchTmdbFixedEntry({ tmdbType, tmdbId, season }) {
     };
   } else if (tmdbType === 'tv') {
     const res = await throttledFetch(
-      `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`,
+      `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY()}&language=es-ES`,
       undefined,
       350,
       'high'
@@ -730,7 +733,7 @@ async function fetchTmdbFixedEntry({ tmdbType, tmdbId, season }) {
     // del show en general (justo el caso de ".hack//Sign" temporada 1).
     if (season != null) {
       const seasonRes = await throttledFetch(
-        `https://api.themoviedb.org/3/tv/${tmdbId}/season/${season}?api_key=${TMDB_API_KEY}&language=es-ES`,
+        `https://api.themoviedb.org/3/tv/${tmdbId}/season/${season}?api_key=${TMDB_API_KEY()}&language=es-ES`,
         undefined,
         350,
         'high'
@@ -761,20 +764,20 @@ async function fetchTmdbFixedEntry({ tmdbType, tmdbId, season }) {
 // para que la persona elija cuál aplicar (con overrideFromTmdb) en vez de
 // que el servidor siga adivinando solo.
 async function getPosterCandidates(key) {
-  if (!TMDB_API_KEY) throw new Error('TMDB_API_KEY no configurada en .env');
+  if (!TMDB_API_KEY()) throw new Error('TMDB_API_KEY no configurada en .env');
   const query = cleanQuery(key);
   if (!query) return [];
   const year = extractYear(key);
 
   const [tvRes, movieRes] = await Promise.all([
     throttledFetch(
-      `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}${year ? `&first_air_date_year=${year}` : ''}`,
+      `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY()}&language=es-ES&query=${encodeURIComponent(query)}${year ? `&first_air_date_year=${year}` : ''}`,
       undefined,
       350,
       'high'
     ),
     throttledFetch(
-      `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}${year ? `&primary_release_year=${year}` : ''}`,
+      `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY()}&language=es-ES&query=${encodeURIComponent(query)}${year ? `&primary_release_year=${year}` : ''}`,
       undefined,
       350,
       'high'
@@ -878,7 +881,7 @@ async function applyStoredOverrideIfAny(key) {
 // Si TMDB no encuentra nada para esta clave, no se toca lo que ya hubiera
 // en caché - mejor conservar lo que hay que perderlo.
 async function forceTmdbRefreshOne(key, priority = 'low') {
-  if (!TMDB_API_KEY) throw new Error('TMDB_API_KEY no configurada en .env');
+  if (!TMDB_API_KEY()) throw new Error('TMDB_API_KEY no configurada en .env');
   const reapplied = await applyStoredOverrideIfAny(key);
   if (reapplied) return { updated: true };
   const query = cleanQuery(key);

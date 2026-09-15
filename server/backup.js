@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { DATA_PATH, reloadVideosPath } = require('./config');
+const { DATA_PATH, reloadVideosPath, reloadTmdbApiKey } = require('./config');
 
 // DATA_PATH ahora vive en el disco externo (ver .env: DATA_PATH=D:\...),
 // para que viaje solo con la biblioteca al cambiar de PC/servidor. Pero ese
@@ -113,7 +113,10 @@ function restoreIfNeeded() {
       console.warn(`No se pudo recuperar "${name}" de la copia de seguridad: ${err.message}`);
     }
   }
-  if (restoredSettings) reloadVideosPath();
+  if (restoredSettings) {
+    reloadVideosPath();
+    reloadTmdbApiKey();
+  }
 }
 
 // Guarda en la carpeta de vídeos una copia de los datos locales, para poder

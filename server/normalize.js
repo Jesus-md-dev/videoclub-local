@@ -5,6 +5,7 @@ const catalog = require('./catalog');
 const metadata = require('./metadata');
 const thumbnails = require('./thumbnails');
 const hls = require('./hls');
+const archivedVideos = require('./archivedVideos');
 
 const PROGRESS_DIR = path.join(DATA_PATH, 'progress');
 const TRICKPLAY_DIR = path.join(DATA_PATH, 'trickplay');
@@ -21,9 +22,12 @@ function sanitizeName(str) {
 
 // Solo se toca el nombre si se reconoce con confianza un marcador de
 // temporada/episodio en el nombre original: "S06E12" manda si aparece, si
-// no un "1x01" (temporada x episodio, sin letras), si no un "E04" suelto.
-// Si no hay ninguno de los tres, se deja el archivo tal cual (mejor no tocar
-// nada que arriesgarse a desordenar los episodios).
+// no un "1x01" (temporada x episodio, sin letras), si no un "E04" suelto
+// (se asume entonces temporada 1, así el resultado siempre lleva
+// temporada+episodio - nunca una mezcla de "E04" y "S01E04" dentro de la
+// misma serie según lo que traiga cada archivo original). Si no hay
+// ninguno de los tres, se deja el archivo tal cual (mejor no tocar nada
+// que arriesgarse a desordenar los episodios).
 function extractEpisodeMarker(rawTitle) {
   let m = rawTitle.match(/S(\d{1,2})E(\d{1,4})/i);
   if (m) return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}`;
@@ -33,7 +37,7 @@ function extractEpisodeMarker(rawTitle) {
   m = rawTitle.match(/(?:^|[\s\-_.])(\d{1,2})x(\d{1,4})(?:[\s\-_.]|$)/i);
   if (m) return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}`;
   m = rawTitle.match(/(?:^|[^a-z0-9])E(\d{1,4})(?:[^0-9]|$)/i);
-  if (m) return `E${m[1].padStart(2, '0')}`;
+  if (m) return `S01E${m[1].padStart(2, '0')}`;
   return null;
 }
 
@@ -55,16 +59,26 @@ function stripTrailingYear(str) {
   return result;
 }
 
-// Nombre limpio propuesto para un vídeo, o null si no hace falta tocarlo
-// (ya está bien, es un vídeo archivado sin archivo real, o no se pudo
-// reconocer con confianza el episodio). No depende de que TMDB ya haya
-// respondido: si la clave todavía no tiene "cleanName" en caché, usa el
-// nombre de la carpeta/archivo (ya limpiado de puntos/guiones bajos y de
-// cualquier año ya puesto) como alternativa razonable.
-function buildCandidate(video) {
-  if (video.archived) return null;
+// Series/películas excluidas del renombrado a propósito (a petición del
+// usuario): por su clave de metadatos (nombre de carpeta o de archivo
+// suelto), sin distinguir mayúsculas. "One Piece" tiene cientos de
+// episodios ya nombrados a su manera - no se toca ni ahora ni en el futuro.
+const EXCLUDED_GROUP_KEYS = new Set(['one piece']);
 
+function isExcluded(groupKey) {
+  return EXCLUDED_GROUP_KEYS.has(groupKey.trim().toLowerCase());
+}
+
+// Nombre limpio propuesto para un vídeo, o null si no hace falta tocarlo
+// (ya está bien, está en la lista de exclusión, es un vídeo archivado sin
+// archivo real, o no se pudo reconocer con confianza el episodio). No
+// depende de que TMDB ya haya respondido: si la clave todavía no tiene
+// "cleanName" en caché, usa el nombre de la carpeta/archivo (ya limpiado de
+// puntos/guiones bajos y de cualquier año ya puesto) como alternativa
+// razonable.
+function buildCandidate(video) {
   const groupKey = catalog.metadataKeyFor(video);
+  if (isExcluded(groupKey)) return null;
   const isEpisode = Boolean(catalog.getShowKeyFor(video));
   const meta = metadata.getCached(groupKey);
   const coreGroupKey = stripTrailingYear(groupKey);
@@ -183,6 +197,30 @@ async function safeRename(oldAbsPath, newAbsPath) {
   throw lastErr;
 }
 
+// Compartido entre applyRename (archivo real) y applyArchivedRename (solo
+// registro, ver más abajo): migra todo lo que cuelga del id viejo al nuevo
+// (progreso, carátula, vista previa, HLS ya generado) y, si la clave de
+// metadatos también cambia (solo pasa con películas sueltas: ver
+// catalog.js groupKeyFor), la caché ya encontrada (género, carátula, nombre
+// en español) a la clave nueva - así no queda huérfana ni hay que volver a
+// buscarla de cero bajo el nombre ya renombrado.
+function migrateVideoData(oldId, newId, oldGroupKey, newRelativePath) {
+  if (newId !== oldId) {
+    migrateProgress(oldId, newId);
+    thumbnails.forget(oldId);
+    migrateFile(thumbnails.thumbnailFile(oldId), thumbnails.thumbnailFile(newId));
+    migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.json`), path.join(TRICKPLAY_DIR, `${newId}.json`));
+    migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.jpg`), path.join(TRICKPLAY_DIR, `${newId}.jpg`));
+    migrateDir(path.join(HLS_PATH, oldId), path.join(HLS_PATH, newId));
+  }
+
+  const newGroupKey = catalog.metadataKeyFor({
+    relativePath: newRelativePath,
+    title: path.basename(newRelativePath, path.extname(newRelativePath)),
+  });
+  metadata.migrateCacheKey(oldGroupKey, newGroupKey);
+}
+
 async function applyRename(video, newRelativePath) {
   const videosPath = getVideosPath();
   const oldAbsPath = path.join(videosPath, video.relativePath);
@@ -198,25 +236,29 @@ async function applyRename(video, newRelativePath) {
   await safeRename(oldAbsPath, newAbsPath);
   const newId = catalog.idFor(newRelativePath);
 
-  if (newId !== oldId) {
-    migrateProgress(oldId, newId);
-    thumbnails.forget(oldId);
-    migrateFile(thumbnails.thumbnailFile(oldId), thumbnails.thumbnailFile(newId));
-    migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.json`), path.join(TRICKPLAY_DIR, `${newId}.json`));
-    migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.jpg`), path.join(TRICKPLAY_DIR, `${newId}.jpg`));
-    migrateDir(path.join(HLS_PATH, oldId), path.join(HLS_PATH, newId));
-  }
+  migrateVideoData(oldId, newId, oldGroupKey, newRelativePath);
 
-  // Si la clave de metadatos cambia con el renombrado (solo pasa con
-  // películas sueltas, cuya clave es su propio nombre de archivo: ver
-  // catalog.js groupKeyFor), se lleva la caché ya encontrada (género,
-  // carátula, nombre en español) a la clave nueva, en vez de dejarla huérfana
-  // y tener que volver a buscarla de cero bajo el nombre ya renombrado.
-  const newGroupKey = catalog.metadataKeyFor({
+  return { oldId, newId, from: video.relativePath, to: newRelativePath };
+}
+
+// Un vídeo archivado (ver hls.js/archivedVideos.js: su original se borró
+// tras generar el HLS, solo H.264 compatibles cuyo HLS es un simple remux)
+// no tiene archivo real que mover - solo el registro que sigue mostrándolo
+// en el catálogo. Sin esto, quedaría para siempre con el nombre de antes de
+// archivarse aunque el resto de la serie ya se hubiera normalizado.
+function applyArchivedRename(video, newRelativePath) {
+  const oldGroupKey = catalog.metadataKeyFor(video);
+  const oldId = video.id;
+  const newId = catalog.idFor(newRelativePath);
+
+  archivedVideos.rename(oldId, newId, {
     relativePath: newRelativePath,
     title: path.basename(newRelativePath, path.extname(newRelativePath)),
+    size: video.size,
+    modifiedAt: video.modifiedAt,
   });
-  metadata.migrateCacheKey(oldGroupKey, newGroupKey);
+
+  migrateVideoData(oldId, newId, oldGroupKey, newRelativePath);
 
   return { oldId, newId, from: video.relativePath, to: newRelativePath };
 }
@@ -254,8 +296,12 @@ async function runNormalizeAll() {
   (async () => {
     for (const { video, newRelativePath } of candidates) {
       try {
-        // eslint-disable-next-line no-await-in-loop
-        await applyRename(video, newRelativePath);
+        if (video.archived) {
+          applyArchivedRename(video, newRelativePath);
+        } else {
+          // eslint-disable-next-line no-await-in-loop
+          await applyRename(video, newRelativePath);
+        }
         progress.renamed += 1;
       } catch (err) {
         progress.errors.push({ title: video.title, message: err.message });
@@ -303,4 +349,11 @@ async function autoNormalizeNewFiles(videos, previousIds) {
   return renamedAny;
 }
 
-module.exports = { previewCandidates, runNormalizeAll, getProgress, autoNormalizeNewFiles, applyRename };
+module.exports = {
+  previewCandidates,
+  runNormalizeAll,
+  getProgress,
+  autoNormalizeNewFiles,
+  applyRename,
+  applyArchivedRename,
+};

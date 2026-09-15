@@ -54,4 +54,18 @@ function forget(id) {
   save();
 }
 
-module.exports = { archive, isArchived, getAll, forget };
+// Para normalize.js: un vídeo archivado no tiene archivo real que renombrar
+// (se borró al generar su HLS), pero sí conviene poder corregirle el
+// nombre/ruta "virtual" que sigue mostrando el catálogo - si no, se queda
+// para siempre con el nombre de antes de archivarlo, desentonando con sus
+// hermanos si luego se normaliza el resto de la serie. oldId/newId pueden
+// coincidir (si la ruta nueva da la casualidad de tener el mismo hash, muy
+// raro) - se soporta igualmente.
+function rename(oldId, newId, info) {
+  if (!registry[oldId]) return;
+  delete registry[oldId];
+  registry[newId] = info;
+  save();
+}
+
+module.exports = { archive, isArchived, getAll, forget, rename };

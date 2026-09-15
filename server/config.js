@@ -67,9 +67,45 @@ function setVideosPath(newPath) {
     throw new Error(`La carpeta no existe: ${resolved}`);
   }
   fs.mkdirSync(DATA_PATH, { recursive: true });
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ videosPath: resolved }, null, 2));
+  // Se combina con lo que ya hubiera en settings.json (p.ej. tmdbApiKey):
+  // sobrescribir el archivo entero aquí lo borraría sin querer.
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ ...readSettings(), videosPath: resolved }, null, 2));
   currentVideosPath = resolved;
   return currentVideosPath;
+}
+
+// La clave de TMDB (búsqueda de nombre/carátula/género bastante más
+// precisa que el respaldo sin clave) se guarda igual que la carpeta de
+// vídeos: en settings.json, dentro de DATA_PATH - así, ahora que DATA_PATH
+// vive en el disco externo, viaja con la biblioteca a cualquier PC/servidor
+// sin tener que volver a crear un .env a mano cada vez. TMDB_API_KEY en
+// .env sigue funcionando como alternativa si no hay ninguna guardada así.
+function initialTmdbApiKey() {
+  const stored = readSettings().tmdbApiKey;
+  if (stored) return stored;
+  return process.env.TMDB_API_KEY || null;
+}
+
+let currentTmdbApiKey = initialTmdbApiKey();
+
+function getTmdbApiKey() {
+  return currentTmdbApiKey;
+}
+
+function reloadTmdbApiKey() {
+  currentTmdbApiKey = initialTmdbApiKey();
+  return currentTmdbApiKey;
+}
+
+function setTmdbApiKey(key) {
+  const trimmed = typeof key === 'string' ? key.trim() : '';
+  fs.mkdirSync(DATA_PATH, { recursive: true });
+  const settings = { ...readSettings() };
+  if (trimmed) settings.tmdbApiKey = trimmed;
+  else delete settings.tmdbApiKey;
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  currentTmdbApiKey = trimmed || process.env.TMDB_API_KEY || null;
+  return currentTmdbApiKey;
 }
 
 module.exports = {
@@ -83,4 +119,7 @@ module.exports = {
   getVideosPath,
   setVideosPath,
   reloadVideosPath,
+  getTmdbApiKey,
+  setTmdbApiKey,
+  reloadTmdbApiKey,
 };
