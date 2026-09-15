@@ -120,7 +120,14 @@ export default function WatchPage() {
       .catch(() => setError('No se pudo cargar el catálogo.'));
 
     fetch(`/api/tracks/${id}`)
-      .then((res) => res.json())
+      .then((res) => {
+        // Un 500 (p.ej. no se pudo analizar el archivo) también trae un
+        // cuerpo JSON válido ({ error: "..." }), así que sin este chequeo
+        // se leía como si fuera { audio, subtitles } de verdad y rompía la
+        // página entera al intentar recorrer "audio" (undefined).
+        if (!res.ok) throw new Error('tracks no disponibles');
+        return res.json();
+      })
       .then((t) => {
         setTracks(t);
         // Aplica el idioma elegido la última vez (en otro episodio/vídeo,

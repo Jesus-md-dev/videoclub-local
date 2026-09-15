@@ -79,6 +79,19 @@ async function getMediaInfo(video) {
   return info;
 }
 
+// Para normalize.js: al renombrar un vídeo cambia su id (hash de la ruta
+// relativa), así que sin esto se perdía el análisis de ffprobe ya hecho -
+// intrascendente para un vídeo con archivo real (se puede volver a
+// analizar), pero GRAVE para uno archivado (ver hls.js/archivedVideos.js):
+// su original ya no existe, así que un análisis perdido no se puede
+// recuperar nunca más con ffprobe, solo seguir sirviendo desde la caché.
+function migrateEntry(oldId, newId) {
+  if (oldId === newId || !store[oldId]) return;
+  if (!store[newId]) store[newId] = store[oldId];
+  delete store[oldId];
+  scheduleSave();
+}
+
 // Tras cada escaneo del catálogo: quita del fichero los vídeos que ya no
 // están (borrados/renombrados), para que no crezca sin límite.
 function pruneStore(currentIds) {
@@ -93,4 +106,4 @@ function pruneStore(currentIds) {
   if (changed) scheduleSave();
 }
 
-module.exports = { ffmpeg, getMediaInfo, inputPathFor, pruneStore };
+module.exports = { ffmpeg, getMediaInfo, inputPathFor, pruneStore, migrateEntry };

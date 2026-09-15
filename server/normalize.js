@@ -6,6 +6,7 @@ const metadata = require('./metadata');
 const thumbnails = require('./thumbnails');
 const hls = require('./hls');
 const archivedVideos = require('./archivedVideos');
+const mediaInfo = require('./mediaInfo');
 
 const PROGRESS_DIR = path.join(DATA_PATH, 'progress');
 const TRICKPLAY_DIR = path.join(DATA_PATH, 'trickplay');
@@ -212,6 +213,10 @@ function migrateVideoData(oldId, newId, oldGroupKey, newRelativePath) {
     migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.json`), path.join(TRICKPLAY_DIR, `${newId}.json`));
     migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.jpg`), path.join(TRICKPLAY_DIR, `${newId}.jpg`));
     migrateDir(path.join(HLS_PATH, oldId), path.join(HLS_PATH, newId));
+    // El análisis de ffprobe (codec-checks.json) también está indexado por
+    // id: para un vídeo archivado (sin original ya en disco) perderlo es
+    // definitivo, no se puede volver a analizar - ver mediaInfo.js.
+    mediaInfo.migrateEntry(oldId, newId);
   }
 
   const newGroupKey = catalog.metadataKeyFor({
