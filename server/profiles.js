@@ -82,11 +82,10 @@ function dismissProgress(profileId, videoId) {
   writeProgress(profileId, data);
 }
 
-// Preferencias de aspecto/idioma de subtítulos: a diferencia del idioma de
-// audio (por dispositivo, ver audioPreference.js en el cliente - "cómo
-// prefiero ver esto EN ESTE aparato"), esto sí es "cómo prefiere leer los
-// subtítulos ESTA persona", así que viaja con el perfil igual que el
-// progreso, no con el navegador.
+// Preferencias de reproducción (aspecto de los subtítulos, idioma de audio/
+// subtítulos elegido la última vez...): es "cómo prefiere ver/leer esto
+// ESTA persona", así que viaja con el perfil igual que el progreso, no con
+// el navegador/dispositivo.
 function getSettings(profileId) {
   const profile = readProfiles().find((p) => p.id === profileId);
   return profile?.settings || {};

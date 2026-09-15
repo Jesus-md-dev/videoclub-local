@@ -4,7 +4,6 @@ import Hls from 'hls.js';
 import VideoControls from '../components/VideoControls';
 import HiddenMenu from '../components/HiddenMenu';
 import { getActiveProfileId } from '../profile';
-import { getPreferredAudioLanguage, setPreferredAudioLanguage } from '../audioPreference';
 import { DEFAULT_SUBTITLE_PREFS, SUBTITLE_SIZE_EM, SUBTITLE_BG_COLOR, fetchSubtitlePrefs, saveSubtitlePrefs } from '../subtitlePrefs';
 import { track } from '../analytics';
 
@@ -150,16 +149,7 @@ export default function WatchPage() {
         if (!res.ok) throw new Error('tracks no disponibles');
         return res.json();
       })
-      .then((t) => {
-        setTracks(t);
-        // Aplica el idioma elegido la última vez (en otro episodio/vídeo,
-        // los índices de pista no tienen por qué coincidir entre archivos,
-        // así que se busca por idioma, no por índice) - si no hay uno
-        // igual, se deja la pista por defecto del archivo.
-        const preferredLang = getPreferredAudioLanguage();
-        const match = preferredLang && t.audio.find((track) => track.language === preferredLang);
-        setAudioIndex(match ? match.index : null);
-      })
+      .then((t) => setTracks(t))
       .catch(() => {});
 
     savedProgressRef.current = null;
@@ -173,8 +163,29 @@ export default function WatchPage() {
     }
 
     setAutoAdvanceIn(null);
+    // El idioma preferido (audio/subtítulos) se vuelve a aplicar en cuanto
+    // lleguen las pistas de este vídeo, ver el efecto de abajo - aquí solo
+    // se limpia el de la posición del vídeo anterior, que ya no vale (los
+    // índices de pista no coinciden entre archivos).
+    setAudioIndex(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Aplica el idioma de audio elegido la última vez (guardado por perfil,
+  // no por dispositivo: mismo criterio que el aspecto de los subtítulos) en
+  // cuanto se sabe qué pistas trae este vídeo en concreto - se busca por
+  // idioma, no por posición, porque el orden de pistas no tiene por qué
+  // coincidir entre archivos. Si el archivo no trae idioma real en el
+  // contenedor (ediciones de fans, solo "título": "Castellano"/"Japones
+  // Flac"...), se cae al título - no sirve entre TODOS los archivos, pero
+  // sí es habitual que coincida el texto entre varios de una misma serie.
+  useEffect(() => {
+    const lang = subtitlePrefs.audioLanguage;
+    const title = subtitlePrefs.audioTitle;
+    if ((!lang && !title) || tracks.audio.length === 0) return;
+    const match = (lang && tracks.audio.find((t) => t.language === lang)) || (title && tracks.audio.find((t) => t.title === title));
+    if (match) setAudioIndex(match.index);
+  }, [id, tracks.audio, subtitlePrefs.audioLanguage, subtitlePrefs.audioTitle]);
 
   useEffect(() => {
     if (!video?.seriesKey) {
@@ -420,10 +431,11 @@ export default function WatchPage() {
     const value = e.target.value;
     const newIndex = value === '' ? null : Number(value);
 
-    // Se recuerda por idioma (no por índice) para aplicarlo solo al
-    // siguiente episodio/vídeo que se abra.
+    // Se recuerda por idioma (no por índice) y por perfil (no por
+    // dispositivo), para aplicarlo en el siguiente episodio/vídeo que se
+    // abra en cualquier aparato con este mismo perfil.
     const chosenTrack = tracks.audio.find((t) => t.index === newIndex);
-    setPreferredAudioLanguage(chosenTrack?.language || null);
+    handleSubtitlePrefsChange({ audioLanguage: chosenTrack?.language || null, audioTitle: chosenTrack?.title || null });
 
     // El cambio "en caliente" (hls.audioTrack = posición, sin recargar
     // nada) resultó NO ser fiable en la práctica - verificado en directo:
@@ -555,6 +567,11 @@ export default function WatchPage() {
                 subtitlePrefs={subtitlePrefs}
                 onSubtitlePrefsChange={handleSubtitlePrefsChange}
                 onSubtitlesDownloaded={reloadTracks}
+                initialSubtitleLanguage={subtitlePrefs.subtitleLanguage}
+                initialSubtitleTitle={subtitlePrefs.subtitleTitle}
+                onSubtitleLanguageChange={(track) =>
+                  handleSubtitlePrefsChange({ subtitleLanguage: track?.language || null, subtitleTitle: track?.title || null })
+                }
               />
             </div>
             {stuck && (

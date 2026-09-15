@@ -49,6 +49,9 @@ export default function VideoControls({
   subtitlePrefs,
   onSubtitlePrefsChange,
   onSubtitlesDownloaded,
+  initialSubtitleLanguage,
+  initialSubtitleTitle,
+  onSubtitleLanguageChange,
 }) {
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -271,7 +274,37 @@ export default function VideoControls({
     setSubtitleIndex(pos);
     setPendingActivateStreamIndex(null);
     setPendingSearchIndex(null);
-  }, [subtitleTracks, pendingActivateStreamIndex, videoRef]);
+    onSubtitleLanguageChange?.(subtitleTracks[pos] || null);
+  }, [subtitleTracks, pendingActivateStreamIndex, videoRef, onSubtitleLanguageChange]);
+
+  // Aplica el subtítulo elegido la última vez (guardado por perfil, ver
+  // WatchPage) en cuanto se sabe qué pistas trae este vídeo - solo una vez
+  // por vídeo (appliedInitialSubtitle), para no pisar una elección manual
+  // posterior si subtitleTracks cambia por otro motivo (p.ej. al descargar
+  // un subtítulo nuevo de SubDL). Se busca por idioma y, si no hay uno con
+  // ese idioma (ediciones de fans sin ese dato en el contenedor, solo un
+  // "título" tipo "Español"/"Castellano" - ver comentario en WatchPage
+  // sobre findAudioTrackPosition, mismo caso para audio), por título.
+  const appliedInitialSubtitle = useRef(false);
+  useEffect(() => {
+    if (appliedInitialSubtitle.current) return;
+    if ((!initialSubtitleLanguage && !initialSubtitleTitle) || subtitleTracks.length === 0) return;
+    let pos = initialSubtitleLanguage
+      ? subtitleTracks.findIndex((t) => (t.language || '').toLowerCase() === initialSubtitleLanguage.toLowerCase())
+      : -1;
+    if (pos < 0 && initialSubtitleTitle) {
+      pos = subtitleTracks.findIndex((t) => (t.title || '').toLowerCase() === initialSubtitleTitle.toLowerCase());
+    }
+    if (pos < 0) return;
+    appliedInitialSubtitle.current = true;
+    const video = videoRef.current;
+    if (video) {
+      for (let i = 0; i < video.textTracks.length; i += 1) {
+        video.textTracks[i].mode = i === pos ? 'showing' : 'hidden';
+      }
+    }
+    setSubtitleIndex(pos);
+  }, [subtitleTracks, initialSubtitleLanguage, initialSubtitleTitle, videoRef]);
 
   // Busca subtítulos en SubDL usando el título del vídeo (server/routes/
   // subdl.js ya saca el nombre limpio y la temporada/episodio del
@@ -361,6 +394,10 @@ export default function VideoControls({
     }
     setSubtitleIndex(next);
     setPendingSearchIndex(null);
+    // Se recuerda por idioma (no por posición: no coincide entre archivos),
+    // igual que el idioma de audio - "desactivados" (next === -1) también se
+    // guarda, para abrir sin subtítulos la próxima vez si así se prefiere.
+    onSubtitleLanguageChange?.(next === -1 ? null : subtitleTracks[next] || null);
   };
 
   const progressRatio = duration ? currentTime / duration : 0;

@@ -69,10 +69,10 @@ router.post('/profiles/:id/progress/:videoId/dismiss', (req, res) => {
   res.json({ ok: true });
 });
 
-// Preferencias de subtítulos (tamaño, color, idioma preferido...) del
-// perfil: se guardan en el servidor porque son "cómo prefiere leerlos esta
-// persona" (viaja entre dispositivos), no "cómo se ve en este aparato"
-// (eso sigue en localStorage, ver audioPreference.js).
+// Preferencias de reproducción del perfil (aspecto de los subtítulos,
+// idioma de audio/subtítulos elegido la última vez...): se guardan en el
+// servidor porque son "cómo prefiere ver/leer esto esta persona", igual en
+// cualquier dispositivo de la red, no algo local a un aparato en concreto.
 router.get('/profiles/:id/settings', (req, res) => {
   if (!requireProfile(req, res)) return;
   res.json(profiles.getSettings(req.params.id));

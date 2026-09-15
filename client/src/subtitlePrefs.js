@@ -1,7 +1,9 @@
-// Aspecto de los subtítulos (tamaño/color/fondo): a diferencia del idioma de
-// audio (audioPreference.js, "cómo se ve en este aparato"), esto viaja con
-// el PERFIL (servidor), no con el dispositivo - es "cómo prefiere leerlos
-// esta persona", igual en el móvil que en la tele.
+// Preferencias de reproducción que viajan con el PERFIL (servidor), no con
+// el dispositivo - aspecto de los subtítulos (tamaño/color/fondo) y también
+// el idioma de audio/subtítulos elegido la última vez (ver WatchPage): es
+// "cómo prefiere ver/leer esto esta persona", igual en el móvil que en la
+// tele. Es el mismo blob de settings del perfil (GET/PATCH /api/profiles/
+// :id/settings), con más claves de las que declara DEFAULT_SUBTITLE_PREFS.
 export const DEFAULT_SUBTITLE_PREFS = { size: 'medium', color: '#ffffff', background: 'semi' };
 
 export const SUBTITLE_SIZE_EM = { small: 0.85, medium: 1.15, large: 1.6 };
