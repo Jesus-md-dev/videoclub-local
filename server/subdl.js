@@ -37,7 +37,62 @@ async function fetchSubtitlesPage(apiKey, params) {
   return data;
 }
 
-async function search({ query, season, episode, languages = 'ES' }) {
+// "Berserk" (la serie) sale como primer resultado buscando solo "Berserk",
+// por delante de "Berserk: Ougon Jidai-hen I - Haou no Tamago (... The
+// Golden Age Arc I ...)" - la película en concreto que se busca aquí -
+// así que fiarse de results[0] a ciegas devolvía subtítulos (o ninguno) de
+// un título distinto. Se puntúan los candidatos: coincide el tipo
+// (película/serie) según TMDB, coincide el número de parte/arco (números
+// romanos como "I"/"II" en el propio nombre de archivo, que sobreviven
+// aunque el idioma del título no coincida), y si tiene imdb_id (los que no
+// lo tienen no sirven para la siguiente consulta).
+function extractPartMarker(text) {
+  const m = text.match(/\b(IV|IX|V?I{1,3})\b/);
+  return m ? m[1] : null;
+}
+
+function pickBestMatch(results, { query, type }) {
+  if (!results || results.length === 0) return null;
+  const marker = extractPartMarker(query);
+  const markerRe = marker ? new RegExp(`\\b${marker}\\b`) : null;
+  let best = results[0];
+  let bestScore = -Infinity;
+  for (const r of results) {
+    let score = 0;
+    if (type && r.type === type) score += 2;
+    if (markerRe && markerRe.test(r.name || '')) score += 3;
+    if (r.imdb_id) score += 1;
+    if (score > bestScore) {
+      bestScore = score;
+      best = r;
+    }
+  }
+  return best;
+}
+
+// Un título completo con subtítulo propio ("Berserk - La edad de oro I: El
+// huevo del rey conquistador") a veces no encuentra NADA en SubDL (su
+// búsqueda por nombre es más literal que difusa), mientras que solo la
+// parte antes del primer separador (aquí, "Berserk") sí encuentra
+// candidatos - luego pickBestMatch ya se encarga de elegir el correcto
+// entre ellos usando el número de parte/arco del título completo.
+function simplifyQuery(query) {
+  const m = query.match(/^(.*?)\s(?:-|:)\s/);
+  if (!m) return null;
+  const simplified = m[1].trim();
+  return simplified && simplified !== query ? simplified : null;
+}
+
+async function searchFilmName(apiKey, filmName) {
+  try {
+    const data = await fetchSubtitlesPage(apiKey, new URLSearchParams({ api_key: apiKey, film_name: filmName }));
+    return data.results || [];
+  } catch {
+    return [];
+  }
+}
+
+async function search({ query, season, episode, languages = 'ES', type = null }) {
   const apiKey = getSubdlApiKey();
   if (!apiKey) throw new Error('Falta la clave de API de SubDL (configúrala en /config).');
 
@@ -50,13 +105,20 @@ async function search({ query, season, episode, languages = 'ES' }) {
   // acaso, con el idioma real de cada subtítulo).
   const wanted = new Set(languages.split(',').map((l) => l.trim().toLowerCase()));
 
-  const searchParams = new URLSearchParams({ api_key: apiKey, film_name: query });
-  const searchData = await fetchSubtitlesPage(apiKey, searchParams);
-  const bestMatch = searchData.results?.[0];
+  let candidates = await searchFilmName(apiKey, query);
+  let usedQuery = query;
+  if (candidates.length === 0) {
+    const simplified = simplifyQuery(query);
+    if (simplified) {
+      candidates = await searchFilmName(apiKey, simplified);
+      if (candidates.length > 0) usedQuery = simplified;
+    }
+  }
+  const bestMatch = pickBestMatch(candidates, { query, type });
 
   const params = new URLSearchParams({ api_key: apiKey, unpack: '1' });
   if (bestMatch?.imdb_id) params.set('imdb_id', bestMatch.imdb_id);
-  else params.set('film_name', query);
+  else params.set('film_name', usedQuery);
   if (season != null) params.set('season_number', String(season));
   if (episode != null) params.set('episode_number', String(episode));
 

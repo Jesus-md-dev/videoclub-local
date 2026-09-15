@@ -13,9 +13,13 @@ function parseSeasonEpisode(title) {
   return { season: Number(m[1]), episode: Number(m[2]) };
 }
 
-function queryFor(video) {
+function metaFor(video) {
   const groupKey = catalog.metadataKeyFor(video);
-  const meta = metadata.getCached(groupKey);
+  return metadata.getCached(groupKey);
+}
+
+function queryFor(video, meta) {
+  const groupKey = catalog.metadataKeyFor(video);
   return meta.cleanName || groupKey;
 }
 
@@ -41,7 +45,8 @@ router.post('/subdl/search', async (req, res) => {
   }
   try {
     const { season, episode } = parseSeasonEpisode(video.title);
-    const results = await subdl.search({ query: queryFor(video), season, episode, languages });
+    const meta = metaFor(video);
+    const results = await subdl.search({ query: queryFor(video, meta), season, episode, languages, type: meta.type });
     res.json({ results });
   } catch (err) {
     res.status(500).json({ error: err.message });
