@@ -14,14 +14,12 @@ function processingBadgeLabel(state, percent) {
 }
 
 // Punto de la carátula de serie: verde si todos los episodios ya están
-// procesados, rojo si ninguno lo está, naranja si es una mezcla (a medias)
-// o si hay uno procesándose ahora mismo (aunque ninguno esté listo todavía
-// - naranja "algo en marcha" es más preciso que rojo "nada pasa aquí").
-function hlsDotClassAndTitle(completion, processingState) {
+// procesados, rojo si ninguno lo está, naranja si es una mezcla real (solo
+// algunos ya procesados) - no indica "hay actividad ahora mismo", solo el
+// estado real de completitud.
+function hlsDotClassAndTitle(completion) {
   if (completion === 'ready') return { cls: 'hls-dot-ready', title: 'Todos los episodios procesados' };
-  if (completion === 'partial' || processingState === 'active') {
-    return { cls: 'hls-dot-partial', title: 'Procesados a medias' };
-  }
+  if (completion === 'partial') return { cls: 'hls-dot-partial', title: 'Procesados a medias' };
   return { cls: 'hls-dot-pending', title: 'Ningún episodio procesado' };
 }
 
@@ -144,8 +142,8 @@ function VideoCard({ video, progress, onRemove, onQuickInfo }) {
         />
       )}
       <span
-        className={`hls-dot ${video.hlsReady ? 'hls-dot-ready' : video.processingState === 'active' ? 'hls-dot-partial' : 'hls-dot-pending'}`}
-        title={video.hlsReady ? 'Ya procesado' : video.processingState === 'active' ? 'Procesando ahora' : 'Pendiente de procesar'}
+        className={`hls-dot ${video.hlsReady ? 'hls-dot-ready' : 'hls-dot-pending'}`}
+        title={video.hlsReady ? 'Ya procesado' : 'Pendiente de procesar'}
       />
       {showProgress && (
         <div className="card-resume-overlay">
@@ -216,7 +214,7 @@ function FolderCard({ folder, onOpen, onQuickInfo }) {
         <div className="folder-icon">📁</div>
       )}
       {folder.hlsCompletion && (() => {
-        const { cls, title } = hlsDotClassAndTitle(folder.hlsCompletion, folder.processingState);
+        const { cls, title } = hlsDotClassAndTitle(folder.hlsCompletion);
         return <span className={`hls-dot ${cls}`} title={title} />;
       })()}
       {showSeriesProgress && (
