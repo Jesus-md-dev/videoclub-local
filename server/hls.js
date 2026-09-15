@@ -127,6 +127,43 @@ function parseProgressSeconds(chunk) {
 // "-var_stream_map" necesita viajar como un único argumento aunque
 // contenga espacios (uno separando cada variante). Con spawn + un array de
 // argumentos no hay ambigüedad: cada elemento es un argv exacto.
+// Confirmación real (no solo "el manifiesto tiene buena pinta") de que el
+// HLS recién generado funciona antes de fiarse de él para nada más: se
+// vuelve a analizar con ffprobe, leyendo los segmentos de verdad, y se
+// exige encontrar una pista de vídeo y una duración parecida a la del
+// original (más de un ~15% de diferencia, o directamente sin duración,
+// es señal de segmentos truncados/incompletos aunque el manifiesto en sí
+// pareciera correcto).
+function verifyGeneratedHls(masterPath, expectedDurationSeconds) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(masterPath, (err, info) => {
+      if (err) {
+        reject(new Error(`ffprobe no pudo leer el HLS recién generado: ${err.message}`));
+        return;
+      }
+      const videoStream = info.streams?.find((s) => s.codec_type === 'video');
+      if (!videoStream) {
+        reject(new Error('El HLS recién generado no tiene ninguna pista de vídeo legible'));
+        return;
+      }
+      const gotDuration = Number(info.format?.duration) || null;
+      if (expectedDurationSeconds && gotDuration) {
+        const diff = Math.abs(gotDuration - expectedDurationSeconds);
+        const tolerance = Math.max(10, expectedDurationSeconds * 0.15);
+        if (diff > tolerance) {
+          reject(
+            new Error(
+              `La duración del HLS generado (${gotDuration.toFixed(1)}s) no se parece a la del original (${expectedDurationSeconds.toFixed(1)}s) - probablemente incompleto`
+            )
+          );
+          return;
+        }
+      }
+      resolve();
+    });
+  });
+}
+
 function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy, useGpu, durationSeconds, onProgress }) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(outDir, { recursive: true });
@@ -384,6 +421,26 @@ async function runGeneration(video, priority) {
           () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu: attempts[i], durationSeconds, onProgress }),
           priority
         );
+        // ffmpeg puede salir con código 0 (éxito) y aun así dejar el
+        // manifiesto sin la línea que declara la pista de vídeo
+        // (#EXT-X-STREAM-INF) - visto en producción en 66 vídeos de golpe.
+        // Sin esta comprobación se daba directamente por "ready" (y, si
+        // era compatible, se archivaba borrando el original) un HLS que en
+        // realidad no se podía reproducir - tratarlo como un fallo más
+        // (con sus reintentos) evita perder el original de algo roto.
+        const tmpMaster = path.join(tmpDir, 'master.m3u8');
+        if (!fs.readFileSync(tmpMaster, 'utf-8').includes('#EXT-X-STREAM-INF')) {
+          throw new Error('El manifiesto generado no declara la pista de vídeo (falta #EXT-X-STREAM-INF)');
+        }
+        // No basta con que el texto del manifiesto tenga buena pinta: se
+        // vuelve a analizar con ffprobe el HLS ya generado (lee los
+        // segmentos de verdad, no solo el manifiesto) y se compara su
+        // duración con la del original. Solo con esto confirmado se marca
+        // "ready" y se deja archivar (borrar el original) más abajo - así
+        // un resultado roto de cualquier otra forma (segmentos truncados,
+        // corruptos...) tampoco se da nunca por bueno a ciegas.
+        // eslint-disable-next-line no-await-in-loop
+        await verifyGeneratedHls(tmpMaster, durationSeconds);
         lastErr = null;
         break;
       } catch (err) {
