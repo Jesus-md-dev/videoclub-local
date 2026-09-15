@@ -93,15 +93,49 @@ function migrateDir(oldDir, newDir) {
   if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) fs.renameSync(oldDir, newDir);
 }
 
+// Windows no distingue mayúsculas/minúsculas al buscar un archivo: si el
+// único cambio es de capitalización ("HunterxHunter" -> "HunterXHunter"),
+// el nuevo nombre "ya existe" porque en realidad es el propio archivo que se
+// está renombrando, no una colisión real con otro archivo.
+function isCaseOnlyRename(oldAbsPath, newAbsPath) {
+  return oldAbsPath !== newAbsPath && path.resolve(oldAbsPath).toLowerCase() === path.resolve(newAbsPath).toLowerCase();
+}
+
+// fs.existsSync no distingue mayúsculas en Windows, así que no sirve para
+// comprobar que un renombrado "solo de mayúsculas" surtió efecto de
+// verdad: hay que mirar el nombre exacto que hay en el listado de la
+// carpeta.
+function existsExactCase(absPath) {
+  try {
+    return fs.readdirSync(path.dirname(absPath)).includes(path.basename(absPath));
+  } catch {
+    return false;
+  }
+}
+
 // Igual que al archivar (ver hls.js): el disco externo a veces "acepta" la
 // operación sin que el cambio llegue a confirmarse. Se reintenta y se
 // comprueba en disco antes de dar el renombrado por bueno.
 async function safeRename(oldAbsPath, newAbsPath) {
+  const caseOnly = isCaseOnlyRename(oldAbsPath, newAbsPath);
   let lastErr;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      fs.renameSync(oldAbsPath, newAbsPath);
-      if (fs.existsSync(newAbsPath) && !fs.existsSync(oldAbsPath)) return;
+      if (caseOnly) {
+        // Un rename directo entre dos rutas que solo difieren en mayúsculas
+        // puede quedarse sin efecto en NTFS (ve el destino "igual" al
+        // origen): pasar por un nombre temporal intermedio lo fuerza.
+        const tempPath = `${oldAbsPath}.normalize-tmp-${Date.now()}`;
+        fs.renameSync(oldAbsPath, tempPath);
+        fs.renameSync(tempPath, newAbsPath);
+      } else {
+        fs.renameSync(oldAbsPath, newAbsPath);
+      }
+      if (caseOnly) {
+        if (existsExactCase(newAbsPath)) return;
+      } else if (fs.existsSync(newAbsPath) && !fs.existsSync(oldAbsPath)) {
+        return;
+      }
       lastErr = new Error('El renombrado no se confirmó en disco');
     } catch (err) {
       lastErr = err;
@@ -118,7 +152,7 @@ async function applyRename(video, newRelativePath) {
   const newAbsPath = path.join(videosPath, newRelativePath);
 
   if (!fs.existsSync(oldAbsPath)) throw new Error('No se encuentra el archivo original en disco.');
-  if (fs.existsSync(newAbsPath)) {
+  if (!isCaseOnlyRename(oldAbsPath, newAbsPath) && fs.existsSync(newAbsPath)) {
     throw new Error(`Ya existe un archivo en "${newRelativePath}"; se omite por seguridad.`);
   }
 
