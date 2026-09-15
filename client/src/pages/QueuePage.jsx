@@ -136,6 +136,24 @@ export default function QueuePage() {
               <p className="hint">Nada procesándose ahora mismo.</p>
             )}
 
+            {data.pending.length > 0 && (
+              <>
+                <p className="section-title">
+                  Pendientes ({data.summary.pending}
+                  {data.summary.pending > data.pending.length ? `, mostrando los ${data.pending.length} próximos` : ''})
+                </p>
+                <p className="hint">En el orden en que les tocará turno (los más ligeros primero).</p>
+                <div className="queue-list">
+                  {data.pending.map((item) => (
+                    <div className="queue-row" key={item.id}>
+                      <span className="queue-title">{item.title}</span>
+                      <span className="queue-meta">{formatSize(item.size)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
             {data.failed.length > 0 && (
               <>
                 <p className="section-title">Fallidos ({data.failed.length})</p>
@@ -153,24 +171,6 @@ export default function QueuePage() {
                         </button>
                       </div>
                       {item.error && <p className="queue-error-detail">{item.error}</p>}
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {data.pending.length > 0 && (
-              <>
-                <p className="section-title">
-                  Pendientes ({data.summary.pending}
-                  {data.summary.pending > data.pending.length ? `, mostrando los ${data.pending.length} próximos` : ''})
-                </p>
-                <p className="hint">En el orden en que les tocará turno (los más ligeros primero).</p>
-                <div className="queue-list">
-                  {data.pending.map((item) => (
-                    <div className="queue-row" key={item.id}>
-                      <span className="queue-title">{item.title}</span>
-                      <span className="queue-meta">{formatSize(item.size)}</span>
                     </div>
                   ))}
                 </div>
