@@ -48,6 +48,12 @@ const ITEMS = [
   { name: 'subtitles', type: 'dir' },
   { name: 'trickplay', type: 'dir' },
   { name: 'hls-archived.json', type: 'file' },
+  // Qué subtítulo de SubDL se descargó para cada vídeo (idioma, nombre de
+  // el "release"...) - sin este registro, los .vtt ya descargados en
+  // subtitles/ (que sí se respaldan) seguirían en disco tras restaurar,
+  // pero subdl.listDownloaded() no sabría de ellos (no hace falta leer el
+  // disco para saber si existen: lee este registro primero).
+  { name: 'subtitle-downloads.json', type: 'file' },
 ];
 
 function backupDir() {
