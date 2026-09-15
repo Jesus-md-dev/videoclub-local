@@ -107,7 +107,7 @@ function checkGpuAvailable() {
 // el título) - ffmpeg intentaba escribir dos variantes de audio en la
 // misma carpeta a la vez, corrompiendo los segmentos de una de ellas.
 // Síntoma con el que se detectó: el manifiesto salía sin #EXT-X-STREAM-INF
-// (ver repairMissingStreamInf) y, aun reparado a mano, ffprobe no podía
+// (ver fixStreamInfBandwidth) y, aun reparado a mano, ffprobe no podía
 // leer esa variante después. Aquí se desambiguan los nombres repetidos
 // usando el título real de la pista si lo distingue, o un sufijo numérico
 // si tampoco eso basta.
@@ -141,39 +141,74 @@ function buildVarStreamMap(audioStreams, defaultIndex) {
   return parts.join(' ');
 }
 
-// ffmpeg a veces termina con código 0 (éxito) pero sin escribir la línea
-// #EXT-X-STREAM-INF de la variante de vídeo en el master.m3u8, dejando los
-// segmentos generados bien pero el manifiesto inservible - visto repetidas
-// veces en producción (~66 vídeos de golpe, y de nuevo con "Los Caballeros
-// del Zodiaco: El Lienzo Perdido"). Causa identificada: con "-c:v copy"
-// (remux sin recodificar) ffmpeg avisa "Bandwidth info not available, set
-// audio and video bitrates" cuando no logra calcular el bitrate de la
-// variante de vídeo (visto junto a avisos "Packet duration: ... is out of
-// range" del propio archivo de origen) y, en vez de usar un valor por
-// defecto, omite la línea entera. En vez de darlo por fallido y reintentar
-// desde cero (mismo resultado las 3 veces, mismo archivo), se repara el
-// manifiesto a mano con un ancho de banda calculado a partir del tamaño
-// real de los segmentos de vídeo ya generados - el mismo parche que se
-// aplicaba manualmente antes de automatizarlo.
-function repairMissingStreamInf(masterPath, videoStream, durationSeconds) {
+// Dos problemas distintos con la línea #EXT-X-STREAM-INF del manifiesto,
+// los dos alrededor del BANDWIDTH declarado:
+//
+// 1. Falta la línea entera. ffmpeg puede terminar con código 0 (éxito) pero
+//    sin escribirla, dejando los segmentos generados bien pero el
+//    manifiesto inservible - visto repetidas veces en producción (~66
+//    vídeos de golpe, y de nuevo con "Los Caballeros del Zodiaco: El Lienzo
+//    Perdido"). Con "-c:v copy" (remux sin recodificar) ffmpeg avisa
+//    "Bandwidth info not available, set audio and video bitrates" cuando no
+//    logra calcular el bitrate y, en vez de usar un valor por defecto,
+//    omite la línea entera.
+//
+// 2. La línea SÍ existe, pero con un BANDWIDTH muy por debajo del real -
+//    visto con "Amasando Ja-Pan - S01E04" (recodificado, no remux): ffmpeg
+//    estima el bandwidth EN MARCHA según el ritmo de codificación
+//    observado hasta ese momento, no a partir del tamaño final real: para
+//    contenido cuya complejidad varía a lo largo del vídeo, esa estimación
+//    puede quedar muy corta (ahí, 7 veces menor que el real). Un bandwidth
+//    mal declarado no rompe la sintaxis del manifiesto, así que nada lo
+//    detectaba después - hls.js podía infravalorar drásticamente cuánto
+//    tardaría en llegar cada segmento real, dando congelaciones
+//    intermitentes en pleno visionado (no un fallo de generación).
+//
+// En ambos casos se usa el mismo ancho de banda "de verdad": el resumen
+// final de ffmpeg ("video:1234kB..."), no leyendo los segmentos del disco -
+// sumar bytes de archivos justo tras cerrar el proceso ffmpeg resultó ser
+// además una condición de carrera real en un disco externo (el mismo
+// "Amasando Ja-Pan": el disco no había terminado de sincronizar los
+// últimos segmentos todavía). El resumen de ffmpeg es un valor que el
+// propio proceso ya tiene calculado internamente, sin depender de leer
+// nada del disco.
+function fixStreamInfBandwidth(masterPath, videoStream, durationSeconds, ffmpegStderr) {
   const text = fs.readFileSync(masterPath, 'utf-8');
-  if (text.includes('#EXT-X-STREAM-INF')) return; // ya está bien, nada que hacer
+  const correctBandwidth = parseVideoBitrateFromSummary(ffmpegStderr || '', durationSeconds);
 
-  let totalBytes = 0;
-  const segDir = path.join(path.dirname(masterPath), '0');
-  try {
-    for (const name of fs.readdirSync(segDir)) {
-      totalBytes += fs.statSync(path.join(segDir, name)).size;
-    }
-  } catch {
-    // Si ni siquiera se pueden leer los segmentos, no hay nada fiable que
-    // reparar - se deja como estaba, para que el llamador siga tratándolo
-    // como fallo y reintente.
+  const streamInfMatch = text.match(/^#EXT-X-STREAM-INF:.*$/m);
+  if (streamInfMatch) {
+    if (!correctBandwidth) return; // no hay con qué comparar/corregir, se deja como está
+    const declaredMatch = streamInfMatch[0].match(/BANDWIDTH=(\d+)/);
+    const declared = declaredMatch ? Number(declaredMatch[1]) : null;
+    // Un factor de 2x separa "estimación algo conservadora" (normal, no se
+    // toca) de "claramente mal calculada" (el caso real visto fue de 7x).
+    if (declared && correctBandwidth <= declared * 2) return;
+    const fixedLine = streamInfMatch[0].replace(/BANDWIDTH=\d+/, `BANDWIDTH=${correctBandwidth}`);
+    fs.writeFileSync(masterPath, text.replace(streamInfMatch[0], fixedLine));
     return;
   }
-  if (!totalBytes || !durationSeconds) return;
 
-  const bandwidth = Math.max(1, Math.round((totalBytes * 8) / durationSeconds));
+  // Falta la línea entera: construirla desde cero.
+  let bandwidth = correctBandwidth;
+  if (!bandwidth) {
+    // Respaldo si por lo que sea no se pudo leer el resumen de ffmpeg: mejor
+    // un valor aproximado (con el riesgo de carrera ya conocido) que nada.
+    let totalBytes = 0;
+    const segDir = path.join(path.dirname(masterPath), '0');
+    try {
+      for (const name of fs.readdirSync(segDir)) {
+        totalBytes += fs.statSync(path.join(segDir, name)).size;
+      }
+    } catch {
+      return;
+    }
+    if (!totalBytes || !durationSeconds) return;
+    bandwidth = Math.round((totalBytes * 8) / durationSeconds);
+  }
+  if (!bandwidth) return;
+
+  bandwidth = Math.max(1, bandwidth);
   const width = videoStream.width || 1920;
   const height = videoStream.height || 1080;
   // avc1.640028 (H.264 High@4.0) es una aproximación válida para
@@ -381,10 +416,24 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
     });
     proc.on('error', reject);
     proc.on('close', (code) => {
-      if (code === 0) resolve();
+      if (code === 0) resolve(stderr);
       else reject(new Error(`ffmpeg (HLS) salió con código ${code}: ${stderr.split('\n').slice(-5).join(' ')}`));
     });
   });
+}
+
+// El resumen final de ffmpeg ("video:1234kB audio:56kB...") es el tamaño
+// real que ffmpeg sabe que ha escrito, calculado internamente - a
+// diferencia de sumar los bytes de los segmentos leyéndolos del disco justo
+// después de cerrar el proceso (ver bug real de abajo), no depende de que
+// el sistema de archivos ya haya terminado de sincronizar.
+const SUMMARY_RE = /video:(\d+)kB/;
+function parseVideoBitrateFromSummary(stderrText, durationSeconds) {
+  const match = SUMMARY_RE.exec(stderrText);
+  if (!match || !durationSeconds) return null;
+  const videoKB = Number(match[1]);
+  if (!videoKB) return null;
+  return Math.round((videoKB * 1024 * 8) / durationSeconds);
 }
 
 // Estado por video.id: 'checking' | 'processing' | 'ready' | 'failed'.
@@ -547,23 +596,25 @@ async function runGeneration(video, priority) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
       try {
         // eslint-disable-next-line no-await-in-loop
-        await runLimited(
+        const ffmpegStderr = await runLimited(
           () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu: attempts[i], durationSeconds, onProgress }),
           priority
         );
         // ffmpeg puede salir con código 0 (éxito) y aun así dejar el
         // manifiesto sin la línea que declara la pista de vídeo
-        // (#EXT-X-STREAM-INF) - visto en producción en 66 vídeos de golpe.
-        // Sin esta comprobación se daba directamente por "ready" (y, si
-        // era compatible, se archivaba borrando el original) un HLS que en
-        // realidad no se podía reproducir - tratarlo como un fallo más
-        // (con sus reintentos) evita perder el original de algo roto.
+        // (#EXT-X-STREAM-INF), o con esa línea pero con un BANDWIDTH mal
+        // estimado - ver fixStreamInfBandwidth. Sin la comprobación de que
+        // la línea exista, se daba directamente por "ready" (y, si era
+        // compatible, se archivaba borrando el original) un HLS que en
+        // realidad no se podía reproducir - tratarlo como un fallo más (con
+        // sus reintentos) evita perder el original de algo roto. La
+        // corrección del BANDWIDTH se aplica siempre (no solo si falta la
+        // línea entera), porque el segundo caso no rompe la sintaxis y por
+        // tanto no se detectaría de otra forma.
         const tmpMaster = path.join(tmpDir, 'master.m3u8');
+        fixStreamInfBandwidth(tmpMaster, videoStream, durationSeconds, ffmpegStderr);
         if (!fs.readFileSync(tmpMaster, 'utf-8').includes('#EXT-X-STREAM-INF')) {
-          repairMissingStreamInf(tmpMaster, videoStream, durationSeconds);
-          if (!fs.readFileSync(tmpMaster, 'utf-8').includes('#EXT-X-STREAM-INF')) {
-            throw new Error('El manifiesto generado no declara la pista de vídeo (falta #EXT-X-STREAM-INF)');
-          }
+          throw new Error('El manifiesto generado no declara la pista de vídeo (falta #EXT-X-STREAM-INF)');
         }
         // No basta con que el texto del manifiesto tenga buena pinta: se
         // vuelve a analizar con ffprobe el HLS ya generado (lee los
