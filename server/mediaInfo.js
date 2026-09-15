@@ -114,4 +114,4 @@ function pruneStore(currentIds) {
   if (changed) scheduleSave();
 }
 
-module.exports = { ffmpeg, getMediaInfo, inputPathFor, pruneStore, migrateEntry };
+module.exports = { ffmpeg, getMediaInfo, inputPathFor, pruneStore, migrateEntry, ffprobePath };

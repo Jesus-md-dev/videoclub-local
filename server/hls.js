@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
-const { ffmpeg, getMediaInfo, inputPathFor } = require('./mediaInfo');
+const { ffmpeg, getMediaInfo, inputPathFor, ffprobePath } = require('./mediaInfo');
 const { HLS_PATH } = require('./config');
 const { runLimited } = require('./ffmpeg-limiter');
 const subtitles = require('./subtitles');
@@ -101,16 +101,88 @@ function checkGpuAvailable() {
 // Importante: este valor lleva espacios DENTRO de un único argumento de
 // ffmpeg (uno por cada variante) — ver la nota en runFfmpegHls sobre por
 // qué esto no se puede montar con fluent-ffmpeg.
+// Dos pistas del mismo idioma pero doblajes distintos (p.ej. "Latino" y
+// "Castellano", ambas con tags.language="spa") se quedaban con el MISMO
+// nombre de variante ("Español" las dos, labelFor prioriza el idioma sobre
+// el título) - ffmpeg intentaba escribir dos variantes de audio en la
+// misma carpeta a la vez, corrompiendo los segmentos de una de ellas.
+// Síntoma con el que se detectó: el manifiesto salía sin #EXT-X-STREAM-INF
+// (ver repairMissingStreamInf) y, aun reparado a mano, ffprobe no podía
+// leer esa variante después. Aquí se desambiguan los nombres repetidos
+// usando el título real de la pista si lo distingue, o un sufijo numérico
+// si tampoco eso basta.
+function dedupeLabels(audioStreams) {
+  const labels = audioStreams.map((s, i) => labelFor(s, i));
+  const counts = new Map();
+  for (const l of labels) counts.set(l, (counts.get(l) || 0) + 1);
+
+  const seen = new Map();
+  return labels.map((label, i) => {
+    if (counts.get(label) === 1) return label;
+    const stream = audioStreams[i];
+    const titleLabel = stream.tags?.title ? sanitizeLabel(stream.tags.title) : null;
+    let candidate = titleLabel && titleLabel !== label ? titleLabel : label;
+    const usedCount = (seen.get(candidate) || 0) + 1;
+    seen.set(candidate, usedCount);
+    return usedCount > 1 ? `${candidate}_${usedCount}` : candidate;
+  });
+}
+
 function buildVarStreamMap(audioStreams, defaultIndex) {
   const parts = ['v:0,agroup:aud'];
+  const labels = dedupeLabels(audioStreams);
   audioStreams.forEach((stream, i) => {
-    const attrs = [`a:${i}`, 'agroup:aud', `name:${labelFor(stream, i)}`];
+    const attrs = [`a:${i}`, 'agroup:aud', `name:${labels[i]}`];
     const lang = stream.tags?.language;
     if (lang) attrs.push(`language:${sanitizeLabel(lang)}`);
     if (i === defaultIndex) attrs.push('default:yes');
     parts.push(attrs.join(','));
   });
   return parts.join(' ');
+}
+
+// ffmpeg a veces termina con código 0 (éxito) pero sin escribir la línea
+// #EXT-X-STREAM-INF de la variante de vídeo en el master.m3u8, dejando los
+// segmentos generados bien pero el manifiesto inservible - visto repetidas
+// veces en producción (~66 vídeos de golpe, y de nuevo con "Los Caballeros
+// del Zodiaco: El Lienzo Perdido"). Causa identificada: con "-c:v copy"
+// (remux sin recodificar) ffmpeg avisa "Bandwidth info not available, set
+// audio and video bitrates" cuando no logra calcular el bitrate de la
+// variante de vídeo (visto junto a avisos "Packet duration: ... is out of
+// range" del propio archivo de origen) y, en vez de usar un valor por
+// defecto, omite la línea entera. En vez de darlo por fallido y reintentar
+// desde cero (mismo resultado las 3 veces, mismo archivo), se repara el
+// manifiesto a mano con un ancho de banda calculado a partir del tamaño
+// real de los segmentos de vídeo ya generados - el mismo parche que se
+// aplicaba manualmente antes de automatizarlo.
+function repairMissingStreamInf(masterPath, videoStream, durationSeconds) {
+  const text = fs.readFileSync(masterPath, 'utf-8');
+  if (text.includes('#EXT-X-STREAM-INF')) return; // ya está bien, nada que hacer
+
+  let totalBytes = 0;
+  const segDir = path.join(path.dirname(masterPath), '0');
+  try {
+    for (const name of fs.readdirSync(segDir)) {
+      totalBytes += fs.statSync(path.join(segDir, name)).size;
+    }
+  } catch {
+    // Si ni siquiera se pueden leer los segmentos, no hay nada fiable que
+    // reparar - se deja como estaba, para que el llamador siga tratándolo
+    // como fallo y reintente.
+    return;
+  }
+  if (!totalBytes || !durationSeconds) return;
+
+  const bandwidth = Math.max(1, Math.round((totalBytes * 8) / durationSeconds));
+  const width = videoStream.width || 1920;
+  const height = videoStream.height || 1080;
+  // avc1.640028 (H.264 High@4.0) es una aproximación válida para
+  // cualquier H.264 a efectos de que el navegador decida si puede
+  // reproducirlo - el valor exacto del profile/level real no es crítico
+  // aquí, hls.js/el navegador ya negocian por el "avc1" base.
+  const videoCodec = videoStream.codec_name === 'hevc' ? 'hvc1.1.6.L93.90' : 'avc1.640028';
+  const line = `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${width}x${height},CODECS="${videoCodec},mp4a.40.2",AUDIO="group_aud"\n0/prog.m3u8\n`;
+  fs.writeFileSync(masterPath, `${text.trimEnd()}\n${line}`);
 }
 
 // "time=01:23:45.67" en la salida de ffmpeg -> segundos.
@@ -134,11 +206,45 @@ function parseProgressSeconds(chunk) {
 // original (más de un ~15% de diferencia, o directamente sin duración,
 // es señal de segmentos truncados/incompletos aunque el manifiesto en sí
 // pareciera correcto).
+// Se invoca ffprobe con spawn directo (no ffmpeg.ffprobe de fluent-ffmpeg) y
+// cwd fijado a la carpeta del propio manifiesto, pasando solo "master.m3u8"
+// (ruta relativa): visto en producción que, dentro del proceso servidor de
+// larga duración, ffmpeg.ffprobe fallaba de forma consistente con "No such
+// file or directory" al intentar abrir una variante de audio cuyo nombre de
+// carpeta lleva un carácter acentuado (p.ej. "Japonés"), aunque la misma
+// llamada contra el mismo archivo funcionara bien ejecutada a mano en un
+// proceso nuevo - apunta a un problema de cómo se resuelven ahí las rutas
+// relativas del manifiesto (posiblemente ligado a la codificación del cwd
+// real del proceso servidor), no a los datos generados en sí. Fijar el cwd
+// a la propia carpeta del HLS y no pasar ninguna ruta con acentos como
+// argumento evita depender de esa resolución.
 function verifyGeneratedHls(masterPath, expectedDurationSeconds) {
   return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(masterPath, (err, info) => {
-      if (err) {
-        reject(new Error(`ffprobe no pudo leer el HLS recién generado: ${err.message}`));
+    if (!ffprobePath) {
+      reject(new Error('No se encontró el binario de ffprobe'));
+      return;
+    }
+    const args = ['-v', 'error', '-show_entries', 'stream=codec_type', '-show_entries', 'format=duration', '-of', 'json', 'master.m3u8'];
+    const proc = spawn(ffprobePath, args, { cwd: path.dirname(masterPath) });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (d) => {
+      stdout += d;
+    });
+    proc.stderr.on('data', (d) => {
+      stderr += d;
+    });
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffprobe no pudo leer el HLS recién generado: ${stderr.split('\n').slice(-5).join(' ')}`));
+        return;
+      }
+      let info;
+      try {
+        info = JSON.parse(stdout);
+      } catch (err) {
+        reject(new Error(`ffprobe devolvió una salida ilegible: ${err.message}`));
         return;
       }
       const videoStream = info.streams?.find((s) => s.codec_type === 'video');
@@ -162,6 +268,30 @@ function verifyGeneratedHls(masterPath, expectedDurationSeconds) {
       resolve();
     });
   });
+}
+
+// Justo tras cerrar el proceso ffmpeg (código 0, éxito) los datos pueden no
+// estar todavía sincronizados de verdad en un disco externo USB - el cierre
+// de los file handles no garantiza el fsync físico. Visto en producción:
+// verifyGeneratedHls fallaba con "ffprobe no pudo leer" justo después de
+// generar, pero el mismo ffprobe sobre el mismo archivo, ejecutado a mano
+// unos segundos más tarde, lo leía sin ningún problema - una condición de
+// carrera de E/S, no un HLS realmente roto. Un par de reintentos cortos
+// aquí (en vez de repetir todo el remux desde cero, que no soluciona esto
+// y además es mucho más caro) le da al disco el margen que necesita.
+async function verifyGeneratedHlsWithRetry(masterPath, expectedDurationSeconds) {
+  const attempts = 3;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await verifyGeneratedHls(masterPath, expectedDurationSeconds);
+      return;
+    } catch (err) {
+      if (i === attempts - 1) throw err;
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
 }
 
 function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy, useGpu, durationSeconds, onProgress }) {
@@ -430,7 +560,10 @@ async function runGeneration(video, priority) {
         // (con sus reintentos) evita perder el original de algo roto.
         const tmpMaster = path.join(tmpDir, 'master.m3u8');
         if (!fs.readFileSync(tmpMaster, 'utf-8').includes('#EXT-X-STREAM-INF')) {
-          throw new Error('El manifiesto generado no declara la pista de vídeo (falta #EXT-X-STREAM-INF)');
+          repairMissingStreamInf(tmpMaster, videoStream, durationSeconds);
+          if (!fs.readFileSync(tmpMaster, 'utf-8').includes('#EXT-X-STREAM-INF')) {
+            throw new Error('El manifiesto generado no declara la pista de vídeo (falta #EXT-X-STREAM-INF)');
+          }
         }
         // No basta con que el texto del manifiesto tenga buena pinta: se
         // vuelve a analizar con ffprobe el HLS ya generado (lee los
@@ -440,7 +573,7 @@ async function runGeneration(video, priority) {
         // un resultado roto de cualquier otra forma (segmentos truncados,
         // corruptos...) tampoco se da nunca por bueno a ciegas.
         // eslint-disable-next-line no-await-in-loop
-        await verifyGeneratedHls(tmpMaster, durationSeconds);
+        await verifyGeneratedHlsWithRetry(tmpMaster, durationSeconds);
         lastErr = null;
         break;
       } catch (err) {
