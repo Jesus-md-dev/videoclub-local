@@ -1,7 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { getMediaInfo } = require('./mediaInfo');
-const { HLS_PATH } = require('./config');
+const { HLS_PATH, DATA_PATH } = require('./config');
+
+const SUBTITLES_DIR = path.join(DATA_PATH, 'subtitles');
 
 const LANGUAGE_NAMES = {
   spa: 'Español',
@@ -75,6 +77,32 @@ function readAudioTracksFromMaster(video) {
   return audio;
 }
 
+// Sin el ffprobe original no se sabe el idioma de un subtítulo ya
+// extraído (eso solo lo tenía el análisis perdido), pero sí que existe:
+// se listan los "<id>-<índice>.vtt" ya generados (ver subtitles.js, que
+// los extrae ANTES de archivar el vídeo) con una etiqueta genérica, mejor
+// que no ofrecerlos en absoluto.
+function readSubtitlesFromDisk(video) {
+  let files;
+  try {
+    files = fs.readdirSync(SUBTITLES_DIR);
+  } catch {
+    return [];
+  }
+  const prefix = `${video.id}-`;
+  return files
+    .filter((f) => f.startsWith(prefix) && f.endsWith('.vtt'))
+    .map((f, i) => ({
+      index: Number(f.slice(prefix.length, -4)),
+      codec: 'vtt',
+      language: null,
+      languageLabel: null,
+      title: `Subtítulo ${i + 1}`,
+      default: false,
+    }))
+    .sort((a, b) => a.index - b.index);
+}
+
 async function getTracks(video) {
   try {
     const info = await getMediaInfo(video);
@@ -82,12 +110,10 @@ async function getTracks(video) {
     const subtitles = info.streams.filter((s) => s.codec_type === 'subtitle').map(describeTrack);
     return { audio, subtitles };
   } catch (err) {
-    // Los subtítulos (si los había) ya se habrían extraído aparte al
-    // archivar (ver subtitles.js) - aquí solo se puede recuperar el audio,
-    // que sí queda descrito en el manifiesto.
     const audio = readAudioTracksFromMaster(video);
-    if (audio.length === 0) throw err;
-    return { audio, subtitles: [] };
+    const subtitles = readSubtitlesFromDisk(video);
+    if (audio.length === 0 && subtitles.length === 0) throw err;
+    return { audio, subtitles };
   }
 }
 

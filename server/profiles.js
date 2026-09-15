@@ -82,6 +82,25 @@ function dismissProgress(profileId, videoId) {
   writeProgress(profileId, data);
 }
 
+// Preferencias de aspecto/idioma de subtítulos: a diferencia del idioma de
+// audio (por dispositivo, ver audioPreference.js en el cliente - "cómo
+// prefiero ver esto EN ESTE aparato"), esto sí es "cómo prefiere leer los
+// subtítulos ESTA persona", así que viaja con el perfil igual que el
+// progreso, no con el navegador.
+function getSettings(profileId) {
+  const profile = readProfiles().find((p) => p.id === profileId);
+  return profile?.settings || {};
+}
+
+function setSettings(profileId, patch) {
+  const profiles = readProfiles();
+  const profile = profiles.find((p) => p.id === profileId);
+  if (!profile) throw new Error('Perfil no encontrado');
+  profile.settings = { ...(profile.settings || {}), ...patch };
+  writeProfiles(profiles);
+  return profile.settings;
+}
+
 module.exports = {
   listProfiles,
   profileExists,
@@ -90,4 +109,6 @@ module.exports = {
   getProgress,
   setProgress,
   dismissProgress,
+  getSettings,
+  setSettings,
 };

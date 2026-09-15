@@ -36,6 +36,8 @@ export default function VideoControls({
   audioTracks,
   audioIndex,
   onAudioChange,
+  subtitlePrefs,
+  onSubtitlePrefsChange,
 }) {
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -45,12 +47,14 @@ export default function VideoControls({
   const [muted, setMuted] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [subtitleIndex, setSubtitleIndex] = useState(-1);
+  const [subtitleSettingsOpen, setSubtitleSettingsOpen] = useState(false);
   const [hover, setHover] = useState(null); // { ratio, x } mientras se pasa/arrastra por la barra
   const [dragging, setDragging] = useState(false);
   const [trickplay, setTrickplay] = useState(null);
   const [controlsVisible, setControlsVisible] = useState(true);
   const barRef = useRef(null);
   const hideTimer = useRef(null);
+  const subtitleSettingsRef = useRef(null);
 
   useEffect(() => {
     fetch(`/api/trickplay/${id}`)
@@ -207,15 +211,31 @@ export default function VideoControls({
     video.muted = !video.muted;
   };
 
-  const cycleSubtitles = () => {
+  // "next" es la POSICIÓN dentro de subtitleTracks/<track> (no el índice de
+  // pista del archivo original): así coincide siempre con la posición real
+  // en video.textTracks, que sigue el mismo orden en el que se renderizaron
+  // los <track> en WatchPage. -1 = subtítulos desactivados.
+  const handleSubtitleChange = (e) => {
     const video = videoRef.current;
-    if (!video || subtitleTracks.length === 0) return;
-    const next = subtitleIndex + 1 >= subtitleTracks.length ? -1 : subtitleIndex + 1;
+    if (!video) return;
+    const next = Number(e.target.value);
     for (let i = 0; i < video.textTracks.length; i += 1) {
       video.textTracks[i].mode = i === next ? 'showing' : 'hidden';
     }
     setSubtitleIndex(next);
   };
+
+  // Cierra el panel de ajustes de subtítulos al hacer clic fuera de él.
+  useEffect(() => {
+    if (!subtitleSettingsOpen) return undefined;
+    const onClickOutside = (e) => {
+      if (subtitleSettingsRef.current && !subtitleSettingsRef.current.contains(e.target)) {
+        setSubtitleSettingsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [subtitleSettingsOpen]);
 
   const progressRatio = duration ? currentTime / duration : 0;
   const bufferedRatio = duration ? buffered / duration : 0;
@@ -318,13 +338,64 @@ export default function VideoControls({
         <div className="controls-spacer" />
 
         {subtitleTracks.length > 0 && (
-          <button
-            className={`control-btn ${subtitleIndex >= 0 ? 'control-btn-active' : ''}`}
-            onClick={cycleSubtitles}
-            aria-label="Subtítulos"
-          >
-            CC
-          </button>
+          <div className="subtitle-controls" ref={subtitleSettingsRef}>
+            <select
+              className="track-select"
+              value={subtitleIndex}
+              onChange={handleSubtitleChange}
+              aria-label="Subtítulos"
+            >
+              <option value={-1}>Subtítulos: Desactivados</option>
+              {subtitleTracks.map((subtitleTrack, i) => (
+                <option key={subtitleTrack.index} value={i}>
+                  {trackLabel(subtitleTrack)}
+                </option>
+              ))}
+            </select>
+            <button
+              className={`control-btn ${subtitleSettingsOpen ? 'control-btn-active' : ''}`}
+              onClick={() => setSubtitleSettingsOpen((v) => !v)}
+              aria-label="Ajustes de subtítulos"
+              title="Tamaño y color de los subtítulos"
+            >
+              ⚙
+            </button>
+            {subtitleSettingsOpen && (
+              <div className="subtitle-settings-panel">
+                <p className="subtitle-settings-title">Aspecto de los subtítulos</p>
+                <label>
+                  Tamaño
+                  <select
+                    value={subtitlePrefs.size}
+                    onChange={(e) => onSubtitlePrefsChange({ size: e.target.value })}
+                  >
+                    <option value="small">Pequeño</option>
+                    <option value="medium">Mediano</option>
+                    <option value="large">Grande</option>
+                  </select>
+                </label>
+                <label>
+                  Color
+                  <input
+                    type="color"
+                    value={subtitlePrefs.color}
+                    onChange={(e) => onSubtitlePrefsChange({ color: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Fondo
+                  <select
+                    value={subtitlePrefs.background}
+                    onChange={(e) => onSubtitlePrefsChange({ background: e.target.value })}
+                  >
+                    <option value="none">Sin fondo</option>
+                    <option value="semi">Semitransparente</option>
+                    <option value="solid">Sólido</option>
+                  </select>
+                </label>
+              </div>
+            )}
+          </div>
         )}
 
         <button className="control-btn" onClick={toggleFullscreen} aria-label="Pantalla completa">

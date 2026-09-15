@@ -10,6 +10,20 @@ const mediaInfo = require('./mediaInfo');
 
 const PROGRESS_DIR = path.join(DATA_PATH, 'progress');
 const TRICKPLAY_DIR = path.join(DATA_PATH, 'trickplay');
+const SUBTITLES_DIR = path.join(DATA_PATH, 'subtitles');
+
+// Un vídeo puede tener varios subtítulos extraídos ("<id>-2.vtt",
+// "<id>-4.vtt"...), uno por cada pista - a diferencia de la carátula o la
+// vista previa (siempre un único archivo), hay que buscarlos todos.
+function migrateSubtitles(oldId, newId) {
+  if (!fs.existsSync(SUBTITLES_DIR)) return;
+  const prefix = `${oldId}-`;
+  for (const file of fs.readdirSync(SUBTITLES_DIR)) {
+    if (!file.startsWith(prefix)) continue;
+    const suffix = file.slice(prefix.length);
+    migrateFile(path.join(SUBTITLES_DIR, file), path.join(SUBTITLES_DIR, `${newId}-${suffix}`));
+  }
+}
 
 // Caracteres no válidos en un nombre de archivo de Windows, más espacios o
 // puntos sobrantes al final (Windows tampoco los admite ahí).
@@ -213,6 +227,7 @@ function migrateVideoData(oldId, newId, oldGroupKey, newRelativePath) {
     migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.json`), path.join(TRICKPLAY_DIR, `${newId}.json`));
     migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.jpg`), path.join(TRICKPLAY_DIR, `${newId}.jpg`));
     migrateDir(path.join(HLS_PATH, oldId), path.join(HLS_PATH, newId));
+    migrateSubtitles(oldId, newId);
     // El análisis de ffprobe (codec-checks.json) también está indexado por
     // id: para un vídeo archivado (sin original ya en disco) perderlo es
     // definitivo, no se puede volver a analizar - ver mediaInfo.js.

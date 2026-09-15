@@ -1028,6 +1028,67 @@ video {
   color: var(--accent);
 }
 
+/* ---- Selector de subtítulos + panel de ajustes de aspecto (tamaño,
+   color, fondo), en los controles del reproductor. ---- */
+.subtitle-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.subtitle-settings-panel {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-alt);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: 0 14px 32px -12px rgba(0, 0, 0, 0.7);
+  z-index: 5;
+}
+
+.subtitle-settings-title {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+
+.subtitle-settings-panel label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.subtitle-settings-panel select {
+  background: var(--bg);
+  color: var(--text);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.subtitle-settings-panel input[type='color'] {
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
 .time-display {
   color: var(--text-dim);
   font-size: 13px;

@@ -5,6 +5,7 @@ import VideoControls from '../components/VideoControls';
 import HiddenMenu from '../components/HiddenMenu';
 import { getActiveProfileId } from '../profile';
 import { getPreferredAudioLanguage, setPreferredAudioLanguage } from '../audioPreference';
+import { DEFAULT_SUBTITLE_PREFS, SUBTITLE_SIZE_EM, SUBTITLE_BG_COLOR, fetchSubtitlePrefs, saveSubtitlePrefs } from '../subtitlePrefs';
 import { track } from '../analytics';
 
 // El progreso se guarda en el servidor por perfil (no en localStorage), así
@@ -98,12 +99,25 @@ export default function WatchPage() {
   const [nextEpisodeId, setNextEpisodeId] = useState(null);
   const [autoAdvanceIn, setAutoAdvanceIn] = useState(null);
   const [rawMode, setRawMode] = useState(false);
+  const [subtitlePrefs, setSubtitlePrefs] = useState(DEFAULT_SUBTITLE_PREFS);
   const playerRef = useRef(null);
   const hlsRef = useRef(null);
   const shellRef = useRef(null);
   const resumeTimeRef = useRef(null);
   const savedProgressRef = useRef(null);
   const profileId = getActiveProfileId();
+
+  useEffect(() => {
+    fetchSubtitlePrefs(profileId).then(setSubtitlePrefs);
+  }, [profileId]);
+
+  const handleSubtitlePrefsChange = (patch) => {
+    setSubtitlePrefs((prev) => {
+      const next = { ...prev, ...patch };
+      saveSubtitlePrefs(profileId, patch);
+      return next;
+    });
+  };
 
   useEffect(() => {
     fetch('/api/videos')
@@ -526,6 +540,16 @@ export default function WatchPage() {
           <div className="player-column player-column-fill">
             {rawMode && <p className="prep-detail">Reproduciendo en formato original (sin convertir).</p>}
             <div className="player-shell" ref={shellRef}>
+              {/* Los subtítulos nativos (<track>) los pinta el propio
+                  navegador vía el pseudo-elemento ::cue - no hay otra forma
+                  de darle tamaño/color propios que con CSS scopeado así. */}
+              <style>{`
+                .player-shell video::cue {
+                  font-size: ${SUBTITLE_SIZE_EM[subtitlePrefs.size] ?? SUBTITLE_SIZE_EM.medium}em;
+                  color: ${subtitlePrefs.color};
+                  background-color: ${SUBTITLE_BG_COLOR[subtitlePrefs.background] ?? SUBTITLE_BG_COLOR.semi};
+                }
+              `}</style>
               <video
                 key={playbackKey}
                 ref={playerRef}
@@ -559,6 +583,8 @@ export default function WatchPage() {
                 audioTracks={tracks.audio}
                 audioIndex={audioIndex}
                 onAudioChange={handleAudioChange}
+                subtitlePrefs={subtitlePrefs}
+                onSubtitlePrefsChange={handleSubtitlePrefsChange}
               />
             </div>
             {stuck && (
