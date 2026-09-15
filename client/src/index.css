@@ -390,6 +390,30 @@ main {
   background: #000;
 }
 
+/* Marca pequeña en la esquina: listo para reproducir sin esperas (HLS ya
+   generado) o todavía pendiente de procesar en segundo plano. Se oculta
+   sola mientras hay una insignia de "procesando"/"en cola" (esa ya dice
+   lo mismo con más detalle). */
+.hls-dot {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+}
+
+.hls-dot-ready {
+  background: #2a9d8f;
+}
+
+.hls-dot-pending {
+  background: var(--text-dim);
+  opacity: 0.6;
+}
+
 .card-resume-overlay {
   position: absolute;
   inset: 0;

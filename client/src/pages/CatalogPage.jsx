@@ -131,6 +131,12 @@ function VideoCard({ video, progress, onRemove, onQuickInfo }) {
           }}
         />
       )}
+      {!processingLabel && (
+        <span
+          className={`hls-dot ${video.hlsReady ? 'hls-dot-ready' : 'hls-dot-pending'}`}
+          title={video.hlsReady ? 'Ya procesado' : 'Pendiente de procesar'}
+        />
+      )}
       {showProgress && (
         <div className="card-resume-overlay">
           <span className="card-resume-play">▶</span>
