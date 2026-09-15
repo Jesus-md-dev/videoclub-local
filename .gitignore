@@ -2,6 +2,7 @@ node_modules/
 client/node_modules/
 client/dist/
 data/
+data-backup/
 .env
 server.log
 server-error.log

@@ -12,7 +12,13 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 3443;
 
-const DATA_PATH = path.join(__dirname, '..', 'data');
+// Perfiles, progreso, carátulas, vista previa al arrastrar... por defecto
+// vive dentro del proyecto (local a esta máquina), pero se puede mover a
+// otro disco (p.ej. el mismo externo que la biblioteca de vídeos) igual que
+// TRANSCODED_PATH/HLS_PATH - así sobrevive a mover el proyecto a otro
+// PC/servidor sin depender de la copia de seguridad periódica (backup.js)
+// para tenerlo al día.
+const DATA_PATH = process.env.DATA_PATH ? path.resolve(process.env.DATA_PATH) : path.join(__dirname, '..', 'data');
 const THUMBNAILS_PATH = path.join(DATA_PATH, 'thumbnails');
 const SETTINGS_FILE = path.join(DATA_PATH, 'settings.json');
 // Los vídeos ya convertidos pueden ocupar mucho (decenas/cientos de GB):

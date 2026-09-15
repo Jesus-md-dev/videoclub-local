@@ -1,16 +1,17 @@
 const fs = require('fs');
 const path = require('path');
-const { DATA_PATH, getVideosPath, reloadVideosPath } = require('./config');
+const { DATA_PATH, reloadVideosPath } = require('./config');
 
-// Se guarda junto al disco de vídeos (mismo disco externo, así que viaja
-// igual al cambiar de PC/servidor) pero FUERA de la carpeta vigilada por
-// el watcher: si se guardara dentro de VIDEOS_PATH, cada escritura del
-// propio backup (carátulas, progreso...) se detectaría como "cambio en la
-// biblioteca" y dispararía un reescaneo completo, que podía solaparse con
-// el siguiente backup y encadenarse sin parar, llegando a bloquear el
-// servidor. Por eso va como hermana de la carpeta de vídeos, igual que
-// TRANSCODED_PATH.
-const BACKUP_DIRNAME = '.videoclub-datos';
+// DATA_PATH ahora vive en el disco externo (ver .env: DATA_PATH=D:\...),
+// para que viaje solo con la biblioteca al cambiar de PC/servidor. Pero ese
+// mismo disco externo ha dado problemas de fiabilidad antes (desconexiones,
+// corrupción) - así que esta copia de seguridad ya no es "de C: hacia el
+// disco externo" como al principio, sino al revés: un espejo LOCAL, dentro
+// del propio proyecto (por tanto en el disco del PC, uno físico distinto),
+// para poder recuperar los datos si el disco externo falla. Sigue siendo
+// "gana el más reciente" en los dos sentidos, así que también sirve para
+// llevarse los datos a mano a otro PC si hiciera falta.
+const BACKUP_DIR = path.join(__dirname, '..', 'data-backup');
 
 // Ahí se guarda una copia de todo lo que sería caro o lento de rehacer
 // desde cero: perfiles, progreso de "Continuar viendo"/visto, carpeta
@@ -50,8 +51,7 @@ const ITEMS = [
 ];
 
 function backupDir() {
-  const videosPath = getVideosPath();
-  return videosPath ? path.join(path.dirname(videosPath), BACKUP_DIRNAME) : null;
+  return BACKUP_DIR;
 }
 
 // Copia src -> dest solo si src es más reciente que dest (o dest no existe
