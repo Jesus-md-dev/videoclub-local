@@ -12,24 +12,57 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 3443;
 
-// Perfiles, progreso, carátulas, vista previa al arrastrar... por defecto
-// vive dentro del proyecto (local a esta máquina), pero se puede mover a
-// otro disco (p.ej. el mismo externo que la biblioteca de vídeos) igual que
-// TRANSCODED_PATH/HLS_PATH - así sobrevive a mover el proyecto a otro
-// PC/servidor sin depender de la copia de seguridad periódica (backup.js)
-// para tenerlo al día.
-const DATA_PATH = process.env.DATA_PATH ? path.resolve(process.env.DATA_PATH) : path.join(__dirname, '..', 'data');
+// Busca una carpeta con ese nombre en la raíz de cualquier unidad disponible
+// (C: a Z:). Pensado para el disco externo (USB): la letra que Windows le
+// asigna puede cambiar de un PC a otro (visto en producción: mismo disco
+// físico, D: en un PC, E: en otro), así que fijar la letra en el .env de
+// cada máquina se rompía sin avisar al cambiar de sitio y dejaba el
+// servidor leyendo (o, peor, escribiendo) en la carpeta local por defecto
+// sin que nadie se diera cuenta hasta perder progreso/carátulas. Buscar por
+// nombre en vez de por letra fija hace que encontrarla sea automático.
+function findDriveWithFolder(folderName) {
+  for (let code = 67; code <= 90; code += 1) {
+    // 67 = 'C', evita A/B (disqueteras históricas, a veces lentas de sondear)
+    const drive = `${String.fromCharCode(code)}:\\`;
+    try {
+      if (fs.existsSync(drive) && fs.existsSync(path.join(drive, folderName))) {
+        return path.join(drive, folderName);
+      }
+    } catch {
+      // Unidad no disponible (lector óptico vacío, red desconectada...): se ignora.
+    }
+  }
+  return null;
+}
+
+// Perfiles, progreso, carátulas, vista previa al arrastrar... Por defecto se
+// busca automáticamente una carpeta "VideoclubDatos" en cualquier unidad
+// (pensada para vivir en el disco externo, junto a la biblioteca, así viaja
+// sola al cambiar de PC/servidor); DATA_PATH en .env la fija a mano si hace
+// falta, y si no se encuentra ninguna cae a data/ dentro del proyecto (local
+// a esta máquina, como al principio).
+const DATA_PATH = process.env.DATA_PATH
+  ? path.resolve(process.env.DATA_PATH)
+  : findDriveWithFolder('VideoclubDatos') || path.join(__dirname, '..', 'data');
 const THUMBNAILS_PATH = path.join(DATA_PATH, 'thumbnails');
 const SETTINGS_FILE = path.join(DATA_PATH, 'settings.json');
 // Los vídeos ya convertidos pueden ocupar mucho (decenas/cientos de GB):
-// por defecto viven dentro de data/, pero se puede mover a otro disco con
-// más sitio libre sin tocar los archivos originales de la biblioteca.
+// por defecto se busca una carpeta "VideoclubTranscoded" en cualquier
+// unidad (igual razón que DATA_PATH/VIDEOS_PATH: no depender de la letra
+// que le toque al disco externo en cada PC), y si no se encuentra ninguna
+// cae dentro de DATA_PATH.
 const TRANSCODED_PATH = process.env.TRANSCODED_PATH
   ? path.resolve(process.env.TRANSCODED_PATH)
-  : path.join(DATA_PATH, 'transcoded');
+  : findDriveWithFolder('VideoclubTranscoded') || path.join(DATA_PATH, 'transcoded');
 // Igual que TRANSCODED_PATH: los paquetes HLS (segmentos de vídeo + una
-// pista aparte por cada idioma de audio) también pueden ocupar mucho.
-const HLS_PATH = process.env.HLS_PATH ? path.resolve(process.env.HLS_PATH) : path.join(DATA_PATH, 'hls');
+// pista aparte por cada idioma de audio) también pueden ocupar mucho. Un
+// HLS generado en un PC cuyo HLS_PATH no llegara a resolver aquí (p.ej. si
+// cayera en la carpeta local de esa máquina en vez del disco externo)
+// dejaría, tras archivar el original, un vídeo sin ninguna copia accesible
+// desde otro PC - visto en producción con 212 episodios (#68).
+const HLS_PATH = process.env.HLS_PATH
+  ? path.resolve(process.env.HLS_PATH)
+  : findDriveWithFolder('VideoclubHLS') || path.join(DATA_PATH, 'hls');
 
 const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.webm', '.mov', '.m4v'];
 
@@ -43,8 +76,21 @@ function readSettings() {
 
 function initialVideosPath() {
   const stored = readSettings().videosPath;
+  // La ruta guardada lleva la letra de unidad de la máquina donde se guardó
+  // - si ya no existe (disco reconectado con otra letra, típico al cambiar
+  // de PC), no sirve de nada insistir en ella: se busca de nuevo por nombre
+  // en vez de dejar el servidor sin biblioteca hasta que alguien lo note y
+  // lo reconfigure a mano.
+  if (stored && fs.existsSync(stored)) return path.resolve(stored);
+  if (process.env.VIDEOS_PATH && fs.existsSync(process.env.VIDEOS_PATH)) {
+    return path.resolve(process.env.VIDEOS_PATH);
+  }
+  const found = findDriveWithFolder('Videoclub');
+  if (found) return found;
+  // Nada disponible ahora mismo: mejor devolver lo guardado (aunque no
+  // exista en este instante, p.ej. el USB tarda un poco en montarse) que
+  // nada, para no perder de vista cuál era la carpeta configurada.
   if (stored) return path.resolve(stored);
-  if (process.env.VIDEOS_PATH) return path.resolve(process.env.VIDEOS_PATH);
   return null;
 }
 
