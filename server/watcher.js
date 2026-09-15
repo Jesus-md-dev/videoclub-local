@@ -3,6 +3,7 @@ const catalog = require('./catalog');
 const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
 const hls = require('./hls');
+const normalize = require('./normalize');
 const { getVideosPath } = require('./config');
 
 // Cada reescaneo es síncrono sobre toda la biblioteca (miles de vídeos) y
@@ -27,7 +28,18 @@ async function rescan() {
   if (scanning) return;
   scanning = true;
   try {
-    const videos = await catalog.scan();
+    const previousIds = new Set(catalog.getCatalog().map((v) => v.id));
+    let videos = await catalog.scan();
+
+    // Solo archivos nuevos (no estaban antes de este reescaneo): si el
+    // nombre tiene pinta de venir "en bruto" (release, sin limpiar), se
+    // renombra ya mismo, antes de generar carátula/HLS para ellos - así no
+    // hay nada que migrar ni doble trabajo. La biblioteca ya existente NO se
+    // toca sola nunca: para eso está el botón "Normalizar nombres" en
+    // /config, que sí se puede revisar/lanzar a mano.
+    const renamedAny = await normalize.autoNormalizeNewFiles(videos, previousIds);
+    if (renamedAny) videos = await catalog.scan();
+
     console.log(`Catálogo actualizado automáticamente: ${videos.length} vídeo(s)`);
     thumbnails.generateMissingThumbnails(videos);
     metadata.warmAll(catalog.getAllGroupKeys());

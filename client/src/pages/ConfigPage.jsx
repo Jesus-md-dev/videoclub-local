@@ -9,6 +9,7 @@ export default function ConfigPage() {
   const [saving, setSaving] = useState(false);
   const [browsing, setBrowsing] = useState(false);
   const [tmdbProgress, setTmdbProgress] = useState(null);
+  const [normalizeProgress, setNormalizeProgress] = useState(null);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -40,6 +41,37 @@ export default function ConfigPage() {
     }, 1000);
     return () => clearInterval(timer);
   }, [tmdbProgress?.running]);
+
+  useEffect(() => {
+    fetch('/api/normalize/status')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.running) setNormalizeProgress(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!normalizeProgress?.running) return undefined;
+    const timer = setInterval(() => {
+      fetch('/api/normalize/status')
+        .then((res) => res.json())
+        .then(setNormalizeProgress)
+        .catch(() => {});
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [normalizeProgress?.running]);
+
+  const handleNormalize = async () => {
+    try {
+      const res = await fetch('/api/normalize/run', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setNormalizeProgress({ running: true, total: data.total, done: 0, renamed: 0, errors: [] });
+    } catch (err) {
+      setMessage({ text: err.message, ok: false });
+    }
+  };
 
   const handleForceTmdb = async () => {
     try {
@@ -141,6 +173,43 @@ export default function ConfigPage() {
               {tmdbProgress.done} / {tmdbProgress.total} ({tmdbProgress.updated} actualizados)
               {!tmdbProgress.running && tmdbProgress.total > 0 ? ' — completado' : ''}
             </p>
+          </>
+        )}
+
+        <p className="section-title" style={{ marginTop: 32 }}>
+          Nombres de archivo
+        </p>
+        <p className="hint">
+          Renombra episodios y películas a un nombre limpio y consistente (usa la carátula/nombre
+          de TMDB cuando ya está en caché). Solo toca archivos donde reconoce con confianza el
+          episodio (p.ej. "S06E12" o "E04"); si no está seguro, no los toca. Los archivos nuevos
+          que aparezcan mientras el servidor está encendido se normalizan solos, sin necesidad de
+          pulsar este botón.
+        </p>
+        <button type="button" onClick={handleNormalize} disabled={normalizeProgress?.running}>
+          {normalizeProgress?.running ? 'Normalizando…' : 'Normalizar nombres'}
+        </button>
+        {normalizeProgress && (
+          <>
+            <div className="progress-bar" style={{ height: 8, marginTop: 12 }}>
+              <div
+                style={{
+                  width: `${
+                    normalizeProgress.total ? Math.round((normalizeProgress.done / normalizeProgress.total) * 100) : 0
+                  }%`,
+                }}
+              />
+            </div>
+            <p className="hint">
+              {normalizeProgress.done} / {normalizeProgress.total} ({normalizeProgress.renamed} renombrados)
+              {!normalizeProgress.running && normalizeProgress.total > 0 ? ' — completado' : ''}
+            </p>
+            {normalizeProgress.errors?.length > 0 && (
+              <p className="config-message error">
+                {normalizeProgress.errors.length} con error (p.ej. "{normalizeProgress.errors[0].title}":{' '}
+                {normalizeProgress.errors[0].message})
+              </p>
+            )}
           </>
         )}
       </div>

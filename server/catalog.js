@@ -206,4 +206,9 @@ module.exports = {
   isGenericFolderName,
   getAllGroupKeys,
   getShowKeyFor,
+  // Para normalize.js: calcular el id que tendría una ruta relativa nueva
+  // (tras renombrar un archivo) sin tener que reescanear toda la carpeta de
+  // vídeos solo para eso - con miles de vídeos en un disco externo, hacerlo
+  // una vez por archivo renombrado sería tan lento como el propio escaneo.
+  idFor: makeId,
 };
