@@ -158,6 +158,24 @@ export default function QueuePage() {
                 </div>
               </>
             )}
+
+            {data.pending.length > 0 && (
+              <>
+                <p className="section-title">
+                  Pendientes ({data.summary.pending}
+                  {data.summary.pending > data.pending.length ? `, mostrando los ${data.pending.length} próximos` : ''})
+                </p>
+                <p className="hint">En el orden en que les tocará turno (los más ligeros primero).</p>
+                <div className="queue-list">
+                  {data.pending.map((item) => (
+                    <div className="queue-row" key={item.id}>
+                      <span className="queue-title">{item.title}</span>
+                      <span className="queue-meta">{formatSize(item.size)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

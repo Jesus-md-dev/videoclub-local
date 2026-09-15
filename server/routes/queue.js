@@ -17,6 +17,7 @@ router.get('/queue', (req, res) => {
   const summary = { total: videos.length, ready: 0, processing: 0, failed: 0, pending: 0 };
   const processing = [];
   const failed = [];
+  const pending = [];
 
   for (const video of videos) {
     const status = hls.getStatus(video);
@@ -37,6 +38,7 @@ router.get('/queue', (req, res) => {
       failed.push({ id: video.id, title: video.title, size: video.size, error: hls.getLastError(video) });
     } else {
       summary.pending += 1;
+      pending.push({ id: video.id, title: video.title, size: video.size });
     }
   }
 
@@ -44,8 +46,18 @@ router.get('/queue', (req, res) => {
   // antes que los recién marcados "checking", para que lo más relevante
   // salga arriba en una lista que puede tener varios a la vez.
   processing.sort((a, b) => (b.percent ?? -1) - (a.percent ?? -1));
+  // El precalentamiento en segundo plano procesa los archivos más ligeros
+  // primero (ver comentario en hls.js): el mismo orden aquí para que la
+  // lista refleje de verdad quién va a tocarle turno antes.
+  pending.sort((a, b) => (a.size || 0) - (b.size || 0));
 
-  res.json({ summary, processing, failed: failed.slice(0, 200), maxConcurrentFfmpeg: MAX_CONCURRENT_FFMPEG });
+  res.json({
+    summary,
+    processing,
+    failed: failed.slice(0, 200),
+    pending: pending.slice(0, 200),
+    maxConcurrentFfmpeg: MAX_CONCURRENT_FFMPEG,
+  });
 });
 
 module.exports = router;
