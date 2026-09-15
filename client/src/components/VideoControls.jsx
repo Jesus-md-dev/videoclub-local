@@ -6,6 +6,18 @@ function trackLabel(track) {
   return track.languageLabel || track.title || `Pista ${track.index}`;
 }
 
+// El origen de una pista de subtítulo se distingue por el prefijo de su
+// "index" (ver server/tracks.js: "ext<hash>" = descargado de SubDL,
+// "os<fileId>" = de OpenSubtitles; un número o "<n>" suelto = incrustado en
+// el propio archivo, o ya extraído de él). Solo tiene sentido para
+// subtítulos, no para audio.
+function subtitleSourceLabel(track) {
+  const index = String(track.index);
+  if (index.startsWith('ext')) return 'SubDL';
+  if (index.startsWith('os')) return 'OpenSubtitles';
+  return 'del vídeo';
+}
+
 function formatTime(seconds) {
   if (!Number.isFinite(seconds)) return '0:00';
   const s = Math.max(0, Math.floor(seconds));
@@ -412,7 +424,7 @@ export default function VideoControls({
                 <option value={-1}>Subtítulos: Desactivados</option>
                 {subtitleTracks.map((subtitleTrack, i) => (
                   <option key={subtitleTrack.index} value={i}>
-                    {trackLabel(subtitleTrack)}
+                    {trackLabel(subtitleTrack)} ({subtitleSourceLabel(subtitleTrack)})
                   </option>
                 ))}
               </select>
