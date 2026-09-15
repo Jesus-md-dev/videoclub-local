@@ -98,7 +98,6 @@ export default function WatchPage() {
   const [prevEpisodeId, setPrevEpisodeId] = useState(null);
   const [nextEpisodeId, setNextEpisodeId] = useState(null);
   const [autoAdvanceIn, setAutoAdvanceIn] = useState(null);
-  const [rawMode, setRawMode] = useState(false);
   const [subtitlePrefs, setSubtitlePrefs] = useState(DEFAULT_SUBTITLE_PREFS);
   const playerRef = useRef(null);
   const hlsRef = useRef(null);
@@ -174,7 +173,6 @@ export default function WatchPage() {
     }
 
     setAutoAdvanceIn(null);
-    setRawMode(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -215,19 +213,9 @@ export default function WatchPage() {
     setReady(false);
     setPrepProgress(null);
 
-    // Modo normal: HLS (server/hls.js), no depende de audioIndex (todas las
-    // pistas de audio van en el mismo manifiesto, se elige luego sin
-    // recargar). Modo "sin convertir": pipeline antiguo, sí depende de la
-    // pista de audio elegida (cada una es un remux aparte).
-    let streamUrl;
-    if (rawMode) {
-      const params = new URLSearchParams();
-      if (audioIndex != null) params.set('audio', audioIndex);
-      params.set('raw', '1');
-      streamUrl = `/api/stream/${id}/status?${params.toString()}`;
-    } else {
-      streamUrl = `/api/hls/${id}/status`;
-    }
+    // HLS (server/hls.js): no depende de audioIndex, todas las pistas de
+    // audio van en el mismo manifiesto, se elige luego sin recargar.
+    const streamUrl = `/api/hls/${id}/status`;
 
     const checkStatus = () => {
       fetch(streamUrl)
@@ -253,21 +241,21 @@ export default function WatchPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [video, id, audioIndex, rawMode]);
+  }, [video, id, audioIndex]);
 
   useEffect(() => {
     if (ready && video) track('play_start', { videoId: id, title: video.title });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, id]);
 
-  // Conecta hls.js al <video> (modo normal, no "sin convertir"): sustituye
-  // al <video src=...> directo. Chrome/Firefox necesitan hls.js; Safari
-  // reproduce HLS de forma nativa, sin librería. El cambio de pista de
-  // audio (handleAudioChange) usa la API de pistas de hls.js en vez de
-  // cambiar el src, así no hay recarga ni se pierde la posición.
+  // Conecta hls.js al <video>: sustituye al <video src=...> directo.
+  // Chrome/Firefox necesitan hls.js; Safari reproduce HLS de forma nativa,
+  // sin librería. El cambio de pista de audio (handleAudioChange) usa la
+  // API de pistas de hls.js en vez de cambiar el src, así no hay recarga
+  // ni se pierde la posición.
   useEffect(() => {
     const player = playerRef.current;
-    if (!video || !ready || !player || rawMode) return undefined;
+    if (!video || !ready || !player) return undefined;
 
     const masterUrl = `/api/hls/${id}/master.m3u8`;
 
@@ -336,7 +324,7 @@ export default function WatchPage() {
 
     setError('Este navegador no puede reproducir vídeo HLS.');
     return undefined;
-  }, [video, ready, id, playbackKey, rawMode]);
+  }, [video, ready, id, playbackKey]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -437,28 +425,19 @@ export default function WatchPage() {
     const chosenTrack = tracks.audio.find((t) => t.index === newIndex);
     setPreferredAudioLanguage(chosenTrack?.language || null);
 
-    // Modo normal (HLS): el cambio "en caliente" (hls.audioTrack = posición,
-    // sin recargar nada) resultó NO ser fiable en la práctica - verificado
-    // en directo: la pista pedida por red y la seleccionada en hls.js eran
-    // las correctas, pero el sonido seguía siendo el de la pista anterior.
-    // En vez de perseguir ese fallo de hls.js/el navegador, se fuerza una
+    // El cambio "en caliente" (hls.audioTrack = posición, sin recargar
+    // nada) resultó NO ser fiable en la práctica - verificado en directo:
+    // la pista pedida por red y la seleccionada en hls.js eran las
+    // correctas, pero el sonido seguía siendo el de la pista anterior. En
+    // vez de perseguir ese fallo de hls.js/el navegador, se fuerza una
     // recarga completa del reproductor (mismo mecanismo que la recuperación
     // ante un corte, ver retryPlayback) con la posición actual guardada: la
     // ruta de "carga inicial con idioma preferido" (ver MANIFEST_PARSED más
     // abajo) sí aplica bien la pista desde el principio.
-    if (!rawMode) {
-      const player = playerRef.current;
-      resumeTimeRef.current = player ? player.currentTime : null;
-      setAudioIndex(newIndex);
-      setPlaybackKey((k) => k + 1);
-      return;
-    }
-
-    // Modo "sin convertir" (pipeline antiguo): cada pista es un archivo
-    // remuxado aparte, así que sí hace falta recargar.
     const player = playerRef.current;
     resumeTimeRef.current = player ? player.currentTime : null;
     setAudioIndex(newIndex);
+    setPlaybackKey((k) => k + 1);
   };
 
   const retryPlayback = () => {
@@ -468,11 +447,6 @@ export default function WatchPage() {
     setPlaybackKey((k) => k + 1);
   };
 
-  const streamParams = new URLSearchParams();
-  if (audioIndex != null) streamParams.set('audio', audioIndex);
-  if (rawMode) streamParams.set('raw', '1');
-  const streamQuery = streamParams.toString();
-  const streamSrc = `/api/stream/${id}${streamQuery ? `?${streamQuery}` : ''}`;
   const backTo = video?.seriesKey ? `/?dir=${encodeURIComponent(video.seriesKey)}` : '/';
   const backLabel = video?.seriesKey ? '← Volver a episodios' : '← Volver al catálogo';
 
@@ -518,7 +492,7 @@ export default function WatchPage() {
         {!error && video && !ready && (
           <div className="prep-box">
             <div className="spinner" />
-            <p>{rawMode ? 'Cambiando de idioma...' : 'Preparando vídeo para este dispositivo...'}</p>
+            <p>Preparando vídeo para este dispositivo...</p>
             {prepProgress?.percent != null ? (
               <>
                 <div className="prep-bar">
@@ -529,25 +503,12 @@ export default function WatchPage() {
                 </p>
               </>
             ) : (
-              <p className="prep-detail">
-                {rawMode
-                  ? 'Preparando esa pista de audio, no hace falta convertir el vídeo entero...'
-                  : 'Analizando el vídeo, puede tardar unos minutos la primera vez...'}
-              </p>
-            )}
-            {!rawMode && !video?.archived && (
-              <>
-                <button className="raw-mode-btn" onClick={() => setRawMode(true)}>
-                  Reproducir sin convertir
-                </button>
-                <p className="prep-detail">Formato original: puede no funcionar en este dispositivo/navegador.</p>
-              </>
+              <p className="prep-detail">Analizando el vídeo, puede tardar unos minutos la primera vez...</p>
             )}
           </div>
         )}
         {!error && video && ready && (
           <div className="player-column player-column-fill">
-            {rawMode && <p className="prep-detail">Reproduciendo en formato original (sin convertir).</p>}
             <div className="player-shell" ref={shellRef}>
               {/* Los subtítulos nativos (<track>) los pinta el propio
                   navegador vía el pseudo-elemento ::cue - no hay otra forma
@@ -564,7 +525,6 @@ export default function WatchPage() {
                 ref={playerRef}
                 autoPlay
                 playsInline
-                src={rawMode ? streamSrc : undefined}
                 onClick={(e) => (e.currentTarget.paused ? e.currentTarget.play() : e.currentTarget.pause())}
               >
                 {tracks.subtitles.map((track) => (
