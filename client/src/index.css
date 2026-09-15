@@ -355,6 +355,10 @@ main {
   right: 8px;
   background: rgba(20, 20, 20, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.25);
+  /* .badge (arriba) fija color con --accent-ink, pensado para su propio
+     fondo amarillo (--accent) - sobre el fondo oscuro de este badge
+     quedaba casi invisible (texto oscuro sobre fondo oscuro). */
+  color: #fff;
 }
 
 .badge-queued {
