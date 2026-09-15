@@ -510,15 +510,14 @@ async function generateHls(video, priority = 'low') {
 // prioridad de "quien está viendo ahora" que tenía sentido quitarle al
 // pipeline antiguo (#61).
 //
-// Varios vídeos a la vez (no uno detrás de otro): antes, aunque el tope
-// compartido (ffmpeg-limiter.js) permite hasta 10 procesos ffmpeg a la
-// vez, el precalentamiento en sí solo tenía UNO en marcha, dejando 9
-// huecos libres sin usar la mayor parte del tiempo - con una biblioteca de
-// miles de vídeos, eso significaba tardar muchísimo más de lo necesario en
-// ponerse al día. 4 a la vez dan un buen margen de mejora sin acaparar
-// todo el tope compartido (deja hueco para carátulas/trickplay/"sin
-// convertir" y sobre todo para quien esté viendo algo ahora mismo).
-const WARM_CONCURRENCY = 4;
+// Antes esto era 4: aunque el tope compartido (ffmpeg-limiter.js) permite
+// hasta 10 procesos ffmpeg a la vez y CPU/RAM aguantaban bien varios en
+// paralelo, el disco externo (USB, IOPS limitados) no - varias
+// generaciones HLS a la vez lo saturaban de verdad y dejaban la web entera
+// sin responder (incluso rutas que no tocan el catálogo), la misma lección
+// que ya costó aprender una vez con el pipeline antiguo (#48). Ver #67
+// para el diagnóstico completo y la verificación de que 1 lo soluciona.
+const WARM_CONCURRENCY = 1;
 
 // Un reescaneo automático puede llamar a esto mientras la pasada anterior
 // sigue en marcha (mismo motivo que el guard de metadata.js): sin esto, se
