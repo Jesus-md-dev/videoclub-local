@@ -64,6 +64,17 @@ function folderProcessingState(videosInFolder) {
   return { processingState: queued ? 'queued' : null, processingPercent: null };
 }
 
+// Punto verde/rojo/naranja de la carátula de serie: 'ready' si todos los
+// episodios ya tienen su HLS listo, 'pending' si ninguno lo tiene, 'partial'
+// si es una mezcla (a medias). null si la carpeta no tiene vídeos.
+function folderHlsCompletion(videosInFolder) {
+  if (videosInFolder.length === 0) return null;
+  const readyCount = videosInFolder.filter((v) => hls.getStatus(v) === 'ready').length;
+  if (readyCount === 0) return 'pending';
+  if (readyCount === videosInFolder.length) return 'ready';
+  return 'partial';
+}
+
 router.get('/videos', (req, res) => {
   const videos = catalog.getCatalog().map((video) => {
     const meta = metadata.getCached(catalog.metadataKeyFor(video));
@@ -112,6 +123,7 @@ router.get('/videos/browse', (req, res) => {
         type: resolveType(meta),
         processingState,
         processingPercent,
+        hlsCompletion: folderHlsCompletion(folderVideos),
         seriesProgress: seriesProgressFor(folderVideos, profileProgress),
       };
     }),

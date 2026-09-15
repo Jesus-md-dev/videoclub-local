@@ -13,6 +13,14 @@ function processingBadgeLabel(state, percent) {
   return null;
 }
 
+// Punto de la carátula de serie: verde si todos los episodios ya están
+// procesados, rojo si ninguno lo está, naranja si es una mezcla (a medias).
+function hlsDotClassAndTitle(completion) {
+  if (completion === 'ready') return { cls: 'hls-dot-ready', title: 'Todos los episodios procesados' };
+  if (completion === 'partial') return { cls: 'hls-dot-partial', title: 'Procesados a medias' };
+  return { cls: 'hls-dot-pending', title: 'Ningún episodio procesado' };
+}
+
 // El progreso ya no vive en localStorage: se guarda en el servidor por
 // perfil, así que se ve igual desde cualquier dispositivo de la red.
 // `progressMap` es { [videoId]: { time, ratio, updatedAt, dismissedAt? } },
@@ -205,6 +213,10 @@ function FolderCard({ folder, onOpen, onQuickInfo }) {
       ) : (
         <div className="folder-icon">📁</div>
       )}
+      {!processingLabel && folder.hlsCompletion && (() => {
+        const { cls, title } = hlsDotClassAndTitle(folder.hlsCompletion);
+        return <span className={`hls-dot ${cls}`} title={title} />;
+      })()}
       {showSeriesProgress && (
         <div className="progress-bar" title={`${seriesProgress.watched} de ${seriesProgress.total} episodios vistos`}>
           <div style={{ width: `${Math.round(seriesProgress.ratio * 100)}%` }} />

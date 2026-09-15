@@ -413,6 +413,10 @@ main {
   background: var(--accent);
 }
 
+.hls-dot-partial {
+  background: #e8974a;
+}
+
 .card-resume-overlay {
   position: absolute;
   inset: 0;
