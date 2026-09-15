@@ -18,6 +18,8 @@ export default function ConfigPage() {
   const [subtitlesStatus, setSubtitlesStatus] = useState(null);
   const [subtitlesSaving, setSubtitlesSaving] = useState(false);
   const [subtitlesMessage, setSubtitlesMessage] = useState(null);
+  const [healthChecking, setHealthChecking] = useState(false);
+  const [healthResult, setHealthResult] = useState(null);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -140,6 +142,21 @@ export default function ConfigPage() {
       setSubtitlesMessage({ text: err.message, ok: false });
     } finally {
       setSubtitlesSaving(false);
+    }
+  };
+
+  const handleHealthCheck = async () => {
+    setHealthChecking(true);
+    setHealthResult(null);
+    try {
+      const res = await fetch('/api/health/archived-videos');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setHealthResult(data);
+    } catch (err) {
+      setHealthResult({ error: err.message });
+    } finally {
+      setHealthChecking(false);
     }
   };
 
@@ -335,6 +352,40 @@ export default function ConfigPage() {
             SubDL: {subtitlesStatus.subdl ? 'configurado' : 'sin configurar'} · OpenSubtitles:{' '}
             {subtitlesStatus.openSubtitles ? 'configurado' : 'sin configurar'}
           </p>
+        )}
+
+        <p className="section-title" style={{ marginTop: 32 }}>
+          Vídeos archivados sin análisis
+        </p>
+        <p className="hint">
+          Un vídeo "archivado" (su original se borró porque el HLS ya era el mismo vídeo, ver
+          /queue) depende por completo de que se guardara antes su análisis (qué pistas de audio/
+          subtítulos tenía): si ese dato se pierde, ya no hay forma de recuperarlo - no queda
+          ningún archivo del que volver a sacarlo. Esto comprueba cuántos se han quedado así.
+        </p>
+        <button type="button" onClick={handleHealthCheck} disabled={healthChecking}>
+          {healthChecking ? 'Comprobando…' : 'Comprobar'}
+        </button>
+        {healthResult?.error && <p className="config-message error">{healthResult.error}</p>}
+        {healthResult && !healthResult.error && (
+          <>
+            <p className="hint">
+              {healthResult.totalArchived} archivados en total · {healthResult.withoutCache} sin análisis guardado
+              {healthResult.withoutAnything > 0 && (
+                <> · {healthResult.withoutAnything} sin ni siquiera el HLS (irrecuperables del todo)</>
+              )}
+            </p>
+            {healthResult.sample.length > 0 && (
+              <ul className="queue-list" style={{ maxHeight: 260 }}>
+                {healthResult.sample.map((v) => (
+                  <li key={v.id} className="queue-row">
+                    <span className="queue-title">{v.title}</span>
+                    <span className="queue-meta">{v.hasHls ? 'con HLS' : 'sin HLS'}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </div>
       {browsing && (

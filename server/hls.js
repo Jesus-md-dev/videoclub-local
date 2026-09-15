@@ -450,14 +450,29 @@ async function runGeneration(video, priority) {
 // progreso. El listado de pistas (audio/subtítulos) no hace falta
 // pre-generarlo: ya queda cacheado el análisis de ffprobe (codec-checks.json,
 // ver mediaInfo.js) desde la generación del HLS.
+//
+// Si falla la extracción de ALGÚN subtítulo, NO se borra el original: sin
+// esto, un fallo puntual (disco externo con hipos, etc.) se traducía en
+// perder ese subtítulo para siempre en cuanto se borraba el único archivo
+// del que se podía sacar - ya ha pasado de verdad (ver issue del episodio
+// de Bleach sin subtítulos). Mejor gastar algo más de disco en el peor
+// caso que perder algo irrecuperable.
 async function archiveIfCompatible(video) {
   const info = await getMediaInfo(video);
   const subtitleStreams = info.streams.filter((s) => s.codec_type === 'subtitle');
+  let subtitleExtractionFailed = false;
   for (const stream of subtitleStreams) {
     // eslint-disable-next-line no-await-in-loop
     await subtitles.extractSubtitle(video, stream.index).catch((err) => {
+      subtitleExtractionFailed = true;
       console.warn(`HLS: no se pudo extraer el subtítulo ${stream.index} de "${video.title}" antes de archivar: ${err.message}`);
     });
+  }
+  if (subtitleExtractionFailed) {
+    console.warn(
+      `HLS: "${video.title}" se queda con el original (no se borra) - falló extraer algún subtítulo antes de archivar, mejor no arriesgarse a perderlo.`
+    );
+    return;
   }
   await trickplay.ensureTrickplay(video);
 

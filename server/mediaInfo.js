@@ -4,6 +4,7 @@ const ffmpegPath = require('ffmpeg-static');
 const ffprobePath = require('ffprobe-static').path;
 const ffmpeg = require('fluent-ffmpeg');
 const { getVideosPath, DATA_PATH } = require('./config');
+const archivedVideos = require('./archivedVideos');
 
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath);
@@ -93,12 +94,19 @@ function migrateEntry(oldId, newId) {
 }
 
 // Tras cada escaneo del catálogo: quita del fichero los vídeos que ya no
-// están (borrados/renombrados), para que no crezca sin límite.
+// están (borrados/renombrados), para que no crezca sin límite. Nunca se
+// borra la entrada de un vídeo ARCHIVADO (ver archivedVideos.js), pase lo
+// que pase con "currentIds": para uno de esos, este análisis es la única
+// fuente que queda de qué pistas tenía (el original ya no existe) - un
+// despiste ahí sería irrecuperable, así que esta comprobación va por
+// libre, sin fiarse solo de que quien llame haya incluido bien todos los
+// ids archivados en "currentIds".
 function pruneStore(currentIds) {
   const ids = new Set(currentIds);
+  const archivedIds = new Set(Object.keys(archivedVideos.getAll()));
   let changed = false;
   for (const id of Object.keys(store)) {
-    if (!ids.has(id)) {
+    if (!ids.has(id) && !archivedIds.has(id)) {
       delete store[id];
       changed = true;
     }
