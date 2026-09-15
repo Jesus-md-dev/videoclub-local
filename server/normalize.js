@@ -21,29 +21,66 @@ function sanitizeName(str) {
 
 // Solo se toca el nombre si se reconoce con confianza un marcador de
 // temporada/episodio en el nombre original: "S06E12" manda si aparece, si
-// no un "E04" suelto. Si no hay ninguno de los dos, se deja el archivo tal
-// cual (mejor no tocar nada que arriesgarse a desordenar los episodios).
+// no un "1x01" (temporada x episodio, sin letras), si no un "E04" suelto.
+// Si no hay ninguno de los tres, se deja el archivo tal cual (mejor no tocar
+// nada que arriesgarse a desordenar los episodios).
 function extractEpisodeMarker(rawTitle) {
   let m = rawTitle.match(/S(\d{1,2})E(\d{1,4})/i);
+  if (m) return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}`;
+  // Requiere un separador (espacio/guion/punto/inicio) antes de la
+  // temporada, no solo dígitos: si no, algo como "1920x1080" (resolución)
+  // se leería como si fuera la temporada 19 (o 20) episodio 1080.
+  m = rawTitle.match(/(?:^|[\s\-_.])(\d{1,2})x(\d{1,4})(?:[\s\-_.]|$)/i);
   if (m) return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}`;
   m = rawTitle.match(/(?:^|[^a-z0-9])E(\d{1,4})(?:[^0-9]|$)/i);
   if (m) return `E${m[1].padStart(2, '0')}`;
   return null;
 }
 
+// Una película suelta usa su propio nombre de archivo como clave de
+// metadatos (ver catalog.js groupKeyFor: sin carpeta propia, cae al
+// título). Eso significa que, tras renombrarla añadiendo el año, la CLAVE
+// cambia también - si se volviera a ejecutar sobre el nombre ya renombrado
+// sin quitar antes el "(año)" que ya lleva, se le añadiría otro encima cada
+// vez ("Película (2001)" -> "Película (2001) (2001)" -> ...). Se quita
+// cualquier "(año)" ya presente al final (puede haber más de uno, por si
+// ya se coló alguno) antes de usarlo como base.
+function stripTrailingYear(str) {
+  let result = str;
+  let prev;
+  do {
+    prev = result;
+    result = result.replace(/\s*\(\d{4}\)\s*$/, '').trim();
+  } while (result !== prev);
+  return result;
+}
+
 // Nombre limpio propuesto para un vídeo, o null si no hace falta tocarlo
 // (ya está bien, es un vídeo archivado sin archivo real, o no se pudo
 // reconocer con confianza el episodio). No depende de que TMDB ya haya
 // respondido: si la clave todavía no tiene "cleanName" en caché, usa el
-// nombre de la carpeta/archivo (ya limpiado de puntos/guiones bajos) como
-// alternativa razonable.
+// nombre de la carpeta/archivo (ya limpiado de puntos/guiones bajos y de
+// cualquier año ya puesto) como alternativa razonable.
 function buildCandidate(video) {
   if (video.archived) return null;
 
   const groupKey = catalog.metadataKeyFor(video);
   const isEpisode = Boolean(catalog.getShowKeyFor(video));
   const meta = metadata.getCached(groupKey);
-  const baseName = sanitizeName(meta.cleanName || groupKey);
+  const coreGroupKey = stripTrailingYear(groupKey);
+
+  // Si el propio nombre ya traía un año (p.ej. el usuario ya lo había puesto
+  // a mano) y el año encontrado por metadata.js no coincide, es buena señal
+  // de que ha encontrado una entrega distinta de la misma saga (p.ej.
+  // "Rompiendo las reglas" (2008) encontrando por error "Rompiendo las
+  // reglas 3" (2016)): no se toca el archivo en absoluto - ni con el
+  // título/año de TMDB (puede ser el de otra película) ni quitándole el año
+  // que ya tenía (podría ser el correcto y dejar de estarlo, además de que
+  // sin año ya no habría desajuste que detectar en una pasada posterior).
+  const existingYear = metadata.extractYear(groupKey);
+  if (existingYear && meta.year && existingYear !== String(meta.year)) return null;
+
+  const baseName = sanitizeName(meta.cleanName || coreGroupKey);
   const ext = path.extname(video.relativePath).toLowerCase();
   const dir = path.dirname(video.relativePath);
 
@@ -60,7 +97,7 @@ function buildCandidate(video) {
   const newRelativePath = dir === '.' ? newFileName : path.join(dir, newFileName);
 
   if (newRelativePath === video.relativePath) return null;
-  return { newRelativePath };
+  return { newRelativePath, groupKey };
 }
 
 // Mismo patrón que dedupe.js: el id sale de un hash de la ruta relativa, así
@@ -150,6 +187,7 @@ async function applyRename(video, newRelativePath) {
   const videosPath = getVideosPath();
   const oldAbsPath = path.join(videosPath, video.relativePath);
   const newAbsPath = path.join(videosPath, newRelativePath);
+  const oldGroupKey = catalog.metadataKeyFor(video);
 
   if (!fs.existsSync(oldAbsPath)) throw new Error('No se encuentra el archivo original en disco.');
   if (!isCaseOnlyRename(oldAbsPath, newAbsPath) && fs.existsSync(newAbsPath)) {
@@ -168,6 +206,17 @@ async function applyRename(video, newRelativePath) {
     migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.jpg`), path.join(TRICKPLAY_DIR, `${newId}.jpg`));
     migrateDir(path.join(HLS_PATH, oldId), path.join(HLS_PATH, newId));
   }
+
+  // Si la clave de metadatos cambia con el renombrado (solo pasa con
+  // películas sueltas, cuya clave es su propio nombre de archivo: ver
+  // catalog.js groupKeyFor), se lleva la caché ya encontrada (género,
+  // carátula, nombre en español) a la clave nueva, en vez de dejarla huérfana
+  // y tener que volver a buscarla de cero bajo el nombre ya renombrado.
+  const newGroupKey = catalog.metadataKeyFor({
+    relativePath: newRelativePath,
+    title: path.basename(newRelativePath, path.extname(newRelativePath)),
+  });
+  metadata.migrateCacheKey(oldGroupKey, newGroupKey);
 
   return { oldId, newId, from: video.relativePath, to: newRelativePath };
 }
@@ -254,4 +303,4 @@ async function autoNormalizeNewFiles(videos, previousIds) {
   return renamedAny;
 }
 
-module.exports = { previewCandidates, runNormalizeAll, getProgress, autoNormalizeNewFiles };
+module.exports = { previewCandidates, runNormalizeAll, getProgress, autoNormalizeNewFiles, applyRename };

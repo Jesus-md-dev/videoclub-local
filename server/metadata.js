@@ -619,6 +619,20 @@ function getCached(key) {
   return { genres: [], year: null, type: null, cleanName: null, poster: null };
 }
 
+// Para normalize.js: una película suelta (sin carpeta propia) usa su propio
+// título de archivo como clave de metadatos (ver catalog.js groupKeyFor),
+// así que renombrarla cambia su clave - sin esto, cada renombrado
+// "olvidaba" los géneros/carátula ya encontrados y tenía que volver a
+// buscarlos desde cero bajo la clave nueva (a veces peor, si la fuente de
+// repuesto acierta menos que la búsqueda original). Mueve la entrada ya
+// cacheada de la clave vieja a la nueva en vez de perderla.
+function migrateCacheKey(oldKey, newKey) {
+  if (oldKey === newKey || !cache[oldKey]) return;
+  if (!cache[newKey]) cache[newKey] = cache[oldKey];
+  delete cache[oldKey];
+  saveCache();
+}
+
 // Un reescaneo automático (uno por cada vídeo que termina de convertirse y
 // sustituye al original, más los manuales) puede llamar a esto mientras la
 // pasada anterior todavía sigue en marcha; sin este guard, se acumulaban
@@ -944,4 +958,6 @@ module.exports = {
   getForceTmdbProgress,
   forgetMetadata,
   getPosterCandidates,
+  migrateCacheKey,
+  extractYear,
 };
