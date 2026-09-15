@@ -132,6 +132,45 @@ function buildLibrary() {
   moviesList.sort((a, b) => a.title.localeCompare(b.title, 'es'));
 }
 
+// Un archivo que se está copiando/moviendo a la carpeta de vídeos (tamaño
+// todavía creciendo) no se muestra en el catálogo ni se procesa hasta que
+// termina: incluirlo a medias generaba ruido ("Permission denied" al
+// intentar leerlo mientras Windows lo tiene bloqueado por el propio
+// proceso de copia) y, peor, arriesgaba analizarlo/generar su carátula con
+// datos incompletos si el tamaño se quedaba quieto un instante a medio
+// copiar. Un archivo con el mtime reciente (menos de 2 minutos) se trata
+// con cautela: solo se da por "listo" cuando su tamaño coincide con el que
+// tenía en el escaneo anterior. El historial vive en memoria (se pierde al
+// reiniciar el servidor), así que fiarse solo de "¿tengo historial
+// previo?" ocultaría TODA la biblioteca en el primer escaneo tras cada
+// reinicio - por eso un mtime ya antiguo se da por estable directamente,
+// sin depender de ese historial.
+const RECENT_MS = 2 * 60 * 1000;
+const sizeHistory = new Map(); // video.id -> tamaño visto en el escaneo anterior
+
+function filterStableFiles(results) {
+  const now = Date.now();
+  const stillCopyingIds = new Set();
+  const seenNow = new Set();
+  for (const video of results) {
+    seenNow.add(video.id);
+    const isRecent = now - new Date(video.modifiedAt).getTime() < RECENT_MS;
+    if (isRecent) {
+      const previousSize = sizeHistory.get(video.id);
+      if (previousSize === undefined || previousSize !== video.size) {
+        stillCopyingIds.add(video.id);
+      }
+    }
+    sizeHistory.set(video.id, video.size);
+  }
+  // Limpia del historial lo que ya no está en disco (se borró/movió/ya se
+  // archivó), para no acumular basura indefinidamente.
+  for (const id of sizeHistory.keys()) {
+    if (!seenNow.has(id)) sizeHistory.delete(id);
+  }
+  return results.filter((video) => !stillCopyingIds.has(video.id));
+}
+
 async function scan() {
   const videosPath = getVideosPath();
   if (!videosPath) {
@@ -141,7 +180,7 @@ async function scan() {
     throw new Error(`La carpeta configurada no existe: ${videosPath}`);
   }
 
-  const results = await walk(videosPath);
+  const results = filterStableFiles(await walk(videosPath));
 
   // Vídeos cuyo original se borró tras generar su HLS (ver hls.js): siguen
   // en el catálogo a partir del registro, no del escaneo, porque el

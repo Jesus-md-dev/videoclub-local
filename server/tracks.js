@@ -31,6 +31,31 @@ function describeTrack(stream) {
   };
 }
 
+// Dos pistas del mismo idioma pero doblajes distintos (p.ej. "Latino" y
+// "Castellano", ambas tags.language=spa) acababan con el mismo
+// languageLabel ("Español" las dos) - el desplegable del reproductor
+// (trackLabel en el cliente, que prioriza languageLabel sobre title) las
+// mostraba indistinguibles, aunque el HLS generado sí las sirviera bien por
+// separado (ver hls.js:dedupeLabels, mismo problema de raíz, corregido ahí
+// para el propio ffmpeg - esto es la misma corrección para lo que ve el
+// usuario en la UI). Se aplica a audio y subtítulos por igual.
+function dedupeLanguageLabels(tracks) {
+  const counts = new Map();
+  for (const t of tracks) {
+    if (t.languageLabel) counts.set(t.languageLabel, (counts.get(t.languageLabel) || 0) + 1);
+  }
+  const seen = new Map();
+  return tracks.map((t) => {
+    if (!t.languageLabel || counts.get(t.languageLabel) === 1) return t;
+    if (t.title && t.title !== t.languageLabel) {
+      return { ...t, languageLabel: `${t.languageLabel} (${t.title})` };
+    }
+    const count = (seen.get(t.languageLabel) || 0) + 1;
+    seen.set(t.languageLabel, count);
+    return count > 1 ? { ...t, languageLabel: `${t.languageLabel} ${count}` } : t;
+  });
+}
+
 // Analiza los atributos CLAVE=valor (o CLAVE="valor, con comas") de una
 // línea #EXT-X-MEDIA del manifiesto HLS.
 function parseAttributes(line) {
@@ -113,12 +138,12 @@ async function getTracks(video) {
     const info = await getMediaInfo(video);
     const audio = info.streams.filter((s) => s.codec_type === 'audio').map(describeTrack);
     const subtitles = info.streams.filter((s) => s.codec_type === 'subtitle').map(describeTrack);
-    return { audio, subtitles: [...subtitles, ...downloaded] };
+    return { audio: dedupeLanguageLabels(audio), subtitles: dedupeLanguageLabels([...subtitles, ...downloaded]) };
   } catch (err) {
     const audio = readAudioTracksFromMaster(video);
     const subtitles = [...readSubtitlesFromDisk(video), ...downloaded];
     if (audio.length === 0 && subtitles.length === 0) throw err;
-    return { audio, subtitles };
+    return { audio: dedupeLanguageLabels(audio), subtitles: dedupeLanguageLabels(subtitles) };
   }
 }
 
