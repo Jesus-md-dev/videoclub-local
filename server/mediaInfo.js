@@ -54,9 +54,28 @@ function inputPathFor(video) {
   return path.join(getVideosPath(), video.relativePath);
 }
 
+// Sin límite de tiempo, un archivo que se está copiando todavía (o
+// realmente dañado) puede dejar a ffprobe esperando para siempre - y como
+// el precalentamiento en segundo plano solo tiene un "trabajador" a la vez
+// (WARM_CONCURRENCY=1 en hls.js, por la lección del disco externo saturado
+// del #67), ese único cuelgue bloqueaba TODO lo que viniera detrás sin
+// ningún aviso, incluidos vídeos añadidos después - solo se liberaba
+// reiniciando el servidor entero a mano. Con el timeout, se marca como
+// fallo puntual (reintentable desde /queue) y el resto sigue su curso solo.
+const PROBE_TIMEOUT_MS = 2 * 60 * 1000;
+
 function probeRaw(inputPath) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error('ffprobe no respondió a tiempo (el archivo podría seguir copiándose, o estar dañado).'));
+    }, PROBE_TIMEOUT_MS);
     ffmpeg.ffprobe(inputPath, (err, data) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       if (err) reject(err);
       else resolve(data);
     });
