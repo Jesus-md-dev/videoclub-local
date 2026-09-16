@@ -4,12 +4,18 @@ const crypto = require('crypto');
 const { getVideosPath, VIDEO_EXTENSIONS } = require('./config');
 const archivedVideos = require('./archivedVideos');
 const catalogOverrides = require('./catalogOverrides');
+const hls = require('./hls');
 
 let cache = [];
 let byId = new Map();
 let showsList = []; // agrupaciones con más de un vídeo (series/anime)
 let moviesList = []; // vídeos sueltos (películas)
 let showVideos = new Map(); // clave de serie -> vídeos ordenados
+// Cuántos vídeos archivados están además "perdidos" (isLost) en el último
+// escaneo - no se cuenta con lostVideos.js (registro histórico que solo
+// crece, puede tener entradas obsoletas de ids que ya no existen tras un
+// renombrado) sino en vivo, aquí mismo, cada vez que se escanea de verdad.
+let lostCount = 0;
 
 function makeId(relativePath) {
   return crypto.createHash('sha1').update(relativePath).digest('hex').slice(0, 16);
@@ -184,18 +190,28 @@ async function scan() {
 
   // Vídeos cuyo original se borró tras generar su HLS (ver hls.js): siguen
   // en el catálogo a partir del registro, no del escaneo, porque el
-  // archivo ya no está en disco.
+  // archivo ya no está en disco. Si ADEMÁS el HLS ya no existe (isLost:
+  // "vídeo perdido", ni original ni copia) no se añade al catálogo - antes
+  // se seguía mostrando en toda la web (carpetas, filtros...) sin poder
+  // reproducirse nunca, solo como ruido; ya queda apuntado aparte en
+  // "Volver a descargar" (lostVideos.js), no hace falta verlo también aquí.
   const seenIds = new Set(results.map((v) => v.id));
+  lostCount = 0;
   for (const [id, info] of Object.entries(archivedVideos.getAll())) {
     if (seenIds.has(id)) continue; // no debería pasar, pero por si acaso
-    results.push({
+    const video = {
       id,
       title: info.title,
       relativePath: info.relativePath,
       size: info.size,
       modifiedAt: info.modifiedAt,
       archived: true,
-    });
+    };
+    if (hls.isLost(video)) {
+      lostCount += 1;
+      continue;
+    }
+    results.push(video);
   }
 
   results.sort((a, b) => a.title.localeCompare(b.title, 'es'));
@@ -212,6 +228,12 @@ function getCatalog() {
 
 function getVideoById(id) {
   return byId.get(id);
+}
+
+// Para /api/queue (ver routes/queue.js): cuántos vídeos perdidos hay ahora
+// mismo, calculado en vivo en el último escaneo (ver "lostCount" arriba).
+function getLostCount() {
+  return lostCount;
 }
 
 // Lista el contenido del catálogo: sin clave, la raíz (series/anime como
@@ -240,6 +262,7 @@ module.exports = {
   scan,
   getCatalog,
   getVideoById,
+  getLostCount,
   listDir,
   metadataKeyFor: groupKeyFor,
   isGenericFolderName,

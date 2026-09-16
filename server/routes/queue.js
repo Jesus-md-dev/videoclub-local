@@ -17,7 +17,23 @@ const router = express.Router();
 // por empezar, no una posición exacta en la cola.
 router.get('/queue', (req, res) => {
   const videos = catalog.getCatalog();
-  const summary = { total: videos.length, ready: 0, processing: 0, failed: 0, pending: 0, lost: 0 };
+  // Los vídeos "perdidos" (isLost: ni original ni HLS, ver hls.js) ya no
+  // están en catalog.getCatalog() (catalog.js los excluye a propósito desde
+  // que dejaron de mostrarse en la web, a petición del usuario) - el
+  // recuento sale de catalog.getLostCount() (calculado en vivo en el último
+  // escaneo), no de lostVideos.js: ese registro solo crece con el tiempo y
+  // puede acumular entradas obsoletas (p.ej. de un id de antes de un
+  // renombrado), no refleja cuántos hay perdidos AHORA MISMO. Siguen
+  // apuntados para siempre en "Volver a descargar" (lostVideos.js) para no
+  // olvidar volver a descargarlos, eso no cambia.
+  const summary = {
+    total: videos.length,
+    ready: 0,
+    processing: 0,
+    failed: 0,
+    pending: 0,
+    lost: catalog.getLostCount(),
+  };
   const processing = [];
   const failed = [];
   const pending = [];
@@ -37,17 +53,8 @@ router.get('/queue', (req, res) => {
         elapsedMs: progress?.elapsedMs ?? null,
       });
     } else if (status === 'failed') {
-      // Un vídeo "perdido" (isLost: ni original ni HLS, ver hls.js) no es
-      // un fallo puntual a reintentar - ya queda apuntado para siempre en
-      // "Volver a descargar" (lostVideos.js). Mostrarlo mezclado con fallos
-      // reales en /queue solo añadía ruido (aquí llegaron a acumularse más
-      // de 200): se cuentan aparte y no salen en la lista detallada.
-      if (hls.isLost(video)) {
-        summary.lost += 1;
-      } else {
-        summary.failed += 1;
-        failed.push({ id: video.id, title: video.title, size: video.size, error: hls.getLastError(video) });
-      }
+      summary.failed += 1;
+      failed.push({ id: video.id, title: video.title, size: video.size, error: hls.getLastError(video) });
     } else {
       summary.pending += 1;
       pending.push({ id: video.id, title: video.title, size: video.size });
@@ -72,15 +79,14 @@ router.get('/queue', (req, res) => {
   });
 });
 
-// Botón "Resolver fallidos" de /queue: para cada vídeo marcado 'failed' que
-// NO sea ya un "perdido" conocido (esos se cuentan aparte, ver /queue más
-// arriba - su archivo nunca va a estar ahí por definición, no tiene sentido
-// comprobarlo), si el original ya no existe en disco (se borró/movió a
-// mano justo después del fallo, antes de que isLost() lo detectara como tal
-// porque en ese momento sí lo estaba) se reescanea el catálogo al final
-// para que desaparezca del todo. Si el archivo sigue ahí, se reintenta de
-// verdad (mismo mecanismo que el botón "Reintentar" de cada fila), por si
-// fue un fallo puntual (disco externo con hipos, GPU ocupada...).
+// Botón "Resolver fallidos" de /queue: para cada vídeo marcado 'failed'
+// (los "perdidos" ya no pasan por aquí en absoluto - ni siquiera están en
+// catalog.getCatalog(), ver catalog.js), si el original ya no existe en
+// disco (se borró/movió a mano justo después del fallo) se reescanea el
+// catálogo al final para que desaparezca del todo. Si el archivo sigue ahí,
+// se reintenta de verdad (mismo mecanismo que el botón "Reintentar" de cada
+// fila), por si fue un fallo puntual (disco externo con hipos, GPU
+// ocupada...).
 router.post('/queue/resolve-failed', async (req, res) => {
   const videosPath = getVideosPath();
   const videos = catalog.getCatalog();
@@ -88,7 +94,7 @@ router.post('/queue/resolve-failed', async (req, res) => {
   let missing = 0;
 
   for (const video of videos) {
-    if (hls.getStatus(video) !== 'failed' || hls.isLost(video)) continue;
+    if (hls.getStatus(video) !== 'failed') continue;
     const exists = videosPath && fs.existsSync(path.join(videosPath, video.relativePath));
     if (exists) {
       hls.retry(video);
