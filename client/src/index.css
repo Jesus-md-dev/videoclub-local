@@ -607,6 +607,22 @@ main {
   background: var(--accent-glow);
 }
 
+.quickinfo-actions button.secondary {
+  background: transparent;
+  color: var(--text-dim);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 22px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.quickinfo-actions button.secondary:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 /* ---- Elegir carátula (PosterPicker.jsx): 3 fichas candidatas de TMDB
    para corregir a mano cuando la búsqueda automática se equivoca. ---- */
 .poster-picker {
