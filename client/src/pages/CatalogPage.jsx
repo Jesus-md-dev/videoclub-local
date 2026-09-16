@@ -6,6 +6,7 @@ import { track } from '../analytics';
 import HiddenMenu from '../components/HiddenMenu';
 import Row from '../components/Row';
 import QuickInfoModal from '../components/QuickInfoModal';
+import ServerUnreachable from '../components/ServerUnreachable';
 
 function processingBadgeLabel(state, percent) {
   if (state === 'active') return `Procesando… ${typeof percent === 'number' ? `${percent}%` : ''}`.trim();
@@ -40,28 +41,20 @@ function continueWatchingIds(progressMap) {
 // previa (como Netflix: no salta a la primera pasada rápida del ratón).
 const HOVER_PREVIEW_DELAY_MS = 500;
 
-function VideoCard({ video, progress, onRemove, onQuickInfo }) {
-  const showProgress = progress && progress.ratio < 0.95;
-  // Terminado del todo (no a medias, eso ya lo cubre "Continuar"): se
-  // excluyen del todo los mismos que "showProgress", así que nunca
-  // coinciden en la misma carátula.
-  const showWatched = progress && progress.ratio >= 0.95;
-  const posterSrc = video.poster || `/api/thumbnail/${video.id}`;
-  // El nombre limpio es el de la serie (mismo para todos sus episodios), así
-  // que en un episodio taparía el número; solo se usa en películas sueltas.
-  const displayTitle = video.seriesKey ? video.title : video.cleanName || video.title;
-  const processingLabel = processingBadgeLabel(video.processingState, video.processingPercent);
-
-  // Vista previa en movimiento al pasar el ratón (estilo Netflix): solo si
-  // el HLS de este vídeo ya está generado (si no, tocaría esperar a que
-  // termine solo por pasar el ratón por encima, mala idea).
+// Vista previa en movimiento al pasar el ratón (estilo Netflix): solo si el
+// HLS de ese vídeo ya está generado (si no, tocaría esperar a que termine
+// solo por pasar el ratón por encima, mala idea). Compartido entre
+// VideoCard (su propio vídeo) y FolderCard (el primer episodio de la
+// serie, para tener algo que previsualizar aunque la carpeta en sí no sea
+// un vídeo).
+function useHoverPreview(videoId, ready) {
   const [previewing, setPreviewing] = useState(false);
   const hoverTimer = useRef(null);
   const videoElRef = useRef(null);
   const hlsRef = useRef(null);
 
   const startHover = () => {
-    if (!video.hlsReady) return;
+    if (!ready) return;
     clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => setPreviewing(true), HOVER_PREVIEW_DELAY_MS);
   };
@@ -75,7 +68,7 @@ function VideoCard({ video, progress, onRemove, onQuickInfo }) {
     if (!previewing) return undefined;
     const el = videoElRef.current;
     if (!el) return undefined;
-    const masterUrl = `/api/hls/${video.id}/master.m3u8`;
+    const masterUrl = `/api/hls/${videoId}/master.m3u8`;
 
     if (Hls.isSupported()) {
       const instance = new Hls();
@@ -94,7 +87,24 @@ function VideoCard({ video, progress, onRemove, onQuickInfo }) {
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [previewing, video.id]);
+  }, [previewing, videoId]);
+
+  return { previewing, videoElRef, startHover, endHover };
+}
+
+function VideoCard({ video, progress, onRemove, onQuickInfo }) {
+  const showProgress = progress && progress.ratio < 0.95;
+  // Terminado del todo (no a medias, eso ya lo cubre "Continuar"): se
+  // excluyen del todo los mismos que "showProgress", así que nunca
+  // coinciden en la misma carátula.
+  const showWatched = progress && progress.ratio >= 0.95;
+  const posterSrc = video.poster || `/api/thumbnail/${video.id}`;
+  // El nombre limpio es el de la serie (mismo para todos sus episodios), así
+  // que en un episodio taparía el número; solo se usa en películas sueltas.
+  const displayTitle = video.seriesKey ? video.title : video.cleanName || video.title;
+  const processingLabel = processingBadgeLabel(video.processingState, video.processingPercent);
+
+  const { previewing, videoElRef, startHover, endHover } = useHoverPreview(video.id, video.hlsReady);
 
   return (
     <Link className="card" to={`/watch/${video.id}`} onMouseEnter={startHover} onMouseLeave={endHover}>
@@ -173,8 +183,18 @@ function FolderCard({ folder, onOpen, onQuickInfo }) {
   const showSeriesProgress = seriesProgress && seriesProgress.watched > 0;
   const showSeriesWatched = seriesProgress && seriesProgress.ratio >= 1;
 
+  // Una carpeta no es un vídeo en sí, pero folder.thumbnailId ya es el
+  // primer episodio (ver catalog.js buildLibrary) - se usa ese HLS para la
+  // vista previa, igual que en VideoCard con su propio vídeo.
+  const { previewing, videoElRef, startHover, endHover } = useHoverPreview(folder.thumbnailId, folder.firstVideoReady);
+
   return (
-    <button className="card folder-card" onClick={() => onOpen(folder.path)}>
+    <button
+      className="card folder-card"
+      onClick={() => onOpen(folder.path)}
+      onMouseEnter={startHover}
+      onMouseLeave={endHover}
+    >
       {showSeriesWatched && <span className="badge badge-watched">✓ Completa</span>}
       {processingLabel && (
         <span className={`badge badge-processing badge-${folder.processingState}`}>{processingLabel}</span>
@@ -200,16 +220,20 @@ function FolderCard({ folder, onOpen, onQuickInfo }) {
         ⓘ
       </span>
       {posterSrc ? (
-        <img
-          className="poster"
-          src={posterSrc}
-          alt={displayName}
-          loading="lazy"
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src = '/placeholder.svg';
-          }}
-        />
+        previewing ? (
+          <video ref={videoElRef} className="poster poster-preview" muted loop playsInline autoPlay />
+        ) : (
+          <img
+            className="poster"
+            src={posterSrc}
+            alt={displayName}
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = '/placeholder.svg';
+            }}
+          />
+        )
       ) : (
         <div className="folder-icon">📁</div>
       )}
@@ -598,7 +622,7 @@ export default function CatalogPage() {
           </>
         )}
 
-        {error && <p className="empty-state">{error}</p>}
+        {error && <ServerUnreachable onRetry={() => setCatalogVersion((v) => v + 1)} />}
         {isEmpty && (
           <p className="empty-state">
             {searching ? 'No hay resultados para tu búsqueda.' : 'Esta carpeta está vacía.'}

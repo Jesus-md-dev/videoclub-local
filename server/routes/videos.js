@@ -125,6 +125,11 @@ router.get('/videos/browse', (req, res) => {
         processingPercent,
         hlsCompletion: folderHlsCompletion(folderVideos),
         seriesProgress: seriesProgressFor(folderVideos, profileProgress),
+        // Para la vista previa al pasar el ratón sobre la carátula de la
+        // serie (folder.thumbnailId es justo el primer episodio, mismo
+        // orden que folderVideos[0] - ver catalog.js buildLibrary): solo
+        // tiene sentido intentarla si su HLS ya está generado.
+        firstVideoReady: folderVideos.length > 0 && hls.getStatus(folderVideos[0]) === 'ready',
       };
     }),
     videos: videos.map((video) => {

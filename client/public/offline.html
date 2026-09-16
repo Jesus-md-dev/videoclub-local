@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Videoclub Local</title>
+    <style>
+      /* Página estática, sin React: la sirve el Service Worker cuando ni
+         siquiera se puede cargar el shell de la app (arranque en frío sin
+         conexión al servidor), en vez del error genérico de Chrome. Mismo
+         look "videoclub de barrio" que el resto de la web, pero
+         autocontenida (sin depender de index.css ni de nada del build). */
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0c1a33;
+        color: #f5ecd8;
+        font-family: system-ui, sans-serif;
+        text-align: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      .box {
+        max-width: 420px;
+      }
+      h1 {
+        color: #ffc94a;
+        font-size: 22px;
+        margin: 0 0 12px;
+      }
+      p {
+        color: #aebbdc;
+        line-height: 1.5;
+        margin: 0 0 24px;
+      }
+      button {
+        background: #ffc94a;
+        color: #241a04;
+        border: none;
+        font-weight: bold;
+        padding: 12px 24px;
+        border-radius: 6px;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #ffe08a;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>No se puede conectar con Videoclub Local</h1>
+      <p>Comprueba que estás conectado a la misma red que el servidor y que está encendido.</p>
+      <button onclick="location.reload()">Reintentar</button>
+    </div>
+  </body>
+</html>

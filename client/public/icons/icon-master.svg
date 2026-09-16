@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Fondo sólido (necesario para el icono "maskable": Android puede
+       recortar el icono con cualquier forma, así que no puede depender de
+       transparencia). Mismo azul noche que el resto de la web. -->
+  <rect width="512" height="512" fill="#0c1a33" />
+
+  <!-- "V" dorada tipo rótulo en relieve (sombra dura, sin difuminar, igual
+       estética que las carátulas/botones de la propia web) - dentro de la
+       zona de seguridad del 80% central para no perder nada con máscaras
+       redondas/squircle. -->
+  <g>
+    <polygon
+      points="126,140 256,372 386,140 316,140 256,246 196,140"
+      fill="#060c1c"
+      transform="translate(10,14)"
+    />
+    <polygon
+      points="126,140 256,372 386,140 316,140 256,246 196,140"
+      fill="#ffc94a"
+    />
+  </g>
+</svg>

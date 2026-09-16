@@ -752,6 +752,29 @@ main {
   font-size: 16px;
 }
 
+.server-unreachable-title {
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: bold;
+  margin: 0 0 8px;
+}
+
+.server-unreachable .retry-btn {
+  margin-top: 16px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: none;
+  font-weight: bold;
+  padding: 10px 22px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.server-unreachable .retry-btn:hover {
+  background: var(--accent-glow);
+}
+
 .watch-header {
   display: flex;
   flex-wrap: wrap;
