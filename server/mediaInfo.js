@@ -26,7 +26,7 @@ const memo = new Map(); // video.id -> ffprobe data (memoria, solo para esta eje
 // tamaño+fecha de modificación que tenía el archivo al analizarlo, para
 // solo repetir el análisis si el archivo ha cambiado de verdad.
 const CODEC_CHECKS_FILE = path.join(DATA_PATH, 'codec-checks.json');
-const store = loadStore();
+let store = loadStore();
 let saveTimer = null;
 
 function loadStore() {
@@ -37,12 +37,14 @@ function loadStore() {
   }
 }
 
+function writeStore() {
+  fs.mkdirSync(DATA_PATH, { recursive: true });
+  fs.writeFileSync(CODEC_CHECKS_FILE, JSON.stringify(store));
+}
+
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    fs.mkdirSync(DATA_PATH, { recursive: true });
-    fs.writeFileSync(CODEC_CHECKS_FILE, JSON.stringify(store));
-  }, 2000);
+  saveTimer = setTimeout(writeStore, 2000);
 }
 
 function fingerprint(video) {
@@ -133,4 +135,18 @@ function pruneStore(currentIds) {
   if (changed) scheduleSave();
 }
 
-module.exports = { ffmpeg, getMediaInfo, inputPathFor, pruneStore, migrateEntry, ffprobePath };
+// Para POST /api/admin/reload (ver adminReload.js): recarga codec-checks.json
+// desde disco por si algo lo editó por fuera de este proceso. Antes hace
+// *flush* del guardado diferido pendiente (scheduleSave, 2s de debounce) -
+// si no, un análisis de ffprobe recién terminado y aún no escrito a disco se
+// perdería sin más al machacarse "store" con lo que hubiera en el archivo.
+function reloadStore() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    writeStore();
+  }
+  store = loadStore();
+}
+
+module.exports = { ffmpeg, getMediaInfo, inputPathFor, pruneStore, migrateEntry, ffprobePath, reloadStore };

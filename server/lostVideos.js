@@ -97,4 +97,11 @@ function forget(id) {
   }
 }
 
-module.exports = { recordLost, forget };
+// Para POST /api/admin/reload (ver adminReload.js): recarga desde disco por
+// si algo editó lost-videos.json por fuera de este proceso (migración,
+// restauración de backup...) sin tener que reiniciar el servidor entero.
+function reloadRegistry() {
+  registry = loadRegistry();
+}
+
+module.exports = { recordLost, forget, reloadRegistry };

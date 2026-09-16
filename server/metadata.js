@@ -50,6 +50,26 @@ function saveOverrides() {
 
 let overrides = loadOverrides();
 
+// Para POST /api/admin/reload (ver adminReload.js): recarga metadata.json
+// desde disco por si algo lo editó por fuera de este proceso (migración,
+// restauración de backup - el bug real que motivó esta función: una
+// carátula se sirvió como null tras editar metadata.json a mano sin
+// reiniciar). Si una clave que antes fallaba ahora ya tiene metadata en el
+// archivo recargado, se olvida su cooldown de fallo - si no, seguiría
+// ignorada hasta que expirase solo.
+function reloadCache() {
+  cache = loadCache();
+  for (const key of failedAt.keys()) {
+    if (cache[key]) failedAt.delete(key);
+  }
+}
+
+// Separado de reloadCache a propósito: metadata.json y metadata-overrides.json
+// tienen dueños y frecuencias de cambio distintas.
+function reloadOverrides() {
+  overrides = loadOverrides();
+}
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -963,4 +983,6 @@ module.exports = {
   getPosterCandidates,
   migrateCacheKey,
   extractYear,
+  reloadCache,
+  reloadOverrides,
 };

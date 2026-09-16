@@ -56,6 +56,7 @@ const normalizeRouter = require('./routes/normalize');
 const subdlRouter = require('./routes/subdl');
 const healthRouter = require('./routes/health');
 const dlnaRouter = require('./routes/dlna');
+const adminRouter = require('./routes/admin');
 
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
@@ -102,6 +103,7 @@ app.use('/api', normalizeRouter);
 app.use('/api', subdlRouter);
 app.use('/api', healthRouter);
 app.use('/api', dlnaRouter);
+app.use('/api', adminRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });

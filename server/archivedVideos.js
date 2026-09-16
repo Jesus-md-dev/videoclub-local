@@ -68,4 +68,11 @@ function rename(oldId, newId, info) {
   save();
 }
 
-module.exports = { archive, isArchived, getAll, forget, rename };
+// Para POST /api/admin/reload (ver adminReload.js): recarga desde disco por
+// si algo editó hls-archived.json por fuera de este proceso (migración,
+// restauración de backup...) sin tener que reiniciar el servidor entero.
+function reloadRegistry() {
+  registry = load();
+}
+
+module.exports = { archive, isArchived, getAll, forget, rename, reloadRegistry };

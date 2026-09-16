@@ -34,4 +34,11 @@ function setUngrouped(key, value) {
   save();
 }
 
-module.exports = { isUngrouped, setUngrouped };
+// Para POST /api/admin/reload (ver adminReload.js): recarga desde disco por
+// si algo editó catalog-ungrouped.json por fuera de este proceso (migración,
+// restauración de backup...) sin tener que reiniciar el servidor entero.
+function reloadUngrouped() {
+  ungrouped = load();
+}
+
+module.exports = { isUngrouped, setUngrouped, reloadUngrouped };
