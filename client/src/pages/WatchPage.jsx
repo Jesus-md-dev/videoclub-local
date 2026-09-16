@@ -349,6 +349,13 @@ export default function WatchPage() {
       } else if (saved && saved.ratio < 0.95) {
         player.currentTime = saved.time;
       }
+      // El atributo "autoPlay" del <video> debería bastar al remontar (cambio
+      // de pista de audio, reintento tras un corte...), pero depender solo
+      // de él es frágil: si el navegador no lo concede a tiempo, el vídeo se
+      // queda pausado sin más aviso. Forzarlo aquí es la misma recuperación
+      // ya usada para reanudar la posición, así no hace falta un segundo
+      // gesto del usuario para que retome la reproducción.
+      player.play().catch(() => {});
     };
     const onPause = () => saveProgress(profileId, id, player);
     const onEnded = () => {
