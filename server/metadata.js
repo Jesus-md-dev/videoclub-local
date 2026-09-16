@@ -751,6 +751,7 @@ async function fetchTmdbFixedEntry({ tmdbType, tmdbId, season }) {
 
     // Una temporada concreta puede tener su propia carátula distinta a la
     // del show en general (justo el caso de ".hack//Sign" temporada 1).
+    let seasonName = null;
     if (season != null) {
       const seasonRes = await throttledFetch(
         `https://api.themoviedb.org/3/tv/${tmdbId}/season/${season}?api_key=${TMDB_API_KEY()}&language=es-ES`,
@@ -761,14 +762,29 @@ async function fetchTmdbFixedEntry({ tmdbType, tmdbId, season }) {
       if (seasonRes.ok) {
         const s = await seasonRes.json();
         if (s.poster_path) poster = `https://image.tmdb.org/t/p/w500${s.poster_path}`;
+        seasonName = s.name || null;
       }
     }
+
+    // Algunos animes (Digimon Adventure/02, Dragon Ball/Z...) están en TMDB
+    // como temporadas de un único show, con el mismo nombre para todas -
+    // sin esto, dos carpetas locales distintas fijadas a temporadas
+    // distintas del mismo show acaban mostrando el mismo título ("Digimon"
+    // a secas para ambas). TMDB tampoco da un nombre útil por temporada en
+    // español (siempre "Temporada N", genérico), así que se numera a mano
+    // con el mismo criterio que ya usan las carpetas locales.
+    const cleanName =
+      season != null && season > 1 && seasonName && /^temporada \d+$/i.test(seasonName)
+        ? `${t.name} ${season}`
+        : seasonName && !/^temporada \d+$/i.test(seasonName)
+          ? seasonName
+          : t.name || null;
 
     entry = {
       genres: normalizeGenres([...(t.genres || []).map((g) => g.name), ...(isAnime ? ['anime'] : [])]),
       year: t.first_air_date ? t.first_air_date.slice(0, 4) : null,
       type: isAnime ? 'anime' : 'tv',
-      cleanName: t.name || null,
+      cleanName,
       poster,
     };
   } else {

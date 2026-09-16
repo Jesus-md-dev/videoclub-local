@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
-const { ffmpeg, getMediaInfo, inputPathFor, ffprobePath } = require('./mediaInfo');
+const { ffmpeg, getMediaInfo, inputPathFor, ffprobePath, forgetAnalysis } = require('./mediaInfo');
 const { HLS_PATH } = require('./config');
 const { runLimited } = require('./ffmpeg-limiter');
 const subtitles = require('./subtitles');
@@ -551,6 +551,11 @@ function retry(video) {
   if (isLost(video)) return 'failed';
   status.delete(video.id);
   lastError.delete(video.id);
+  // Sin esto, un vídeo que falló una vez por estar roto/incompleto y luego
+  // se sustituyó por uno bueno (p.ej. se volvió a descargar) seguía dando el
+  // mismo error para siempre: getMediaInfo memoiza en RAM y esa memoria no
+  // caduca sola dentro del mismo proceso (ver mediaInfo.js:forgetAnalysis).
+  forgetAnalysis(video.id);
   return ensureGenerating(video, 'high');
 }
 

@@ -135,6 +135,23 @@ function pruneStore(currentIds) {
   if (changed) scheduleSave();
 }
 
+// Para el botón "Reintentar"/"Resolver fallidos" (ver hls.js:retry): getMediaInfo
+// memoiza en RAM el resultado por video.id y esa memoria nunca caduca sola -
+// solo la comprueba la primera vez en todo el proceso. Si un archivo se
+// analizó una vez estando roto/incompleto (por eso falló) y luego se
+// reemplaza por uno bueno (p.ej. se vuelve a descargar), el fingerprint en
+// disco (codec-checks.json) sí detecta el cambio de tamaño/fecha, pero la
+// memoria en RAM ni lo mira: seguía devolviendo el análisis viejo para
+// siempre, así que "Reintentar" repetía el mismo error aunque el archivo ya
+// estuviera bien, hasta reiniciar el servidor entero. Solo se borra la
+// memoria en RAM, no la entrada persistida en disco (codec-checks.json): esa
+// ya se revalida sola por fingerprint (tamaño+fecha) en cada llamada, y para
+// un vídeo ARCHIVADO (original ya borrado) es la única prueba que queda de
+// qué pistas tenía - no se puede volver a analizar nunca, así que no se toca.
+function forgetAnalysis(id) {
+  memo.delete(id);
+}
+
 // Para POST /api/admin/reload (ver adminReload.js): recarga codec-checks.json
 // desde disco por si algo lo editó por fuera de este proceso. Antes hace
 // *flush* del guardado diferido pendiente (scheduleSave, 2s de debounce) -
@@ -149,4 +166,13 @@ function reloadStore() {
   store = loadStore();
 }
 
-module.exports = { ffmpeg, getMediaInfo, inputPathFor, pruneStore, migrateEntry, ffprobePath, reloadStore };
+module.exports = {
+  ffmpeg,
+  getMediaInfo,
+  inputPathFor,
+  pruneStore,
+  migrateEntry,
+  ffprobePath,
+  reloadStore,
+  forgetAnalysis,
+};
