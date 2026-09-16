@@ -273,31 +273,49 @@ function GenreFilter({ genres, active, onToggle }) {
 // Dentro de una serie todos los episodios comparten género/tipo (son la
 // misma obra), así que el filtro de género no aporta nada ahí - solo tiene
 // sentido en la raíz del catálogo, donde sí se mezclan obras distintas. Lo
-// único que puede variar dentro de una serie es la temporada.
-function SeasonFilter({ seasons, active, onToggle }) {
-  if (seasons.length < 2) return null;
+// único que puede variar dentro de una serie es la temporada (o, en series
+// con ediciones de fans reordenadas por arco argumental en vez de por
+// temporada numerada - ver extractGroup -, el arco).
+function EpisodeGroupFilter({ groups, active, onToggle }) {
+  if (groups.length < 2) return null;
   return (
     <div className="genre-filter">
-      {seasons.map((season) => (
+      {groups.map((group) => (
         <button
-          key={season}
-          className={`chip ${active === season ? 'chip-active' : ''}`}
-          onClick={() => onToggle(season)}
+          key={group.key}
+          className={`chip ${active === group.key ? 'chip-active' : ''}`}
+          onClick={() => onToggle(group.key)}
         >
-          Temporada {season}
+          {group.label}
         </button>
       ))}
     </div>
   );
 }
 
-// El catálogo no modela "temporada" como campo propio (ver catalog.js:
-// groupKeyFor trata las subcarpetas de temporada como genéricas, agrupando
-// todo bajo la obra) - se extrae del propio título del episodio, con el
-// patrón "SxxEyy" ya usado en toda la biblioteca (p.ej. "S01E02").
-function extractSeason(title) {
-  const m = title.match(/S(\d{1,2})E\d{1,3}/i);
-  return m ? Number(m[1]) : null;
+// El catálogo no modela "temporada"/"arco" como campo propio (ver
+// catalog.js: groupKeyFor trata las subcarpetas de temporada como
+// genéricas, agrupando todo bajo la obra) - se extrae del propio título del
+// episodio. Dos patrones reales en la biblioteca:
+// - "SxxEyy" (la inmensa mayoría, p.ej. "S01E02").
+// - Ediciones de fans tipo "One Pace" (One Piece reordenado por arco
+//   argumental en vez de por temporada de emisión), en dos formatos según
+//   si ya pasaron por el normalizador de nombres o no:
+//     "One Piece [One Pace] - Dressrosa - E01" (normalizado)
+//     "[One Pace][700-800] Dressrosa 01 [720p][Es Sub][XXXX]" (en bruto)
+function extractGroup(title) {
+  const seasonMatch = title.match(/S(\d{1,2})E\d{1,3}/i);
+  if (seasonMatch) {
+    const n = Number(seasonMatch[1]);
+    return { key: `s${n}`, label: `Temporada ${n}`, order: n };
+  }
+  const arcMatch =
+    title.match(/\[One Pace\]\s*-\s*(.+?)\s*-\s*E\d+/i) || title.match(/\[One Pace\]\[\d+-\d+\]\s*(.+?)\s+\d+\s*\[/i);
+  if (arcMatch) {
+    const name = arcMatch[1].trim();
+    return { key: `arc:${name}`, label: name, order: null };
+  }
+  return null;
 }
 
 function Breadcrumb({ dir, onNavigate }) {
@@ -328,7 +346,7 @@ export default function CatalogPage() {
   const term = searchParams.get('q') || '';
 
   const genre = searchParams.get('genre') || '';
-  const season = searchParams.get('season') ? Number(searchParams.get('season')) : null;
+  const groupKey = searchParams.get('group') || null;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -482,11 +500,11 @@ export default function CatalogPage() {
     }
     setSearchParams(params);
   };
-  const toggleSeason = (s) => {
+  const toggleGroup = (key) => {
     const params = { dir };
-    if (s !== season) {
-      params.season = String(s);
-      track('season_filter', { season: s });
+    if (key !== groupKey) {
+      params.group = key;
+      track('episode_group_filter', { group: key });
     }
     setSearchParams(params);
   };
@@ -505,18 +523,26 @@ export default function CatalogPage() {
 
   // Solo tiene sentido dentro de una serie (fuera de ahí "genre" ya filtra
   // obras completas, no episodios sueltos de una misma obra).
-  const seasons = useMemo(() => {
+  const groups = useMemo(() => {
     if (!dir) return [];
-    const set = new Set();
+    const map = new Map();
     for (const v of videos) {
-      const s = extractSeason(v.title);
-      if (s != null) set.add(s);
+      const g = extractGroup(v.title);
+      if (g && !map.has(g.key)) map.set(g.key, g);
     }
-    return [...set].sort((a, b) => a - b);
+    const list = [...map.values()];
+    // Temporadas numeradas: orden numérico. Arcos con nombre (sin número
+    // que ordenar): se dejan en el orden en que aparecen los episodios
+    // (videos ya viene ordenado por nombre de archivo/relativePath, que es
+    // el orden real de la historia para estas ediciones de fans).
+    if (list.every((g) => g.order != null)) list.sort((a, b) => a.order - b.order);
+    return list;
   }, [dir, videos]);
 
   const visibleVideos =
-    dir && season != null ? genreFilteredVideos.filter((v) => extractSeason(v.title) === season) : genreFilteredVideos;
+    dir && groupKey != null
+      ? genreFilteredVideos.filter((v) => extractGroup(v.title)?.key === groupKey)
+      : genreFilteredVideos;
 
   // En la raíz, las carpetas (series/anime) se separan en dos filas según
   // el tipo detectado por las fuentes de metadatos; dentro de una carpeta
@@ -547,7 +573,7 @@ export default function CatalogPage() {
       <main>
         {!searching && <Breadcrumb dir={dir} onNavigate={goToDir} />}
         {!searching && !dir && <GenreFilter genres={genres} active={genre} onToggle={toggleGenre} />}
-        {!searching && dir && <SeasonFilter seasons={seasons} active={season} onToggle={toggleSeason} />}
+        {!searching && dir && <EpisodeGroupFilter groups={groups} active={groupKey} onToggle={toggleGroup} />}
 
         {searching && (
           <>
