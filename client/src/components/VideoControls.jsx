@@ -62,14 +62,13 @@ export default function VideoControls({
   const [fullscreen, setFullscreen] = useState(false);
   const [subtitleIndex, setSubtitleIndex] = useState(-1);
   const [subtitleSettingsOpen, setSubtitleSettingsOpen] = useState(false);
+  const [subtitleSearchOpen, setSubtitleSearchOpen] = useState(false);
   const [subtitleSearchResults, setSubtitleSearchResults] = useState(null);
   const [subtitleSearchLoading, setSubtitleSearchLoading] = useState(false);
   const [subtitleSearchError, setSubtitleSearchError] = useState(null);
-  // Mientras se descarga un subtítulo elegido de la lista de búsqueda (aún
-  // no está en subtitleTracks, así que no tiene una posición real todavía):
-  // se refleja como seleccionado en el propio desplegable (en vez de un
-  // panel aparte) usando este valor especial en vez de una posición.
-  const [pendingSearchIndex, setPendingSearchIndex] = useState(null);
+  // Posición (dentro de subtitleSearchResults) del resultado que se está
+  // descargando ahora mismo, para mostrar "Descargando…" solo en ese botón.
+  const [downloadingIndex, setDownloadingIndex] = useState(null);
   // El streamIndex ("ext<hash>"/"os<fileId>") del subtítulo recién
   // descargado: en cuanto aparece en subtitleTracks (tras onSubtitlesDownloaded,
   // que vuelve a pedir /api/tracks) se activa solo, sin que haga falta
@@ -246,17 +245,18 @@ export default function VideoControls({
     video.muted = !video.muted;
   };
 
-  // Cierra el panel de ajustes al hacer clic fuera de él.
+  // Cierra el panel abierto (ajustes o búsqueda) al hacer clic fuera de él.
   useEffect(() => {
-    if (!subtitleSettingsOpen) return undefined;
+    if (!subtitleSettingsOpen && !subtitleSearchOpen) return undefined;
     const onClickOutside = (e) => {
       if (subtitleSettingsRef.current && !subtitleSettingsRef.current.contains(e.target)) {
         setSubtitleSettingsOpen(false);
+        setSubtitleSearchOpen(false);
       }
     };
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
-  }, [subtitleSettingsOpen]);
+  }, [subtitleSettingsOpen, subtitleSearchOpen]);
 
   // En cuanto el subtítulo recién descargado aparece en subtitleTracks (tras
   // onSubtitlesDownloaded, que vuelve a pedir /api/tracks), se activa solo -
@@ -309,10 +309,9 @@ export default function VideoControls({
   // Busca subtítulos en SubDL usando el título del vídeo (server/routes/
   // subdl.js ya saca el nombre limpio y la temporada/episodio del
   // catálogo) - sin caja de texto que rellenar, como el resto de la app.
-  // Los resultados se añaden como opciones más dentro del mismo
-  // desplegable de subtítulos, no en un panel aparte.
+  // Los resultados se muestran en su propio panel (subtitleSearchOpen),
+  // separado del desplegable de pistas ya disponibles.
   const searchSubtitles = () => {
-    setSubtitleSettingsOpen(false);
     setSubtitleSearchLoading(true);
     setSubtitleSearchError(null);
     fetch('/api/subdl/search', {
@@ -329,18 +328,16 @@ export default function VideoControls({
       .finally(() => setSubtitleSearchLoading(false));
   };
 
-  // Elegir "Buscar subtítulos" en el <select> cierra el desplegable (así
-  // funciona cualquier <select> nativo al elegir una opción) - había que
-  // volver a abrirlo para ver los resultados. Para no depender de ese clic,
-  // se busca sola en cuanto se sabe que SubDL está configurado: los
-  // resultados ya están dentro del desplegable la primera vez que se abre.
+  // Se busca sola en cuanto se sabe que SubDL está configurado, así los
+  // resultados ya están listos la primera vez que se abre el panel de
+  // búsqueda (sin caja de texto que rellenar, como el resto de la app).
   useEffect(() => {
     if (subtitleSearchReady) searchSubtitles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subtitleSearchReady]);
 
   const downloadSubtitle = (result, searchPos) => {
-    setPendingSearchIndex(searchPos);
+    setDownloadingIndex(searchPos);
     setSubtitleSearchError(null);
     fetch('/api/subdl/download', {
       method: 'POST',
@@ -355,45 +352,28 @@ export default function VideoControls({
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         if (!ok) throw new Error(data.error || 'No se pudo descargar');
-        // Ya descargado: se quita de "buscar y descargar" (ya no tiene
+        // Ya descargado: se quita de la lista de resultados (ya no tiene
         // sentido ofrecerlo ahí) y se deja preparado para activarse solo en
         // cuanto subtitleTracks lo incluya (ver el efecto de arriba).
         setSubtitleSearchResults((prev) => prev?.filter((_, i) => i !== searchPos) ?? null);
         setPendingActivateStreamIndex(String(data.index));
+        setSubtitleSearchOpen(false);
         onSubtitlesDownloaded?.();
       })
       .catch((err) => {
         setSubtitleSearchError(err.message);
-        setPendingSearchIndex(null);
-      });
+      })
+      .finally(() => setDownloadingIndex(null));
   };
 
-  // Valor mostrado en el desplegable: una posición real (número, o -1 =
-  // desactivados) mientras no haya nada descargándose; el índice dentro de
-  // subtitleSearchResults (con el prefijo "search-") mientras se está
-  // descargando el elegido de la lista de búsqueda.
-  const selectValue = pendingSearchIndex != null ? `search-${pendingSearchIndex}` : subtitleIndex;
-
   const handleSubtitleChange = (e) => {
-    const { value } = e.target;
-    if (value === 'trigger-search') {
-      searchSubtitles();
-      return;
-    }
-    if (value.startsWith('search-')) {
-      const searchPos = Number(value.slice('search-'.length));
-      const result = subtitleSearchResults?.[searchPos];
-      if (result) downloadSubtitle(result, searchPos);
-      return;
-    }
     const video = videoRef.current;
     if (!video) return;
-    const next = Number(value);
+    const next = Number(e.target.value);
     for (let i = 0; i < video.textTracks.length; i += 1) {
       video.textTracks[i].mode = i === next ? 'showing' : 'hidden';
     }
     setSubtitleIndex(next);
-    setPendingSearchIndex(null);
     // Se recuerda por idioma (no por posición: no coincide entre archivos),
     // igual que el idioma de audio - "desactivados" (next === -1) también se
     // guarda, para abrir sin subtítulos la próxima vez si así se prefiere.
@@ -504,42 +484,37 @@ export default function VideoControls({
           <div className="subtitle-controls" ref={subtitleSettingsRef}>
             <select
               className="track-select"
-              value={selectValue}
+              value={subtitleIndex}
               onChange={handleSubtitleChange}
               aria-label="Subtítulos"
             >
               <option value={-1}>Subtítulos: Desactivados</option>
-              {subtitleTracks.length > 0 && (
-                <optgroup label="Disponibles">
-                  {subtitleTracks.map((subtitleTrack, i) => (
-                    <option key={subtitleTrack.index} value={i}>
-                      {trackLabel(subtitleTrack)} ({subtitleSourceLabel(subtitleTrack)})
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {subtitleSearchReady && (
-                <optgroup label="Buscar y descargar">
-                  <option value="trigger-search" disabled={subtitleSearchLoading}>
-                    {subtitleSearchLoading
-                      ? 'Buscando…'
-                      : subtitleSearchResults === null
-                        ? '🔍 Buscar subtítulos'
-                        : '🔄 Buscar de nuevo'}
-                  </option>
-                  {subtitleSearchResults?.map((result, i) => (
-                    <option key={result.fileId} value={`search-${i}`}>
-                      {pendingSearchIndex === i ? 'Descargando… ' : ''}
-                      {result.release} (SubDL)
-                    </option>
-                  ))}
-                </optgroup>
-              )}
+              {subtitleTracks.map((subtitleTrack, i) => (
+                <option key={subtitleTrack.index} value={i}>
+                  {trackLabel(subtitleTrack)} ({subtitleSourceLabel(subtitleTrack)})
+                </option>
+              ))}
             </select>
+            {subtitleSearchReady && (
+              <button
+                className={`control-btn ${subtitleSearchOpen ? 'control-btn-active' : ''}`}
+                onClick={() => {
+                  setSubtitleSettingsOpen(false);
+                  setSubtitleSearchOpen((v) => !v);
+                }}
+                aria-label="Buscar subtítulos"
+                title="Buscar subtítulos en SubDL"
+              >
+                🔍
+              </button>
+            )}
             {subtitleTracks.length > 0 && (
               <button
                 className={`control-btn ${subtitleSettingsOpen ? 'control-btn-active' : ''}`}
-                onClick={() => setSubtitleSettingsOpen((v) => !v)}
+                onClick={() => {
+                  setSubtitleSearchOpen(false);
+                  setSubtitleSettingsOpen((v) => !v);
+                }}
                 aria-label="Ajustes de subtítulos"
                 title="Tamaño y color de los subtítulos"
               >
@@ -581,10 +556,37 @@ export default function VideoControls({
                 </label>
               </div>
             )}
-            {!subtitleSearchLoading && subtitleSearchResults && subtitleSearchResults.length === 0 && (
-              <span className="subtitle-search-hint">Sin resultados para este título.</span>
+            {subtitleSearchOpen && (
+              <div className="subtitle-settings-panel subtitle-search-panel">
+                <p className="subtitle-settings-title">Buscar subtítulos (SubDL)</p>
+                {subtitleSearchLoading && <span className="subtitle-search-hint">Buscando…</span>}
+                {!subtitleSearchLoading && subtitleSearchResults && subtitleSearchResults.length === 0 && (
+                  <span className="subtitle-search-hint">Sin resultados para este título.</span>
+                )}
+                {subtitleSearchError && (
+                  <span className="subtitle-search-hint subtitle-search-hint-error">{subtitleSearchError}</span>
+                )}
+                {subtitleSearchResults && subtitleSearchResults.length > 0 && (
+                  <ul className="subtitle-search-results">
+                    {subtitleSearchResults.map((result, i) => (
+                      <li key={result.fileId}>
+                        <span>{result.release}</span>
+                        <button
+                          className="secondary"
+                          disabled={downloadingIndex != null}
+                          onClick={() => downloadSubtitle(result, i)}
+                        >
+                          {downloadingIndex === i ? 'Descargando…' : 'Descargar'}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <button className="secondary" onClick={searchSubtitles} disabled={subtitleSearchLoading}>
+                  🔄 Buscar de nuevo
+                </button>
+              </div>
             )}
-            {subtitleSearchError && <span className="subtitle-search-hint subtitle-search-hint-error">{subtitleSearchError}</span>}
           </div>
         )}
 
