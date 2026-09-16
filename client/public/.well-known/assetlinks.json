@@ -3,8 +3,8 @@
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
-      "package_name": "REEMPLAZAR_CON_EL_PAQUETE_ELEGIDO_EN_BUBBLEWRAP",
-      "sha256_cert_fingerprints": ["REEMPLAZAR_CON_LA_HUELLA_SHA256_DEL_KEYSTORE"]
+      "package_name": "com.jesus.videoclub",
+      "sha256_cert_fingerprints": ["C0:2F:E8:74:EF:F9:03:1A:B0:95:14:98:E0:EE:75:20:0E:4A:CE:24:37:BE:BE:E3:66:B8:85:71:35:4D:C5:D8"]
     }
   }
 ]
