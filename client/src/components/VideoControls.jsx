@@ -36,6 +36,7 @@ export default function VideoControls({
   videoRef,
   shellRef,
   id,
+  profileId,
   subtitleTracks,
   title,
   backTo,
@@ -81,6 +82,17 @@ export default function VideoControls({
   const barRef = useRef(null);
   const hideTimer = useRef(null);
   const subtitleSettingsRef = useRef(null);
+  const castPanelRef = useRef(null);
+
+  // Emitir a la TV (DLNA/UPnP, issue #99): castStatus es null salvo que haya
+  // una emisión activa PARA ESTE vídeo concreto - así, si se emitió otro
+  // vídeo antes o desde otra pestaña, no se confunde con el de aquí.
+  const [castOpen, setCastOpen] = useState(false);
+  const [castDevices, setCastDevices] = useState([]);
+  const [castDevicesLoading, setCastDevicesLoading] = useState(false);
+  const [castConnecting, setCastConnecting] = useState(false);
+  const [castError, setCastError] = useState(null);
+  const [castStatus, setCastStatus] = useState(null);
 
   useEffect(() => {
     fetch(`/api/trickplay/${id}`)
@@ -195,9 +207,16 @@ export default function VideoControls({
   };
 
   const handleBarDown = (e) => {
-    setDragging(true);
     const ratio = ratioFromEvent(e);
     setHover({ ratio });
+    // Emitiendo a la TV: un solo salto por clic (no arrastre continuo, para
+    // no bombardear al dispositivo DLNA con órdenes de "seek" en cada
+    // movimiento del ratón).
+    if (castStatus?.active) {
+      castSeekToRatio(ratio);
+      return;
+    }
+    setDragging(true);
     seekToRatio(ratio);
   };
 
@@ -257,6 +276,118 @@ export default function VideoControls({
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, [subtitleSettingsOpen, subtitleSearchOpen]);
+
+  useEffect(() => {
+    if (!castOpen) return undefined;
+    const onClickOutside = (e) => {
+      if (castPanelRef.current && !castPanelRef.current.contains(e.target)) {
+        setCastOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [castOpen]);
+
+  // Al abrir el reproductor: si ya había una emisión en marcha para este
+  // mismo vídeo (p.ej. se recargó la página), se recupera el estado en vez
+  // de empezar como si no hubiera nada emitiéndose.
+  useEffect(() => {
+    fetch('/api/dlna/status')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.active && data.videoId === id) setCastStatus(data);
+      })
+      .catch(() => {});
+  }, [id]);
+
+  // Mientras hay una emisión activa para este vídeo, se consulta su estado
+  // por *polling* (mismo patrón de setTimeout encadenado ya usado en
+  // WatchPage para /api/hls/:id/status) - si deja de estar activa o pasa a
+  // ser de otro vídeo, se deja de mostrar como "emitiendo" aquí.
+  useEffect(() => {
+    if (!castStatus?.active) return undefined;
+    let cancelled = false;
+    let timer;
+    const poll = () => {
+      fetch('/api/dlna/status')
+        .then((res) => res.json())
+        .then((data) => {
+          if (cancelled) return;
+          if (!data.active || data.videoId !== id) {
+            setCastStatus(null);
+            return;
+          }
+          setCastStatus(data);
+          timer = setTimeout(poll, 3000);
+        })
+        .catch(() => {
+          if (!cancelled) timer = setTimeout(poll, 5000);
+        });
+    };
+    timer = setTimeout(poll, 3000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [castStatus?.active, id]);
+
+  const loadCastDevices = () => {
+    setCastDevicesLoading(true);
+    setCastError(null);
+    fetch('/api/dlna/devices')
+      .then((res) => res.json())
+      .then((data) => setCastDevices(data.devices || []))
+      .catch(() => setCastError('No se pudo buscar dispositivos.'))
+      .finally(() => setCastDevicesLoading(false));
+  };
+
+  const toggleCastPanel = () => {
+    setSubtitleSettingsOpen(false);
+    setSubtitleSearchOpen(false);
+    setCastOpen((open) => {
+      const next = !open;
+      if (next) loadCastDevices();
+      return next;
+    });
+  };
+
+  const startCast = (deviceId) => {
+    setCastConnecting(true);
+    setCastError(null);
+    fetch('/api/dlna/cast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId, videoId: id, profileId, audioIndex }),
+    })
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) throw new Error(data.error || 'No se pudo emitir a este dispositivo.');
+        videoRef.current?.pause();
+        setCastOpen(false);
+        setCastStatus({ active: true, deviceId, videoId: id, currentTime: 0, playerState: 'PLAYING' });
+      })
+      .catch((err) => setCastError(err.message))
+      .finally(() => setCastConnecting(false));
+  };
+
+  const stopCast = () => {
+    fetch('/api/dlna/stop', { method: 'POST' }).catch(() => {});
+    setCastStatus(null);
+  };
+
+  const castTogglePause = () => {
+    const path = castStatus?.playerState === 'PAUSED' ? 'resume' : 'pause';
+    fetch(`/api/dlna/${path}`, { method: 'POST' }).catch(() => {});
+  };
+
+  const castSeekToRatio = (ratio) => {
+    if (!duration) return;
+    fetch('/api/dlna/seek', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seconds: ratio * duration }),
+    }).catch(() => {});
+  };
 
   // En cuanto el subtítulo recién descargado aparece en subtitleTracks (tras
   // onSubtitlesDownloaded, que vuelve a pedir /api/tracks), se activa solo -
@@ -380,8 +511,11 @@ export default function VideoControls({
     onSubtitleLanguageChange?.(next === -1 ? null : subtitleTracks[next] || null);
   };
 
-  const progressRatio = duration ? currentTime / duration : 0;
-  const bufferedRatio = duration ? buffered / duration : 0;
+  const casting = Boolean(castStatus?.active);
+  const displayedCurrentTime = casting ? castStatus.currentTime ?? 0 : currentTime;
+  const displayedPlaying = casting ? castStatus.playerState !== 'PAUSED' : playing;
+  const progressRatio = duration ? displayedCurrentTime / duration : 0;
+  const bufferedRatio = casting ? progressRatio : duration ? buffered / duration : 0;
   const hoverTime = hover ? hover.ratio * duration : 0;
 
   const previewCell = trickplay && hover
@@ -421,6 +555,14 @@ export default function VideoControls({
         </div>
       </div>
       <div className={`video-controls ${controlsVisible ? '' : 'video-controls-hidden'}`}>
+      {casting && (
+        <div className="cast-banner">
+          <span>📺 Emitiendo a {castDevices.find((d) => d.id === castStatus.deviceId)?.name || castStatus.deviceId}</span>
+          <button className="secondary" onClick={stopCast}>
+            ■ Detener
+          </button>
+        </div>
+      )}
       {hover && trickplay && (
         <div
           className="scrub-preview"
@@ -455,12 +597,16 @@ export default function VideoControls({
       </div>
 
       <div className="controls-row">
-        <button className="control-btn" onClick={togglePlay} aria-label={playing ? 'Pausar' : 'Reproducir'}>
-          {playing ? '⏸' : '▶'}
+        <button
+          className="control-btn"
+          onClick={casting ? castTogglePause : togglePlay}
+          aria-label={displayedPlaying ? 'Pausar' : 'Reproducir'}
+        >
+          {displayedPlaying ? '⏸' : '▶'}
         </button>
 
         <span className="time-display">
-          {formatTime(currentTime)} / {formatTime(duration)}
+          {formatTime(displayedCurrentTime)} / {formatTime(duration)}
         </span>
 
         <div className="volume-control">
@@ -589,6 +735,44 @@ export default function VideoControls({
             )}
           </div>
         )}
+
+        <div className="cast-controls" ref={castPanelRef}>
+          <button
+            className={`control-btn ${castOpen || casting ? 'control-btn-active' : ''}`}
+            onClick={toggleCastPanel}
+            aria-label="Emitir a la TV"
+            title="Emitir a la TV (DLNA)"
+          >
+            📺
+          </button>
+          {castOpen && (
+            <div className="subtitle-settings-panel cast-panel">
+              <p className="subtitle-settings-title">Emitir a la TV</p>
+              {castDevicesLoading && <span className="subtitle-search-hint">Buscando dispositivos…</span>}
+              {!castDevicesLoading && castDevices.length === 0 && (
+                <span className="subtitle-search-hint">
+                  No se encontró ningún dispositivo DLNA en la red.
+                </span>
+              )}
+              {castError && <span className="subtitle-search-hint subtitle-search-hint-error">{castError}</span>}
+              {castDevices.length > 0 && (
+                <ul className="subtitle-search-results">
+                  {castDevices.map((device) => (
+                    <li key={device.id}>
+                      <span>{device.name}</span>
+                      <button className="secondary" disabled={castConnecting} onClick={() => startCast(device.id)}>
+                        {castConnecting ? 'Conectando…' : 'Emitir'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button className="secondary" onClick={loadCastDevices} disabled={castDevicesLoading}>
+                🔄 Buscar de nuevo
+              </button>
+            </div>
+          )}
+        </div>
 
         <button className="control-btn" onClick={toggleFullscreen} aria-label="Pantalla completa">
           {fullscreen ? '⤡' : '⤢'}

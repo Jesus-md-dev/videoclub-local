@@ -1,0 +1,161 @@
+diff --git a/node_modules/upnp-device-client/index.js b/node_modules/upnp-device-client/index.js
+index cf25874..983a9c8 100644
+--- a/node_modules/upnp-device-client/index.js
++++ b/node_modules/upnp-device-client/index.js
+@@ -73,7 +73,15 @@ DeviceClient.prototype.getServiceDescription = function(serviceId, callback) {
+     debug('fetch service description (%s)', serviceId);
+     fetch(service.SCPDURL, function(err, body) {
+       if(err) return callback(err);
+-      var desc = parseServiceDescription(body);
++      // Mismo motivo que en callAction/parseEvents: un XML de descripción
++      // vacío o incompleto deja el árbol con el elemento raíz a null, y
++      // findall revienta igual con un objeto "válido" cuyo raíz es null.
++      var desc;
++      try {
++        desc = parseServiceDescription(body);
++      } catch (parseErr) {
++        return callback(new Error('Descripción de servicio UPnP inválida (' + serviceId + '): ' + parseErr.message));
++      }
+       self.serviceDescriptions[serviceId] = desc; // Store in cache for next call
+       callback(null, desc);
+     });
+@@ -132,32 +140,47 @@ DeviceClient.prototype.callAction = function(serviceId, actionName, params, call
+ 
+     var req = http.request(options, function(res) {
+       res.pipe(concat(function(buf) {
+-        var doc = et.parse(buf.toString());
++        // Un dispositivo UPnP puede responder con un cuerpo vacío o XML
++        // incompleto (visto en directo con el receptor DLNA de Windows: un
++        // fallo 500 sin <errorDescription>, a veces sin cuerpo en absoluto),
++        // dejando el árbol analizado con el elemento raíz a null - findtext/
++        // findall revientan igual con un objeto "válido" cuyo raíz es null,
++        // así que hace falta un try/catch alrededor de todo el análisis, no
++        // solo comprobar que "doc" en sí no sea null.
++        try {
++          var doc = et.parse(buf.toString());
++
++          if(res.statusCode !== 200) {
++            var errorCode = doc.findtext('.//errorCode');
++            var errorDescription = (doc.findtext('.//errorDescription') || '').trim();
++
++            var err = new Error(errorDescription + ' (' + errorCode + ')');
++            err.code = 'EUPNP';
++            err.statusCode = res.statusCode;
++            err.errorCode = errorCode;
++            return callback(err);
++          }
++
++          // Extract response outputs
++          var serviceDesc = self.serviceDescriptions[serviceId];
++          var actionDesc = serviceDesc.actions[actionName];
++          var outputs = actionDesc.outputs.map(function(desc) {
++            return desc.name;
++          });
+ 
+-        if(res.statusCode !== 200) {
+-          var errorCode = doc.findtext('.//errorCode');
+-          var errorDescription = doc.findtext('.//errorDescription').trim();
++          var result = {};
++          outputs.forEach(function(name) {
++            result[name] = doc.findtext('.//' + name);
++          });
+ 
+-          var err = new Error(errorDescription + ' (' + errorCode + ')');
++          callback(null, result)
++        } catch (parseErr) {
++          var err = new Error('Respuesta UPnP inválida o incompleta' + (res.statusCode !== 200 ? ' (' + res.statusCode + ')' : ''));
+           err.code = 'EUPNP';
+           err.statusCode = res.statusCode;
+-          err.errorCode = errorCode;
+-          return callback(err);
++          err.cause = parseErr;
++          callback(err);
+         }
+-
+-        // Extract response outputs
+-        var serviceDesc = self.serviceDescriptions[serviceId];
+-        var actionDesc = serviceDesc.actions[actionName];
+-        var outputs = actionDesc.outputs.map(function(desc) {
+-          return desc.name;
+-        });
+-
+-        var result = {};
+-        outputs.forEach(function(name) {
+-          result[name] = doc.findtext('.//' + name);
+-        });
+-
+-        callback(null, result)        
+       }));
+     });
+ 
+@@ -395,34 +418,44 @@ DeviceClient.prototype.releaseEventingServer = function() {
+ 
+ function parseEvents(buf) {
+   var events = [];
+-  var doc = et.parse(buf.toString());
+-
+-  var lastChange = doc.findtext('.//LastChange');
+-  if(lastChange) {
+-    // AVTransport and RenderingControl services embed event data
+-    // in an `<Event></Event>` element stored as an URIencoded string.
+-    doc = et.parse(lastChange);
+-
+-    // The `<Event></Event>` element contains one `<InstanceID></InstanceID>`
+-    // subtree per stream instance reporting its status.
+-    var instances = doc.findall('./InstanceID');
+-    instances.forEach(function(instance) {
+-      var data = { 
+-        InstanceID: Number(instance.get('val')) 
+-      };
+-      instance.findall('./*').forEach(function(node) {
+-        data[node.tag] = node.get('val');
++  // Un NOTIFY mal formado o con cuerpo vacío (visto en directo con
++  // dispositivos DLNA reales) deja el árbol analizado con el elemento raíz
++  // a null - findtext/findall revientan igual con un objeto "válido" cuyo
++  // raíz es null, así que hace falta un try/catch alrededor de todo el
++  // análisis. Un evento que no se puede interpretar simplemente se ignora
++  // (se devuelve la lista vacía) en vez de tirar abajo el proceso entero.
++  try {
++    var doc = et.parse(buf.toString());
++
++    var lastChange = doc.findtext('.//LastChange');
++    if(lastChange) {
++      // AVTransport and RenderingControl services embed event data
++      // in an `<Event></Event>` element stored as an URIencoded string.
++      doc = et.parse(lastChange);
++
++      // The `<Event></Event>` element contains one `<InstanceID></InstanceID>`
++      // subtree per stream instance reporting its status.
++      var instances = doc.findall('./InstanceID');
++      instances.forEach(function(instance) {
++        var data = {
++          InstanceID: Number(instance.get('val'))
++        };
++        instance.findall('./*').forEach(function(node) {
++          data[node.tag] = node.get('val');
++        });
++        events.push(data);
++      });
++    } else {
++      // In any other case, each variable is stored separately in a
++      // `<property></property>` tag
++      var data = {};
++      doc.findall('./property/*').forEach(function(node) {
++        data[node.tag] = node.text;
+       });
+       events.push(data);
+-    });
+-  } else {
+-    // In any other case, each variable is stored separately in a
+-    // `<property></property>` tag
+-    var data = {};
+-    doc.findall('./property/*').forEach(function(node) {
+-      data[node.tag] = node.text;
+-    });
+-    events.push(data);
++    }
++  } catch (parseErr) {
++    debug('failed to parse event notification: %s', parseErr.message);
+   }
+ 
+   return events;

@@ -561,6 +561,7 @@ export default function WatchPage() {
                 videoRef={playerRef}
                 shellRef={shellRef}
                 id={id}
+                profileId={profileId}
                 subtitleTracks={tracks.subtitles}
                 title={video?.title}
                 backTo={backTo}

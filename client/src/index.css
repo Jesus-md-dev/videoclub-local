@@ -1152,6 +1152,47 @@ video {
   width: 260px;
 }
 
+.cast-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.cast-panel {
+  width: 260px;
+}
+
+.cast-banner {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-alt);
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text);
+  z-index: 5;
+}
+
+.cast-banner button.secondary {
+  background: transparent;
+  color: var(--text-dim);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cast-banner button.secondary:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .subtitle-search-results {
   list-style: none;
   margin: 0;

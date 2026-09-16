@@ -55,6 +55,7 @@ const purgeRouter = require('./routes/purge');
 const normalizeRouter = require('./routes/normalize');
 const subdlRouter = require('./routes/subdl');
 const healthRouter = require('./routes/health');
+const dlnaRouter = require('./routes/dlna');
 
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
@@ -66,7 +67,7 @@ process.on('unhandledRejection', (err) => {
   console.error(`Error no capturado (la app sigue en marcha): ${err?.message || err}`);
 });
 process.on('uncaughtException', (err) => {
-  console.error(`Excepción no capturada (la app sigue en marcha): ${err?.message || err}`);
+  console.error(`Excepción no capturada (la app sigue en marcha): ${err?.stack || err?.message || err}`);
 });
 
 const app = express();
@@ -100,6 +101,7 @@ app.use('/api', purgeRouter);
 app.use('/api', normalizeRouter);
 app.use('/api', subdlRouter);
 app.use('/api', healthRouter);
+app.use('/api', dlnaRouter);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
