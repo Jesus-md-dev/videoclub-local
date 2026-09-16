@@ -264,6 +264,22 @@ main {
   scroll-snap-align: start;
 }
 
+/* Hueco reservado para que .row-arrow (44px de ancho) no se solape con la
+   carátula. scroll-padding le dice al scroll-snap que reserve ese margen de
+   seguridad al alinear la primera/última carátula, si no Chrome la coloca
+   pegada al borde y "salta" cualquier padding/margin puesto ahí. */
+.row-track {
+  scroll-padding-inline: 44px;
+}
+
+.row-track > .card:first-child {
+  margin-left: 40px;
+}
+
+.row-track > .card:last-child {
+  margin-right: 40px;
+}
+
 .row-arrow {
   position: absolute;
   top: 0;
