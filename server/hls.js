@@ -816,4 +816,5 @@ module.exports = {
   outDirFor,
   masterPlaylistFor,
   forget,
+  isLost,
 };

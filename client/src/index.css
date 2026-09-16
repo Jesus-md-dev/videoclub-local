@@ -1501,6 +1501,41 @@ video {
   opacity: 1;
 }
 
+.queue-failed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.queue-failed-header button.secondary {
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--text);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.queue-failed-header button.secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-glow);
+}
+
+.queue-failed-header button.secondary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.queue-resolve-hint {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
 .queue-failed-main {
   display: flex;
   align-items: center;

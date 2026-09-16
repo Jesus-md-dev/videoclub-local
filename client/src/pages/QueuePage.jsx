@@ -38,10 +38,25 @@ export default function QueuePage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [retrying, setRetrying] = useState(new Set());
+  const [resolving, setResolving] = useState(false);
+  const [resolveResult, setResolveResult] = useState(null);
 
   const handleRetry = (id) => {
     setRetrying((prev) => new Set(prev).add(id));
     fetch(`/api/hls/${id}/retry`, { method: 'POST' }).catch(() => {});
+  };
+
+  // Para cada fallido: si el archivo ya no existe (se borró/movió a mano
+  // tras el fallo), se quita solo de la lista; si sigue ahí, se reintenta
+  // de verdad - un solo botón en vez de revisarlos uno a uno.
+  const handleResolveFailed = () => {
+    setResolving(true);
+    setResolveResult(null);
+    fetch('/api/queue/resolve-failed', { method: 'POST' })
+      .then((res) => res.json())
+      .then((result) => setResolveResult(result))
+      .catch(() => setResolveResult(null))
+      .finally(() => setResolving(false));
   };
 
   useEffect(() => {
@@ -156,7 +171,20 @@ export default function QueuePage() {
 
             {data.failed.length > 0 && (
               <>
-                <p className="section-title">Fallidos ({data.failed.length})</p>
+                <div className="queue-failed-header">
+                  <p className="section-title">Fallidos ({data.failed.length})</p>
+                  <button className="secondary" disabled={resolving} onClick={handleResolveFailed}>
+                    {resolving ? 'Revisando…' : 'Resolver fallidos'}
+                  </button>
+                </div>
+                {resolveResult && (
+                  <p className="queue-resolve-hint">
+                    {resolveResult.retried > 0 && `${resolveResult.retried} reintentado(s)`}
+                    {resolveResult.retried > 0 && resolveResult.missing > 0 && ', '}
+                    {resolveResult.missing > 0 && `${resolveResult.missing} quitado(s) de la lista (el archivo ya no existe)`}
+                    {resolveResult.retried === 0 && resolveResult.missing === 0 && 'Nada que resolver.'}
+                  </p>
+                )}
                 <div className="queue-list">
                   {data.failed.map((item) => (
                     <div className="queue-row queue-row-failed queue-row-failed-detail" key={item.id}>
