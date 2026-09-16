@@ -665,13 +665,15 @@ async function runGeneration(video, priority) {
     status.set(video.id, 'ready');
     progress.delete(video.id);
 
-    // Solo cuando el original ya era H.264 compatible: ahí el HLS es un
-    // simple remux, el mismo vídeo dos veces en disco. En segundo plano
-    // (no bloquea el "ready", ya se puede reproducir) para no hacer
-    // esperar al primer play por esto.
+    // Antes, cuando el original ya era H.264 compatible, se borraba tras
+    // generar el HLS (el mismo vídeo dos veces en disco, se consideraba
+    // redundante) - instrucción permanente del usuario tras perder de verdad
+    // ~180 episodios (issue #67/#97): el original NUNCA se borra, pase lo
+    // que pase. Sigue precalentando subtítulos/vista previa en segundo plano
+    // (no bloquea el "ready"), simplemente sin la parte de borrado.
     if (videoCopy) {
-      archiveIfCompatible(video).catch((err) => {
-        console.warn(`HLS: no se pudo archivar "${video.title}": ${err.message}`);
+      pregenerateExtras(video).catch((err) => {
+        console.warn(`HLS: no se pudieron precalentar subtítulos/vista previa de "${video.title}": ${err.message}`);
       });
     }
 
@@ -685,60 +687,23 @@ async function runGeneration(video, priority) {
   }
 }
 
-// Antes de borrar el original: guarda aparte, de forma permanente (no
-// caché de sesión), lo que depende de él y que si no se perdería para
-// siempre - subtítulos y la vista previa de arrastre en la barra de
-// progreso. El listado de pistas (audio/subtítulos) no hace falta
-// pre-generarlo: ya queda cacheado el análisis de ffprobe (codec-checks.json,
-// ver mediaInfo.js) desde la generación del HLS.
-//
-// Si falla la extracción de ALGÚN subtítulo, NO se borra el original: sin
-// esto, un fallo puntual (disco externo con hipos, etc.) se traducía en
-// perder ese subtítulo para siempre en cuanto se borraba el único archivo
-// del que se podía sacar - ya ha pasado de verdad (ver issue del episodio
-// de Bleach sin subtítulos). Mejor gastar algo más de disco en el peor
-// caso que perder algo irrecuperable.
-async function archiveIfCompatible(video) {
+// El original YA NO SE BORRA NUNCA (instrucción permanente del usuario, tras
+// perder de verdad ~180 episodios cuando coincidió con un borrado manual de
+// la carpeta de HLS - ver issue #67/#97: sin el original, esos episodios
+// fueron irrecuperables). Esto solo precalienta en segundo plano lo que
+// tiene sentido tener ya listo para un vídeo H.264 compatible (subtítulos,
+// vista previa de arrastre) - nunca bloquea el "ready", el vídeo ya se
+// puede reproducir igual mientras tanto.
+async function pregenerateExtras(video) {
   const info = await getMediaInfo(video);
   const subtitleStreams = info.streams.filter((s) => s.codec_type === 'subtitle');
-  let subtitleExtractionFailed = false;
   for (const stream of subtitleStreams) {
     // eslint-disable-next-line no-await-in-loop
     await subtitles.extractSubtitle(video, stream.index).catch((err) => {
-      subtitleExtractionFailed = true;
-      console.warn(`HLS: no se pudo extraer el subtítulo ${stream.index} de "${video.title}" antes de archivar: ${err.message}`);
+      console.warn(`HLS: no se pudo precalentar el subtítulo ${stream.index} de "${video.title}": ${err.message}`);
     });
   }
-  if (subtitleExtractionFailed) {
-    console.warn(
-      `HLS: "${video.title}" se queda con el original (no se borra) - falló extraer algún subtítulo antes de archivar, mejor no arriesgarse a perderlo.`
-    );
-    return;
-  }
   await trickplay.ensureTrickplay(video);
-
-  const originalPath = inputPathFor(video);
-  // El disco externo puede tener hipos puntuales (visto en directo: un
-  // fs.rm que no dio error pero el archivo seguía ahí después). No basta
-  // con fiarse de que fs.rm no fallara: hay que comprobar que el original
-  // ha desaparecido de verdad antes de registrarlo como archivado - si no,
-  // se pierde el rastro de un original que en realidad sigue ahí, con el
-  // espacio sin liberar y el catálogo sin saberlo.
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      fs.rmSync(originalPath, { force: true });
-    } catch (err) {
-      console.warn(`HLS: fallo borrando el original de "${video.title}" (intento ${attempt}/3): ${err.message}`);
-    }
-    if (!fs.existsSync(originalPath)) {
-      archivedVideos.archive(video);
-      console.log(`HLS: original de "${video.title}" borrado (el HLS ya es el mismo vídeo, sin duplicarlo)`);
-      return;
-    }
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((r) => setTimeout(r, 1500));
-  }
-  console.warn(`HLS: no se pudo confirmar el borrado del original de "${video.title}" tras varios intentos; se deja tal cual (con los dos)`);
 }
 
 // Genera (si hace falta, esperando a que termine) y devuelve la ruta al
