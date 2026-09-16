@@ -1,58 +1,42 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+
+if "%~1"=="__run__" goto :run
+
+powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -FilePath '%~f0' -ArgumentList '__run__' -WorkingDirectory '%~dp0' -WindowStyle Hidden"
+exit /b 0
+
+:run
 title Videoclub Local - Iniciar servidor
 
-echo ============================================
-echo   Videoclub Local - Iniciar servidor
-echo ============================================
-echo.
-
 for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique"`) do (
-    echo Deteniendo una instancia anterior en marcha, PID %%P...
     taskkill /F /PID %%P >nul 2>&1
 )
 
 if not exist "node_modules" (
-    echo.
-    echo No se encuentran las dependencias instaladas todavia.
-    echo Ejecuta primero "actualizar.bat".
-    echo.
-    pause
+    call :avisar "No se encuentran las dependencias instaladas todavia. Ejecuta primero actualizar.bat."
     exit /b 1
 )
 
-echo Compilando la interfaz web...
-call npm run build
+call npm run build >build.log 2>&1
 if errorlevel 1 (
-    echo.
-    echo Fallo al compilar la interfaz. Revisa el mensaje de arriba.
-    pause
+    call :avisar "Fallo al compilar la interfaz web. Revisa build.log para mas detalle."
     exit /b 1
 )
 
-echo.
-echo Iniciando el servidor en segundo plano...
 powershell -NoProfile -Command "Start-Process -FilePath 'node' -ArgumentList 'server\index.js' -WorkingDirectory '%~dp0' -WindowStyle Hidden -RedirectStandardOutput '%~dp0server.log' -RedirectStandardError '%~dp0server-error.log'"
 
-echo Esperando a que arranque...
 powershell -NoProfile -Command ^
-  "$ok = $false; for ($i = 0; $i -lt 60; $i++) { try { Invoke-WebRequest -Uri 'http://localhost:3000/' -UseBasicParsing -TimeoutSec 1 | Out-Null; $ok = $true; break } catch { Start-Sleep -Milliseconds 1000 } }; if (-not $ok) { Write-Host 'El servidor no respondio a tiempo; revisa server.log'; exit 1 }"
+  "$ok = $false; for ($i = 0; $i -lt 60; $i++) { try { Invoke-WebRequest -Uri 'http://localhost:3000/' -UseBasicParsing -TimeoutSec 1 | Out-Null; $ok = $true; break } catch { Start-Sleep -Milliseconds 1000 } }; if (-not $ok) { exit 1 }"
 if errorlevel 1 (
-    echo.
-    echo Puede que algo haya fallado al arrancar. Revisa "server.log" para mas detalle.
-    pause
+    call :avisar "El servidor no respondio a tiempo. Revisa server.log y server-error.log."
     exit /b 1
 )
 
-echo.
-echo ============================================
-echo   Servidor en marcha (en segundo plano)
-echo ============================================
-echo.
-echo   Local: http://localhost:3000
-echo.
-echo El registro del servidor se guarda en "server.log".
-echo Para detenerlo, ejecuta "detener.bat".
-echo.
-pause
+call :avisar "Servidor en marcha en http://localhost:3000. Para detenerlo, ejecuta detener.bat."
+exit /b 0
+
+:avisar
+powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('%~1', 'Videoclub Local')" >nul 2>&1
+goto :eof
