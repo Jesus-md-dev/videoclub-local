@@ -39,6 +39,8 @@ const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
 const hls = require('./hls');
 const moveOriginal = require('./moveOriginal');
+const normalize = require('./normalize');
+const { resolveFailed } = require('./resolveFailed');
 const watcher = require('./watcher');
 const videosRouter = require('./routes/videos');
 const streamRouter = require('./routes/stream');
@@ -169,10 +171,31 @@ async function scanIfConfigured() {
         moveOriginal.maybeMoveOriginal(video).catch(() => {});
       }
     }
+    // Reintenta lo fallido UNA SOLA VEZ al arrancar (no en bucle: un fallo
+    // persistente de verdad no debe reintentarse para siempre sin que nadie
+    // se entere, ver server/resolveFailed.js).
+    resolveFailed().catch((err) => console.warn(`Resolver fallidos al arrancar: ${err.message}`));
+    // Pasada completa de normalización de nombres: idempotente (no toca lo
+    // que ya está bien), cubre lo que no captó autoNormalizeNewFiles antes
+    // de tener esto activado, o tras un cambio en las reglas de detección.
+    normalize.runNormalizeAll().catch((err) => console.warn(`Normalización al arrancar: ${err.message}`));
     watcher.start();
   } catch (err) {
     console.error(`Error al escanear la carpeta de vídeos: ${err.message}`);
   }
+}
+
+// Mantenimiento periódico de bajo riesgo (ver conversación que decidió
+// automatizar esto: normalizar nombres es idempotente, y forzar TMDB
+// respeta los overrides manuales - applyStoredOverrideIfAny los reaplica en
+// vez de sobrescribirlos). Una vez al día basta: ni los nombres ni los
+// metadatos de TMDB cambian con tanta frecuencia como para justificar más.
+const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+function runPeriodicMaintenance() {
+  normalize.runNormalizeAll().catch((err) => console.warn(`Normalización periódica: ${err.message}`));
+  metadata
+    .forceTmdbRefreshAll(catalog.getAllGroupKeys())
+    .catch((err) => console.warn(`Actualización TMDB periódica: ${err.message}`));
 }
 
 // Copia de seguridad periódica (por si algo se escribe sin pasar por una
@@ -192,6 +215,7 @@ async function start() {
   await scanIfConfigured();
   backup.backupNow();
   setInterval(backup.backupNow, BACKUP_INTERVAL_MS).unref();
+  setInterval(runPeriodicMaintenance, MAINTENANCE_INTERVAL_MS).unref();
   scheduleShutdownBackup();
 
   app.listen(PORT, '0.0.0.0', () => {

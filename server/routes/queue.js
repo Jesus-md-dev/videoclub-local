@@ -1,10 +1,8 @@
-const fs = require('fs');
-const path = require('path');
 const express = require('express');
 const catalog = require('../catalog');
 const hls = require('../hls');
 const { MAX_CONCURRENT_FFMPEG } = require('../ffmpeg-limiter');
-const { getVideosPath } = require('../config');
+const { resolveFailed } = require('../resolveFailed');
 
 const router = express.Router();
 
@@ -79,34 +77,12 @@ router.get('/queue', (req, res) => {
   });
 });
 
-// Botón "Resolver fallidos" de /queue: para cada vídeo marcado 'failed'
-// (los "perdidos" ya no pasan por aquí en absoluto - ni siquiera están en
-// catalog.getCatalog(), ver catalog.js), si el original ya no existe en
-// disco (se borró/movió a mano justo después del fallo) se reescanea el
-// catálogo al final para que desaparezca del todo. Si el archivo sigue ahí,
-// se reintenta de verdad (mismo mecanismo que el botón "Reintentar" de cada
-// fila), por si fue un fallo puntual (disco externo con hipos, GPU
-// ocupada...).
+// Ya no hay botón en /queue para esto (se resuelve solo una vez al
+// arrancar el servidor, ver server/index.js) - el endpoint se deja para
+// quien quiera forzarlo a mano por API sin esperar a un reinicio.
 router.post('/queue/resolve-failed', async (req, res) => {
-  const videosPath = getVideosPath();
-  const videos = catalog.getCatalog();
-  let retried = 0;
-  let missing = 0;
-
-  for (const video of videos) {
-    if (hls.getStatus(video) !== 'failed') continue;
-    const exists = videosPath && fs.existsSync(path.join(videosPath, video.relativePath));
-    if (exists) {
-      hls.retry(video);
-      retried += 1;
-    } else {
-      missing += 1;
-    }
-  }
-
-  if (missing > 0) await catalog.scan();
-
-  res.json({ retried, missing });
+  const result = await resolveFailed();
+  res.json(result);
 });
 
 module.exports = router;

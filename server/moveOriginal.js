@@ -76,16 +76,26 @@ async function moveOne(video, onProgress) {
   const destAbs = destPathFor(video);
 
   if (fs.existsSync(destAbs)) {
-    throw new Error(`ya existe "${destAbs}", se omite por seguridad`);
-  }
-  fs.mkdirSync(path.dirname(destAbs), { recursive: true });
+    // Un traslado anterior puede haberse quedado a medias (el servidor se
+    // reinició justo después de copiar pero antes de verificar/borrar/
+    // registrar - visto de verdad al reiniciar varias veces seguidas con la
+    // cola aún larga): si el tamaño ya coincide, se retoma desde ahí en vez
+    // de fallar sin más cada vez que se vuelve a intentar.
+    const destSize = fs.statSync(destAbs).size;
+    const sourceSize = fs.statSync(sourceAbs).size;
+    if (destSize !== sourceSize) {
+      throw new Error(`ya existe "${destAbs}" con un tamaño distinto, se omite por seguridad`);
+    }
+    onProgress(100);
+  } else {
+    fs.mkdirSync(path.dirname(destAbs), { recursive: true });
+    await runRobocopyAsync(path.dirname(sourceAbs), path.dirname(destAbs), path.basename(sourceAbs), onProgress);
 
-  await runRobocopyAsync(path.dirname(sourceAbs), path.dirname(destAbs), path.basename(sourceAbs), onProgress);
-
-  const sourceSize = fs.statSync(sourceAbs).size;
-  const destSize = fs.statSync(destAbs).size;
-  if (sourceSize !== destSize) {
-    throw new Error(`verificación fallida: ${sourceSize} bytes en origen, ${destSize} en destino`);
+    const sourceSize = fs.statSync(sourceAbs).size;
+    const destSize = fs.statSync(destAbs).size;
+    if (sourceSize !== destSize) {
+      throw new Error(`verificación fallida: ${sourceSize} bytes en origen, ${destSize} en destino`);
+    }
   }
 
   fs.rmSync(sourceAbs, { force: true });
@@ -96,6 +106,7 @@ async function moveOne(video, onProgress) {
 async function processQueue() {
   if (processing) return;
   processing = true;
+  let movedAnything = false;
   while (queue.length > 0) {
     const video = queue.shift();
     const entry = status.get(video.id);
@@ -107,6 +118,7 @@ async function processQueue() {
       });
       entry.state = 'done';
       entry.percent = 100;
+      movedAnything = true;
     } catch (err) {
       entry.state = 'failed';
       entry.error = err.message;
@@ -114,6 +126,23 @@ async function processQueue() {
     }
   }
   processing = false;
+
+  // El catálogo en memoria (catalog.js: cache/byId) no se entera solo de
+  // que estos vídeos ya tienen "movedTo" hasta el próximo escaneo completo
+  // (el registro se actualiza en disco, pero buildLibrary() reconstruye
+  // desde cero a partir del último escaneo, no observa este registro en
+  // vivo) - se reescanea aquí para que quede consistente sin esperar a que
+  // algo más dispare un escaneo por otro motivo. Require perezoso (no al
+  // principio del archivo) porque catalog.js -> hls.js -> este módulo ya
+  // forman un ciclo; pedirlo aquí dentro, en vez de al cargar el módulo,
+  // evita depender del orden de carga.
+  if (movedAnything) {
+    // eslint-disable-next-line global-require
+    const catalog = require('./catalog');
+    catalog.scan().catch((err) => {
+      console.warn(`Traslado automático: fallo al reescanear tras mover: ${err.message}`);
+    });
+  }
 }
 
 async function maybeMoveOriginal(video) {

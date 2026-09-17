@@ -3,8 +3,9 @@ const path = require('path');
 const ffmpegPath = require('ffmpeg-static');
 const ffprobePath = require('ffprobe-static').path;
 const ffmpeg = require('fluent-ffmpeg');
-const { getVideosPath, THUMBNAILS_PATH } = require('./config');
+const { THUMBNAILS_PATH } = require('./config');
 const { runLimited } = require('./ffmpeg-limiter');
+const { inputPathFor } = require('./mediaInfo');
 
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath);
@@ -49,7 +50,7 @@ function generateThumbnail(video) {
   return runLimited(
     () =>
       new Promise((resolve) => {
-        const inputPath = path.join(getVideosPath(), video.relativePath);
+        const inputPath = inputPathFor(video);
         const outputFile = `${video.id}.jpg`;
 
         ffmpeg(inputPath)

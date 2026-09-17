@@ -16,6 +16,12 @@ export default function ConfigPage() {
   const [subtitlesMessage, setSubtitlesMessage] = useState(null);
   const [healthChecking, setHealthChecking] = useState(false);
   const [healthResult, setHealthResult] = useState(null);
+  const [purgeKey, setPurgeKey] = useState('');
+  const [purging, setPurging] = useState(false);
+  const [purgeMessage, setPurgeMessage] = useState(null);
+  const [ungroupKey, setUngroupKey] = useState('');
+  const [ungrouping, setUngrouping] = useState(false);
+  const [ungroupMessage, setUngroupMessage] = useState(null);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -68,28 +74,6 @@ export default function ConfigPage() {
     return () => clearInterval(timer);
   }, [normalizeProgress?.running]);
 
-  const handleNormalize = async () => {
-    try {
-      const res = await fetch('/api/normalize/run', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error desconocido');
-      setNormalizeProgress({ running: true, total: data.total, done: 0, renamed: 0, errors: [] });
-    } catch (err) {
-      setMessage({ text: err.message, ok: false });
-    }
-  };
-
-  const handleForceTmdb = async () => {
-    try {
-      const res = await fetch('/api/metadata/force-tmdb-all', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Error desconocido');
-      setTmdbProgress({ running: true, total: data.total, done: 0, updated: 0 });
-    } catch (err) {
-      setMessage({ text: err.message, ok: false });
-    }
-  };
-
   const loadSubtitlesConfig = () => {
     fetch('/api/subdl/config')
       .then((res) => res.json())
@@ -140,6 +124,64 @@ export default function ConfigPage() {
       setHealthResult({ error: err.message });
     } finally {
       setHealthChecking(false);
+    }
+  };
+
+  // Borra PERMANENTEMENTE el progreso/carátula/HLS/metadatos de una obra
+  // (para cuando su carpeta ya no existe en disco y se ha quedado como
+  // "archivada" para siempre en el catálogo sin poder reproducirse). No
+  // tiene deshacer, por eso pide confirmar escribiendo la clave exacta.
+  const handlePurge = async () => {
+    const key = purgeKey.trim();
+    if (!key) return;
+    // eslint-disable-next-line no-alert
+    const confirmed = window.confirm(
+      `Esto borra PARA SIEMPRE el progreso, carátula, HLS y metadatos de "${key}". No se puede deshacer. ¿Seguro?`
+    );
+    if (!confirmed) return;
+    setPurging(true);
+    setPurgeMessage(null);
+    try {
+      const res = await fetch('/api/catalog/purge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setPurgeMessage({ text: `Purgado "${key}".`, ok: true });
+      setPurgeKey('');
+    } catch (err) {
+      setPurgeMessage({ text: err.message, ok: false });
+    } finally {
+      setPurging(false);
+    }
+  };
+
+  // Marca (o desmarca) una carpeta con varios vídeos como "no es una serie,
+  // son títulos sueltos" (p.ej. Berserk con sus 3 películas): a partir de
+  // ahí cada vídeo se lista como su propia película, no agrupados.
+  const handleUngroup = async (ungrouped) => {
+    const key = ungroupKey.trim();
+    if (!key) return;
+    setUngrouping(true);
+    setUngroupMessage(null);
+    try {
+      const res = await fetch('/api/catalog/ungroup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, ungrouped }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setUngroupMessage({
+        text: ungrouped ? `"${key}" marcada como títulos sueltos.` : `"${key}" vuelve a agruparse como serie.`,
+        ok: true,
+      });
+    } catch (err) {
+      setUngroupMessage({ text: err.message, ok: false });
+    } finally {
+      setUngrouping(false);
     }
   };
 
@@ -213,12 +255,10 @@ export default function ConfigPage() {
           Metadatos
         </p>
         <p className="hint">
-          Vuelve a buscar el nombre y la carátula de toda la biblioteca, solo en TMDB y en español.
-          Lo que TMDB no encuentre se queda tal cual está ahora, sin borrar nada.
+          Busca el nombre y la carátula de toda la biblioteca en TMDB (en español) una vez al día,
+          automáticamente. Respeta cualquier carátula que hayas fijado a mano ("Cambiar carátula");
+          lo que TMDB no encuentre se queda tal cual está, sin borrar nada.
         </p>
-        <button type="button" onClick={handleForceTmdb} disabled={tmdbProgress?.running}>
-          {tmdbProgress?.running ? 'Actualizando…' : 'Forzar actualización TMDB'}
-        </button>
         {tmdbProgress && (
           <>
             <div className="progress-bar" style={{ height: 8, marginTop: 12 }}>
@@ -241,13 +281,9 @@ export default function ConfigPage() {
         <p className="hint">
           Renombra episodios y películas a un nombre limpio y consistente (usa la carátula/nombre
           de TMDB cuando ya está en caché). Solo toca archivos donde reconoce con confianza el
-          episodio (p.ej. "S06E12" o "E04"); si no está seguro, no los toca. Los archivos nuevos
-          que aparezcan mientras el servidor está encendido se normalizan solos, sin necesidad de
-          pulsar este botón.
+          episodio (p.ej. "S06E12" o "E04"); si no está seguro, no los toca. Se ejecuta sola: al
+          arrancar el servidor, al aparecer un archivo nuevo, y una vez al día para lo demás.
         </p>
-        <button type="button" onClick={handleNormalize} disabled={normalizeProgress?.running}>
-          {normalizeProgress?.running ? 'Normalizando…' : 'Normalizar nombres'}
-        </button>
         {normalizeProgress && (
           <>
             <div className="progress-bar" style={{ height: 8, marginTop: 12 }}>
@@ -337,6 +373,60 @@ export default function ConfigPage() {
             )}
           </>
         )}
+
+        <p className="section-title" style={{ marginTop: 32 }}>
+          Desagrupar carpeta
+        </p>
+        <p className="hint">
+          Para una carpeta con varios vídeos que en realidad son títulos sueltos, no una serie
+          (p.ej. "Berserk" con sus 3 películas): a partir de ahí cada uno se lista por su cuenta.
+          Es una decisión editorial tuya, no se hace sola.
+        </p>
+        <label htmlFor="ungroupKey">Clave (nombre de carpeta tal cual aparece en el catálogo)</label>
+        <input
+          type="text"
+          id="ungroupKey"
+          autoComplete="off"
+          value={ungroupKey}
+          onChange={(e) => setUngroupKey(e.target.value)}
+        />
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button type="button" onClick={() => handleUngroup(true)} disabled={ungrouping || !ungroupKey.trim()}>
+            Desagrupar
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => handleUngroup(false)}
+            disabled={ungrouping || !ungroupKey.trim()}
+          >
+            Volver a agrupar
+          </button>
+        </div>
+        {ungroupMessage && (
+          <p className={`config-message ${ungroupMessage.ok ? 'ok' : 'error'}`}>{ungroupMessage.text}</p>
+        )}
+
+        <p className="section-title" style={{ marginTop: 32 }}>
+          Purgar obra
+        </p>
+        <p className="hint">
+          Quita para siempre del catálogo una obra cuya carpeta ya no existe en disco (progreso,
+          carátula, HLS generado y metadatos incluidos). No tiene deshacer: solo para cuando ya
+          sabes que ese contenido no va a volver.
+        </p>
+        <label htmlFor="purgeKey">Clave (nombre de carpeta/serie tal cual aparece en el catálogo)</label>
+        <input
+          type="text"
+          id="purgeKey"
+          autoComplete="off"
+          value={purgeKey}
+          onChange={(e) => setPurgeKey(e.target.value)}
+        />
+        <button type="button" onClick={handlePurge} disabled={purging || !purgeKey.trim()}>
+          {purging ? 'Purgando…' : 'Purgar'}
+        </button>
+        {purgeMessage && <p className={`config-message ${purgeMessage.ok ? 'ok' : 'error'}`}>{purgeMessage.text}</p>}
       </div>
       {browsing && (
         <FolderBrowser
