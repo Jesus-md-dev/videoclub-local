@@ -156,26 +156,57 @@ function groupKeyFor(video) {
 // responder a NINGUNA petición, a veces varios segundos, a veces mucho
 // más. Con await, solo esta función concreta espera; el resto del
 // servidor sigue atendiendo peticiones mientras tanto.
+// Recorre a mano carpeta por carpeta (en vez de usar `recursive: true` de
+// fs.readdir) porque esa opción, en Windows, NO entra dentro de una
+// "junction" (carpeta-enlace NTFS) - la lista como entrada pero no mira
+// dentro. Eso es justo lo que usa scripts/mover-originales-a-d.js para
+// trasladar originales ya con HLS listo a otro disco sin que desaparezcan
+// del catálogo: sin este recorrido manual, esos vídeos se habrían esfumado
+// de la web en cuanto se movieran, aunque el archivo siguiera existiendo.
 async function walk(baseDir) {
-  const entries = await fs.promises.readdir(baseDir, { recursive: true, withFileTypes: true });
   const results = [];
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    if (!VIDEO_EXTENSIONS.includes(path.extname(entry.name).toLowerCase())) continue;
-    const parentDir = entry.parentPath ?? entry.path;
-    const fullPath = path.join(parentDir, entry.name);
-    const relativePath = path.relative(baseDir, fullPath);
-    // eslint-disable-next-line no-await-in-loop
-    const stat = await fs.promises.stat(fullPath);
-    const id = makeId(relativePath);
-    results.push({
-      id,
-      title: cleanTitle(entry.name),
-      relativePath,
-      size: stat.size,
-      modifiedAt: stat.mtime,
-    });
+
+  async function walkDir(dir) {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      let isDir = entry.isDirectory();
+      let isFile = entry.isFile();
+      if (entry.isSymbolicLink()) {
+        // Una junction se reporta como "symbolic link", no como directorio,
+        // en el propio readdir - stat() (a diferencia de lstat) sigue el
+        // enlace para saber si el destino real es una carpeta o un archivo.
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const target = await fs.promises.stat(fullPath);
+          isDir = target.isDirectory();
+          isFile = target.isFile();
+        } catch {
+          continue; // Enlace roto (destino desconectado/borrado): se ignora.
+        }
+      }
+      if (isDir) {
+        // eslint-disable-next-line no-await-in-loop
+        await walkDir(fullPath);
+        continue;
+      }
+      if (!isFile) continue;
+      if (!VIDEO_EXTENSIONS.includes(path.extname(entry.name).toLowerCase())) continue;
+      const relativePath = path.relative(baseDir, fullPath);
+      // eslint-disable-next-line no-await-in-loop
+      const stat = await fs.promises.stat(fullPath);
+      const id = makeId(relativePath);
+      results.push({
+        id,
+        title: cleanTitle(entry.name),
+        relativePath,
+        size: stat.size,
+        modifiedAt: stat.mtime,
+      });
+    }
   }
+
+  await walkDir(baseDir);
   return results;
 }
 
