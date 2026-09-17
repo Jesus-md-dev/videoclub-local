@@ -38,6 +38,7 @@ const mediaInfo = require('./mediaInfo');
 const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
 const hls = require('./hls');
+const moveOriginal = require('./moveOriginal');
 const watcher = require('./watcher');
 const videosRouter = require('./routes/videos');
 const streamRouter = require('./routes/stream');
@@ -48,6 +49,7 @@ const tracksRouter = require('./routes/tracks');
 const trickplayRouter = require('./routes/trickplay');
 const profilesRouter = require('./routes/profiles');
 const queueRouter = require('./routes/queue');
+const moveQueueRouter = require('./routes/moveQueue');
 const metadataRouter = require('./routes/metadata');
 const analyticsRouter = require('./routes/analytics');
 const hlsRouter = require('./routes/hls');
@@ -95,6 +97,7 @@ app.use('/api', tracksRouter);
 app.use('/api', trickplayRouter);
 app.use('/api', profilesRouter);
 app.use('/api', queueRouter);
+app.use('/api', moveQueueRouter);
 app.use('/api', metadataRouter);
 app.use('/api', analyticsRouter);
 app.use('/api', hlsRouter);
@@ -155,6 +158,17 @@ async function scanIfConfigured() {
     // ahora mismo sigue adelantando en la cola, ver #61/ffmpeg-limiter.js).
     // El pipeline antiguo de transcode.js ya no se usa para esto.
     hls.warmAll(videos);
+    // Encola para traslado (ver moveOriginal.js) todo lo que ya estaba con
+    // el HLS listo de antes de tener esto activado - si no, el gancho
+    // automático (hls.js, justo cuando termina de generarse) nunca se
+    // dispararía para ellos, y el ahorro de espacio solo aplicaría a vídeos
+    // nuevos a partir de ahora. Sin carpeta configurada, no hace nada.
+    for (const video of videos) {
+      if (video.archived || video.movedTo) continue;
+      if (hls.getStatus(video) === 'ready') {
+        moveOriginal.maybeMoveOriginal(video).catch(() => {});
+      }
+    }
     watcher.start();
   } catch (err) {
     console.error(`Error al escanear la carpeta de vídeos: ${err.message}`);

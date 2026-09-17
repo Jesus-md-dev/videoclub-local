@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom';
 const PAGES = [
   { to: '/profiles', label: 'Cambiar perfil' },
   { to: '/queue', label: 'Preparación (HLS)' },
+  { to: '/move-queue', label: 'Traslado de originales' },
   { to: '/stats', label: 'Estadísticas de uso' },
   { to: '/config', label: 'Configuración' },
 ];
