@@ -48,6 +48,13 @@ const GENERIC_FOLDER_NAMES = new Set([
 const RANGE_OR_SEASON_PATTERN =
   /^\[?\(?\s*\d+\s*[-–]\s*\d+\s*\)?\]?(\s|$)|^(temporada|season|arco|arc|saga|cour|parte|part|volumen|vol)\.?\s*\d+(\s|$)/i;
 
+// Abreviatura española de "Temporada N" usada como nombre de carpeta ENTERO
+// (ej. "T1", "T2", "T3", "T4"): a diferencia de RANGE_OR_SEASON_PATTERN, se
+// exige que sea el nombre completo de la carpeta (no solo el prefijo) para
+// no confundir con títulos reales que empiecen por "T" + número (ej. una
+// carpeta de película "T2 Judgment Day").
+const SHORT_SEASON_PATTERN = /^t\.?\s*\d{1,3}$/i;
+
 // Ordinales en palabra (no dígito) usados en subtítulos de entrega/saga de
 // anime, ej. "Initial D First Stage" / "Initial D Segunda Etapa": el propio
 // RANGE_OR_SEASON_PATTERN no los reconoce porque exige un número.
@@ -77,6 +84,7 @@ function isGenericFolderName(name) {
   return (
     GENERIC_FOLDER_NAMES.has(clean) ||
     RANGE_OR_SEASON_PATTERN.test(clean) ||
+    SHORT_SEASON_PATTERN.test(clean) ||
     STANDALONE_SAGA_PATTERN.test(clean)
   );
 }
