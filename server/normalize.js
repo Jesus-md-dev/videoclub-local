@@ -65,6 +65,14 @@ function extractEpisodeMarker(video) {
     const season = catalog.seasonNumberFor(video);
     if (season != null) return `S${String(season).padStart(2, '0')}E${m[1].padStart(2, '0')}`;
   }
+  // Archivo que repite el propio marcador de temporada de su carpeta (ej.
+  // "T3.mp4" dentro de "Initial D/T3"): esa temporada es una única
+  // entrega (típico de un OVA/película recopilatorio), sin número de
+  // episodio propio que extraer. Se asume episodio 1 de esa temporada.
+  if (catalog.isGenericFolderName(rawTitle)) {
+    const season = catalog.seasonNumberFor(video);
+    if (season != null) return `S${String(season).padStart(2, '0')}E01`;
+  }
   return null;
 }
 
