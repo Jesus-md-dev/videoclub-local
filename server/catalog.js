@@ -48,9 +48,45 @@ const GENERIC_FOLDER_NAMES = new Set([
 const RANGE_OR_SEASON_PATTERN =
   /^\[?\(?\s*\d+\s*[-–]\s*\d+\s*\)?\]?(\s|$)|^(temporada|season|arco|arc|saga|cour|parte|part|volumen|vol)\.?\s*\d+(\s|$)/i;
 
+// Ordinales en palabra (no dígito) usados en subtítulos de entrega/saga de
+// anime, ej. "Initial D First Stage" / "Initial D Segunda Etapa": el propio
+// RANGE_OR_SEASON_PATTERN no los reconoce porque exige un número.
+const SAGA_ORDINAL_WORDS =
+  'primera|segunda|tercera|cuarta|quinta|sexta|s[ée]ptima|octava|novena|d[ée]cima|[uú]ltima|' +
+  'first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|final|last|extra|new';
+const SAGA_STAGE_WORDS = 'etapa|stage';
+
+// Carpeta que es SOLO el marcador de saga, sin el título (ej. "First Stage"
+// dentro de una carpeta padre "Initial D"): se trata como genérica para
+// seguir subiendo hasta el título real, igual que RANGE_OR_SEASON_PATTERN.
+const STANDALONE_SAGA_PATTERN = new RegExp(
+  `^(?:${SAGA_ORDINAL_WORDS})\\s+(?:${SAGA_STAGE_WORDS})(\\s|$)`,
+  'i'
+);
+
+// Título con el marcador de saga pegado en la misma carpeta (ej. "Initial D
+// First Stage", sin carpeta padre separada): captura el título base para
+// que todas las entregas agrupen bajo la misma clave.
+const TITLE_WITH_SAGA_SUFFIX_PATTERN = new RegExp(
+  `^(.+?)\\s+(?:${SAGA_ORDINAL_WORDS})\\s+(?:${SAGA_STAGE_WORDS})$`,
+  'i'
+);
+
 function isGenericFolderName(name) {
   const clean = name.trim().toLowerCase();
-  return GENERIC_FOLDER_NAMES.has(clean) || RANGE_OR_SEASON_PATTERN.test(clean);
+  return (
+    GENERIC_FOLDER_NAMES.has(clean) ||
+    RANGE_OR_SEASON_PATTERN.test(clean) ||
+    STANDALONE_SAGA_PATTERN.test(clean)
+  );
+}
+
+// Quita un sufijo de saga pegado al título (ver TITLE_WITH_SAGA_SUFFIX_PATTERN)
+// para obtener el título base de agrupación. Si no hay sufijo, devuelve el
+// nombre tal cual.
+function stripSagaSuffix(name) {
+  const match = name.match(TITLE_WITH_SAGA_SUFFIX_PATTERN);
+  return match ? match[1].trim() : name;
 }
 
 // Clave de agrupación para un vídeo: el nombre de la carpeta contenedora más
@@ -71,7 +107,7 @@ function groupKeyFor(video) {
       // que buildLibrary() los trata como películas independientes en vez
       // de agruparlos todos bajo la misma carpeta.
       if (catalogOverrides.isUngrouped(name)) return video.title;
-      return name;
+      return stripSagaSuffix(name);
     }
   }
   return video.title;
