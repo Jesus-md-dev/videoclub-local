@@ -5,6 +5,7 @@ const ffprobePath = require('ffprobe-static').path;
 const ffmpeg = require('fluent-ffmpeg');
 const { getVideosPath, DATA_PATH } = require('./config');
 const archivedVideos = require('./archivedVideos');
+const movedOriginals = require('./movedOriginals');
 
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath);
@@ -52,7 +53,12 @@ function fingerprint(video) {
   return `${video.size}:${mtime}`;
 }
 
+// Un vídeo trasladado a otro disco (ver movedOriginals.js) tiene su archivo
+// real fuera de getVideosPath(): se usa esa ruta guardada en el registro en
+// vez de reconstruirla a partir de relativePath, que ya no apunta a nada ahí.
 function inputPathFor(video) {
+  const moved = movedOriginals.get(video.id);
+  if (moved) return moved.absolutePath;
   return path.join(getVideosPath(), video.relativePath);
 }
 

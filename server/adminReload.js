@@ -9,6 +9,7 @@
 const config = require('./config');
 const catalogOverrides = require('./catalogOverrides');
 const archivedVideos = require('./archivedVideos');
+const movedOriginals = require('./movedOriginals');
 const lostVideos = require('./lostVideos');
 const mediaInfo = require('./mediaInfo');
 const metadata = require('./metadata');
@@ -23,6 +24,7 @@ const RELOADERS = {
   subdlApiKey: () => config.reloadSubdlApiKey(),
   catalogUngrouped: () => catalogOverrides.reloadUngrouped(),
   archivedVideos: () => archivedVideos.reloadRegistry(),
+  movedOriginals: () => movedOriginals.reloadRegistry(),
   lostVideos: () => lostVideos.reloadRegistry(),
   mediaInfoStore: () => mediaInfo.reloadStore(),
   metadataCache: () => metadata.reloadCache(),

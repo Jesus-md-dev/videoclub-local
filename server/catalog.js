@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { getVideosPath, VIDEO_EXTENSIONS } = require('./config');
 const archivedVideos = require('./archivedVideos');
+const movedOriginals = require('./movedOriginals');
 const catalogOverrides = require('./catalogOverrides');
 const hls = require('./hls');
 
@@ -315,6 +316,23 @@ async function scan() {
       continue;
     }
     results.push(video);
+  }
+
+  // Vídeos cuyo original se trasladó a otro disco para ahorrar espacio
+  // (ver movedOriginals.js/scripts/mover-originales-a-d.js): a diferencia de
+  // los archivados arriba, SÍ hay un archivo real en algún sitio, solo que
+  // fuera de esta carpeta - se listan igual a partir del registro para que
+  // el catálogo no dependa de que ese otro disco esté conectado ahora mismo.
+  for (const [id, info] of Object.entries(movedOriginals.getAll())) {
+    if (seenIds.has(id)) continue; // no debería pasar, pero por si acaso
+    results.push({
+      id,
+      title: info.title,
+      relativePath: info.relativePath,
+      size: info.size,
+      modifiedAt: info.modifiedAt,
+      movedTo: info.absolutePath,
+    });
   }
 
   results.sort((a, b) => a.title.localeCompare(b.title, 'es'));
