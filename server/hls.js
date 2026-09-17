@@ -9,6 +9,7 @@ const subtitles = require('./subtitles');
 const trickplay = require('./trickplay');
 const archivedVideos = require('./archivedVideos');
 const lostVideos = require('./lostVideos');
+const moveOriginal = require('./moveOriginal');
 
 // Issue #58/#59/#61 del plan HLS: generación + estado/progreso/prioridad.
 // Las rutas HTTP están en routes/hls.js, el reproductor (#60) en el cliente.
@@ -681,6 +682,15 @@ async function runGeneration(video, priority) {
         console.warn(`HLS: no se pudieron precalentar subtítulos/vista previa de "${video.title}": ${err.message}`);
       });
     }
+
+    // Traslado automático a un disco de respaldo frío (ver moveOriginal.js):
+    // sin relación con el borrado de arriba - aquí SIEMPRE queda una copia
+    // real verificada antes de tocar el original, y si no hay ninguna
+    // carpeta configurada para esto no hace nada. En segundo plano, no
+    // bloquea el "ready": el vídeo ya se puede reproducir mientras tanto.
+    moveOriginal.maybeMoveOriginal(video).catch((err) => {
+      console.warn(`HLS: fallo en el traslado automático del original de "${video.title}": ${err.message}`);
+    });
 
     return master;
   } catch (err) {

@@ -64,6 +64,18 @@ const HLS_PATH = process.env.HLS_PATH
   ? path.resolve(process.env.HLS_PATH)
   : findDriveWithFolder('VideoclubHLS') || path.join(DATA_PATH, 'hls');
 
+// Carpeta de respaldo frío para los originales ya con HLS listo (ver
+// moveOriginal.js/movedOriginals.js/scripts/mover-originales-a-d.js):
+// opcional a propósito, sin ella el traslado automático simplemente no hace
+// nada (los originales se quedan donde siempre). A diferencia de
+// DATA_PATH/TRANSCODED_PATH/HLS_PATH no tiene fallback local: si no se
+// encuentra la carpeta "VideoclubOriginales" en ningún disco, es que no está
+// configurada, no un error - no tendría sentido inventar una ruta local
+// para algo pensado justo para sacar peso del disco de la biblioteca.
+const MOVED_ORIGINALS_PATH = process.env.MOVED_ORIGINALS_PATH
+  ? path.resolve(process.env.MOVED_ORIGINALS_PATH)
+  : findDriveWithFolder('VideoclubOriginales');
+
 const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.webm', '.mov', '.m4v'];
 
 function readSettings() {
@@ -192,6 +204,7 @@ module.exports = {
   THUMBNAILS_PATH,
   TRANSCODED_PATH,
   HLS_PATH,
+  MOVED_ORIGINALS_PATH,
   VIDEO_EXTENSIONS,
   getVideosPath,
   setVideosPath,
