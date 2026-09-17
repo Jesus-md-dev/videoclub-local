@@ -97,6 +97,34 @@ function stripSagaSuffix(name) {
   return match ? match[1].trim() : name;
 }
 
+// Mismos marcadores numéricos que RANGE_OR_SEASON_PATTERN/SHORT_SEASON_PATTERN,
+// pero capturando el número en vez de solo detectar que la carpeta es
+// genérica: agruparla como serie descarta ese número (no hace falta para
+// agrupar), pero sí hace falta para reconstruir "S04E07" en episodios cuyo
+// nombre de archivo es solo el número (ver normalize.js: extractEpisodeMarker).
+const NUMBERED_SEASON_CAPTURE_PATTERN =
+  /^(?:temporada|season|arco|arc|saga|cour|parte|part|volumen|vol)\.?\s*(\d+)(\s|$)/i;
+const SHORT_SEASON_CAPTURE_PATTERN = /^t\.?\s*(\d{1,3})$/i;
+
+function seasonNumberForFolder(name) {
+  const clean = name.trim().toLowerCase();
+  let match = clean.match(NUMBERED_SEASON_CAPTURE_PATTERN);
+  if (match) return Number(match[1]);
+  match = clean.match(SHORT_SEASON_CAPTURE_PATTERN);
+  if (match) return Number(match[1]);
+  return null;
+}
+
+// Número de temporada de un vídeo a partir de su carpeta contenedora
+// inmediata (ej. "Initial D/T4/07.mp4" -> 4), o null si no se reconoce
+// ninguna marca de temporada ahí.
+function seasonNumberFor(video) {
+  const folderSegments = video.relativePath.split(path.sep).slice(0, -1);
+  if (folderSegments.length === 0) return null;
+  const immediateParent = cleanTitle(folderSegments[folderSegments.length - 1]);
+  return seasonNumberForFolder(immediateParent);
+}
+
 // Clave de agrupación para un vídeo: el nombre de la carpeta contenedora más
 // específica (la más profunda que no sea una categoría genérica), asumiendo
 // que agrupa otros vídeos de la misma obra (ej. episodios de una serie). Si
@@ -312,6 +340,7 @@ module.exports = {
   isGenericFolderName,
   getAllGroupKeys,
   getShowKeyFor,
+  seasonNumberFor,
   // Para normalize.js: calcular el id que tendría una ruta relativa nueva
   // (tras renombrar un archivo) sin tener que reescanear toda la carpeta de
   // vídeos solo para eso - con miles de vídeos en un disco externo, hacerlo

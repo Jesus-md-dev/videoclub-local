@@ -44,7 +44,8 @@ function sanitizeName(str) {
 // misma serie según lo que traiga cada archivo original). Si no hay
 // ninguno de los tres, se deja el archivo tal cual (mejor no tocar nada
 // que arriesgarse a desordenar los episodios).
-function extractEpisodeMarker(rawTitle) {
+function extractEpisodeMarker(video) {
+  const rawTitle = video.title;
   let m = rawTitle.match(/S(\d{1,2})E(\d{1,4})/i);
   if (m) return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}`;
   // Requiere un separador (espacio/guion/punto/inicio) antes de la
@@ -54,6 +55,16 @@ function extractEpisodeMarker(rawTitle) {
   if (m) return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}`;
   m = rawTitle.match(/(?:^|[^a-z0-9])E(\d{1,4})(?:[^0-9]|$)/i);
   if (m) return `S01E${m[1].padStart(2, '0')}`;
+  // Nombre de archivo formado solo por el número de episodio (ej. "01",
+  // sin ninguna letra de por medio): habitual cuando el episodio vive
+  // directamente dentro de una carpeta de temporada (ver Initial D,
+  // carpetas "T1".."T4"). Sin esa carpeta no hay forma fiable de saber la
+  // temporada, así que se deja sin tocar en ese caso.
+  m = rawTitle.match(/^0*(\d{1,4})$/);
+  if (m) {
+    const season = catalog.seasonNumberFor(video);
+    if (season != null) return `S${String(season).padStart(2, '0')}E${m[1].padStart(2, '0')}`;
+  }
   return null;
 }
 
@@ -116,7 +127,7 @@ function buildCandidate(video) {
 
   let newBaseName;
   if (isEpisode) {
-    const marker = extractEpisodeMarker(video.title);
+    const marker = extractEpisodeMarker(video);
     if (!marker) return null;
     newBaseName = `${baseName} - ${marker}`;
   } else {
