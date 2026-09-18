@@ -85,4 +85,4 @@ function stop() {
   clearTimeout(debounceTimer);
 }
 
-module.exports = { start, stop };
+module.exports = { start, stop, scheduleRescan };

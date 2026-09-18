@@ -131,17 +131,21 @@ async function processQueue() {
   // que estos vídeos ya tienen "movedTo" hasta el próximo escaneo completo
   // (el registro se actualiza en disco, pero buildLibrary() reconstruye
   // desde cero a partir del último escaneo, no observa este registro en
-  // vivo) - se reescanea aquí para que quede consistente sin esperar a que
-  // algo más dispare un escaneo por otro motivo. Require perezoso (no al
-  // principio del archivo) porque catalog.js -> hls.js -> este módulo ya
-  // forman un ciclo; pedirlo aquí dentro, en vez de al cargar el módulo,
-  // evita depender del orden de carga.
+  // vivo). Se reutiliza el reescaneo con antirrebote de watcher.js (30s, ya
+  // pensado para no solapar varios reescaneos seguidos contra el disco
+  // externo - ver su propio comentario) en vez de escanear aquí mismo cada
+  // vez: fs.rmSync ya deja el original borrado antes de esto, así que el
+  // propio vigilante de la carpeta también se habría enterado solo, pero
+  // llamarlo aquí explícitamente no depende de que fs.watch llegue a
+  // disparar a tiempo. Una racha de traslados seguidos (como al arrancar,
+  // con el backlog entero) solo dispara UN reescaneo al asentarse, no uno
+  // por cada vez que la cola toca fondo. Require perezoso porque catalog.js
+  // -> hls.js -> este módulo -> watcher.js -> catalog.js formarían un
+  // ciclo si se pidiera al cargar el módulo.
   if (movedAnything) {
     // eslint-disable-next-line global-require
-    const catalog = require('./catalog');
-    catalog.scan().catch((err) => {
-      console.warn(`Traslado automático: fallo al reescanear tras mover: ${err.message}`);
-    });
+    const watcher = require('./watcher');
+    watcher.scheduleRescan();
   }
 }
 
