@@ -250,13 +250,27 @@ main {
      margen vertical de sobra la carátula se recorta por arriba al
      agrandarse en hover (translateY + scale). */
   padding: 20px 4px 16px;
-  /* Oculta la barra de scroll (el deslizamiento en sí sigue funcionando):
-     el carril ya se lee visualmente como "esto sigue hacia el lado". */
-  scrollbar-width: none;
+  /* Barra de scroll fina y discreta debajo del carril, en vez de oculta del
+     todo: dice cuánto queda por deslizar además de con las flechas. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
 .row-track::-webkit-scrollbar {
-  display: none;
+  height: 6px;
+}
+
+.row-track::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.row-track::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.row-track::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
 }
 
 .row-track > .card {
