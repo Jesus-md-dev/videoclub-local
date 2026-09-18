@@ -157,58 +157,85 @@ function groupKeyFor(video) {
 // responder a NINGUNA petición, a veces varios segundos, a veces mucho
 // más. Con await, solo esta función concreta espera; el resto del
 // servidor sigue atendiendo peticiones mientras tanto.
-// Recorre a mano carpeta por carpeta (en vez de usar `recursive: true` de
-// fs.readdir) porque esa opción, en Windows, NO entra dentro de una
-// "junction" (carpeta-enlace NTFS) - la lista como entrada pero no mira
-// dentro. Eso es justo lo que usa scripts/mover-originales-a-d.js para
-// trasladar originales ya con HLS listo a otro disco sin que desaparezcan
-// del catálogo: sin este recorrido manual, esos vídeos se habrían esfumado
-// de la web en cuanto se movieran, aunque el archivo siguiera existiendo.
-async function walk(baseDir) {
-  const results = [];
-
-  async function walkDir(dir) {
-    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      let isDir = entry.isDirectory();
-      let isFile = entry.isFile();
-      if (entry.isSymbolicLink()) {
-        // Una junction se reporta como "symbolic link", no como directorio,
-        // en el propio readdir - stat() (a diferencia de lstat) sigue el
-        // enlace para saber si el destino real es una carpeta o un archivo.
-        try {
-          // eslint-disable-next-line no-await-in-loop
-          const target = await fs.promises.stat(fullPath);
-          isDir = target.isDirectory();
-          isFile = target.isFile();
-        } catch {
-          continue; // Enlace roto (destino desconectado/borrado): se ignora.
-        }
-      }
-      if (isDir) {
+// Recorre a mano SOLO dentro de una "junction" (carpeta-enlace NTFS) que
+// recursive:true de fs.readdir se saltó (la lista como entrada pero no
+// entra a mirar dentro, en Windows). No se usa hoy en producción (el
+// traslado de originales a otro disco, moveOriginal.js/movedOriginals.js,
+// acabó usando un registro en vez de junctions - ver ese módulo), pero se
+// deja como red de seguridad por si alguna vez se crea una a mano dentro
+// de la biblioteca: sin esto, su contenido se esfumaría del catálogo sin
+// más aviso.
+async function walkReparsePoint(dir, results) {
+  let entries;
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  } catch {
+    return; // Enlace roto (destino desconectado/borrado): se ignora.
+  }
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    let isDir = entry.isDirectory();
+    let isFile = entry.isFile();
+    if (entry.isSymbolicLink()) {
+      try {
         // eslint-disable-next-line no-await-in-loop
-        await walkDir(fullPath);
+        const target = await fs.promises.stat(fullPath);
+        isDir = target.isDirectory();
+        isFile = target.isFile();
+      } catch {
         continue;
       }
-      if (!isFile) continue;
-      if (!VIDEO_EXTENSIONS.includes(path.extname(entry.name).toLowerCase())) continue;
-      const relativePath = path.relative(baseDir, fullPath);
-      // eslint-disable-next-line no-await-in-loop
-      const stat = await fs.promises.stat(fullPath);
-      const id = makeId(relativePath);
-      results.push({
-        id,
-        title: cleanTitle(entry.name),
-        relativePath,
-        size: stat.size,
-        modifiedAt: stat.mtime,
-      });
     }
+    if (isDir) {
+      // eslint-disable-next-line no-await-in-loop
+      await walkReparsePoint(fullPath, results);
+      continue;
+    }
+    if (!isFile) continue;
+    if (!VIDEO_EXTENSIONS.includes(path.extname(entry.name).toLowerCase())) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const stat = await fs.promises.stat(fullPath);
+    results.push({ fullPath, title: cleanTitle(entry.name), size: stat.size, modifiedAt: stat.mtime });
+  }
+}
+
+// Un único fs.readdir recursivo (rápido, una sola llamada por lo demás en
+// vez de miles secuenciales contra el disco externo - una versión anterior
+// que recorría TODO a mano, carpeta por carpeta, resultó mucho más lenta a
+// esta escala y llegó a dejar el arranque/reescaneo colgado con 2000+
+// vídeos). Solo entra a mano (walkReparsePoint) en las pocas carpetas que
+// resulten ser una junction, si es que hay alguna.
+async function walk(baseDir) {
+  const entries = await fs.promises.readdir(baseDir, { recursive: true, withFileTypes: true });
+  const results = [];
+  const reparsePoints = [];
+
+  for (const entry of entries) {
+    const parentDir = entry.parentPath ?? entry.path;
+    const fullPath = path.join(parentDir, entry.name);
+    if (entry.isSymbolicLink()) {
+      reparsePoints.push(fullPath);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    if (!VIDEO_EXTENSIONS.includes(path.extname(entry.name).toLowerCase())) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const stat = await fs.promises.stat(fullPath);
+    results.push({ fullPath, title: cleanTitle(entry.name), size: stat.size, modifiedAt: stat.mtime });
   }
 
-  await walkDir(baseDir);
-  return results;
+  for (const reparsePoint of reparsePoints) {
+    // eslint-disable-next-line no-await-in-loop
+    await walkReparsePoint(reparsePoint, results);
+  }
+
+  return results.map((r) => ({
+    id: makeId(path.relative(baseDir, r.fullPath)),
+    title: r.title,
+    relativePath: path.relative(baseDir, r.fullPath),
+    size: r.size,
+    modifiedAt: r.modifiedAt,
+  }));
 }
 
 // Agrupa el catálogo por `groupKeyFor`: las claves con más de un vídeo se
@@ -281,7 +308,24 @@ function filterStableFiles(results) {
   return results.filter((video) => !stillCopyingIds.has(video.id));
 }
 
-async function scan() {
+// Varios sitios disparan un escaneo por su cuenta sin coordinarse entre sí
+// (el vigilante de archivos, el traslado automático a otro disco tras
+// vaciarse su cola, admin/reload, guardar la config...): sin esta
+// protección, dos escaneos completos a la vez contra el disco externo
+// pueden saturarlo hasta dejar el servidor entero sin responder (visto de
+// verdad en producción). Si ya hay uno en marcha, los demás llamantes
+// simplemente esperan a que termine ESE, en vez de arrancar otro.
+let scanPromise = null;
+
+function scan() {
+  if (scanPromise) return scanPromise;
+  scanPromise = performScan().finally(() => {
+    scanPromise = null;
+  });
+  return scanPromise;
+}
+
+async function performScan() {
   const videosPath = getVideosPath();
   if (!videosPath) {
     throw new Error('No hay carpeta de vídeos configurada. Ajústala en /config.html o en .env');
