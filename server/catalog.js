@@ -401,6 +401,16 @@ function getLostCount() {
   return lostCount;
 }
 
+// Todos los vídeos de una clave de agrupación (ver metadataKeyFor/groupKeyFor),
+// sea una serie/carpeta (varios episodios) o una película suelta (un único
+// vídeo cuya propia clave es su título) - a diferencia de listDir() de abajo,
+// que solo sabe listar carpetas de serie (showVideos), esto vale para purge.js
+// tanto si "key" es un nombre de carpeta como si es el título de una película.
+function videosForKey(key) {
+  if (!key) return [];
+  return getCatalog().filter((video) => groupKeyFor(video) === key);
+}
+
 // Lista el contenido del catálogo: sin clave, la raíz (series/anime como
 // "carpetas" + películas sueltas); con clave, los vídeos de esa serie.
 function listDir(key = '') {
@@ -429,6 +439,7 @@ module.exports = {
   getVideoById,
   getLostCount,
   listDir,
+  videosForKey,
   metadataKeyFor: groupKeyFor,
   isGenericFolderName,
   getAllGroupKeys,

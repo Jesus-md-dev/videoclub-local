@@ -41,7 +41,7 @@ function forgetVideo(video) {
 // su carpeta desaparezca del escaneo, así que sin esto seguirían
 // apareciendo en el catálogo para siempre por mucho que se borre en disco.
 async function purgeKey(key) {
-  const { videos } = catalog.listDir(key);
+  const videos = catalog.videosForKey(key);
   if (!videos.length) return { removed: 0 };
 
   const ids = videos.map((v) => v.id);
@@ -67,7 +67,7 @@ async function purgeKey(key) {
 // cliente como -otra vez- en el propio servidor), no como un botón de un
 // solo clic: el archivo de vídeo original no tiene papelera ni deshacer.
 async function deleteContent(key) {
-  const { videos } = catalog.listDir(key);
+  const videos = catalog.videosForKey(key);
   if (!videos.length) return { removed: 0, filesDeleted: 0 };
 
   const ids = videos.map((v) => v.id);
