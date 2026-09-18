@@ -71,9 +71,36 @@ function runRobocopyAsync(sourceDir, destDir, fileName, onProgress) {
   });
 }
 
+// Sin espacio de sobra en el disco destino, cada intento de todas formas
+// tarda varios segundos en fallar: robocopy reintenta solo 3 veces con 2s de
+// espera entre cada una (/R:3 /W:2, ver runRobocopyAsync) antes de darse por
+// vencido - visto de verdad con el disco al límite, cada archivo de la cola
+// desperdiciaba 6-8s así, uno detrás de otro, sin mover nada. Comprobar el
+// espacio libre ANTES de lanzar robocopy siquiera deja el mismo fallo (la
+// cola sigue igual de parada hasta que se libere espacio o se reinicie el
+// servidor, mismo comportamiento de siempre) pero de forma prácticamente
+// instantánea en vez de malgastar tiempo real en reintentos que no pueden
+// tener éxito. Margen del 5% extra sobre el tamaño del archivo, por si el
+// sistema de archivos necesita algo de holgura para metadatos.
+function hasEnoughSpace(destPath, requiredBytes) {
+  try {
+    const stats = fs.statfsSync(path.parse(destPath).root);
+    const freeBytes = stats.bavail * stats.bsize;
+    return freeBytes >= requiredBytes * 1.05;
+  } catch {
+    // Si no se puede comprobar (sistema de archivos no soportado, etc.), no
+    // bloquear el traslado por esto - se deja que robocopy lo intente igual.
+    return true;
+  }
+}
+
 async function moveOne(video, onProgress) {
   const sourceAbs = inputPathFor(video);
   const destAbs = destPathFor(video);
+
+  if (!fs.existsSync(destAbs) && !hasEnoughSpace(destAbs, video.size)) {
+    throw new Error(`sin espacio suficiente en el disco destino para "${video.relativePath}"`);
+  }
 
   if (fs.existsSync(destAbs)) {
     // Un traslado anterior puede haberse quedado a medias (el servidor se
