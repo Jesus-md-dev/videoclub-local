@@ -61,6 +61,7 @@ const normalizeRouter = require('./routes/normalize');
 const subdlRouter = require('./routes/subdl');
 const healthRouter = require('./routes/health');
 const dlnaRouter = require('./routes/dlna');
+const chromecastRouter = require('./routes/chromecast');
 const adminRouter = require('./routes/admin');
 
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
@@ -97,6 +98,25 @@ app.use(
 // mano (routes/tracks.js: POST /subtitle/import) viaja aquí como texto en
 // base64 dentro del JSON (evita añadir una dependencia de subida de
 // archivos solo para esto), y eso puede pasar de 100kb con un .srt largo.
+// Sin esto, un Chromecast (o cualquier receptor "de navegador", como el
+// Default Media Receiver que usa server/chromecast.js) rechaza la carga del
+// vídeo sin más ni un solo aviso claro: pasa un buen rato "cargando" y acaba
+// en IDLE/ERROR, todo por CORS - visto de verdad probando contra una TV
+// real (issue #109): fallaba igual con HLS, con MP4 progresivo y con el
+// remux, los tres formatos distintos, la MISMA causa. Como este servidor es
+// LAN-only por diseño (ver SECURITY.md, nunca expuesto a internet), un
+// origen abierto aquí no añade riesgo real.
+app.use('/api', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 app.use(express.json({ limit: '5mb' }));
 app.use('/api', videosRouter);
 app.use('/api', streamRouter);
@@ -116,6 +136,7 @@ app.use('/api', normalizeRouter);
 app.use('/api', subdlRouter);
 app.use('/api', healthRouter);
 app.use('/api', dlnaRouter);
+app.use('/api', chromecastRouter);
 app.use('/api', adminRouter);
 
 app.get('/health', (req, res) => {

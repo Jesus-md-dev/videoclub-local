@@ -89,9 +89,16 @@ export default function VideoControls({
   const subtitleSettingsRef = useRef(null);
   const castPanelRef = useRef(null);
 
-  // Emitir a la TV (DLNA/UPnP, issue #99): castStatus es null salvo que haya
-  // una emisión activa PARA ESTE vídeo concreto - así, si se emitió otro
-  // vídeo antes o desde otra pestaña, no se confunde con el de aquí.
+  // Emitir a la TV: dos protocolos con API en el servidor casi idéntica -
+  // DLNA/UPnP (issue #99, server/dlna.js) y Chromecast (issue #109,
+  // server/chromecast.js, para TVs con Chromecast integrado tipo Xiaomi/
+  // Android TV que no hablan DLNA en absoluto). Cada dispositivo de
+  // castDevices lleva su "kind" ('dlna'|'chromecast') para saber a qué
+  // prefijo de API (/api/dlna o /api/chromecast) mandar cada orden;
+  // castStatus también lo guarda, para pausar/reanudar/parar la emisión
+  // correcta. castStatus es null salvo que haya una emisión activa PARA
+  // ESTE vídeo concreto - así, si se emitió otro vídeo antes o desde otra
+  // pestaña, no se confunde con el de aquí.
   const [castOpen, setCastOpen] = useState(false);
   const [castDevices, setCastDevices] = useState([]);
   const [castDevicesLoading, setCastDevicesLoading] = useState(false);
@@ -350,16 +357,29 @@ export default function VideoControls({
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, [castOpen]);
 
+  // Un solo prefijo de API según el protocolo del dispositivo elegido -
+  // DLNA y Chromecast exponen exactamente las mismas rutas (devices/cast/
+  // pause/resume/seek/stop/status), así que todo lo demás puede ser
+  // idéntico para los dos.
+  const apiPrefix = (kind) => (kind === 'chromecast' ? '/api/chromecast' : '/api/dlna');
+
   // Al abrir el reproductor: si ya había una emisión en marcha para este
-  // mismo vídeo (p.ej. se recargó la página), se recupera el estado en vez
-  // de empezar como si no hubiera nada emitiéndose.
+  // mismo vídeo (p.ej. se recargó la página) en cualquiera de los dos
+  // protocolos, se recupera el estado en vez de empezar como si no hubiera
+  // nada emitiéndose.
   useEffect(() => {
-    fetch('/api/dlna/status')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.active && data.videoId === id) setCastStatus(data);
-      })
-      .catch(() => {});
+    let cancelled = false;
+    Promise.all([
+      fetch('/api/dlna/status').then((res) => res.json()).then((data) => ({ ...data, kind: 'dlna' })).catch(() => null),
+      fetch('/api/chromecast/status').then((res) => res.json()).then((data) => ({ ...data, kind: 'chromecast' })).catch(() => null),
+    ]).then(([dlna, chromecast]) => {
+      if (cancelled) return;
+      const active = [dlna, chromecast].find((s) => s?.active && s.videoId === id);
+      if (active) setCastStatus(active);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   // Mientras hay una emisión activa para este vídeo, se consulta su estado
@@ -371,7 +391,7 @@ export default function VideoControls({
     let cancelled = false;
     let timer;
     const poll = () => {
-      fetch('/api/dlna/status')
+      fetch(`${apiPrefix(castStatus.kind)}/status`)
         .then((res) => res.json())
         .then((data) => {
           if (cancelled) return;
@@ -379,7 +399,7 @@ export default function VideoControls({
             setCastStatus(null);
             return;
           }
-          setCastStatus(data);
+          setCastStatus({ ...data, kind: castStatus.kind });
           timer = setTimeout(poll, 3000);
         })
         .catch(() => {
@@ -391,15 +411,24 @@ export default function VideoControls({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [castStatus?.active, id]);
+  }, [castStatus?.active, castStatus?.kind, id]);
 
   const loadCastDevices = () => {
     setCastDevicesLoading(true);
     setCastError(null);
-    fetch('/api/dlna/devices')
-      .then((res) => res.json())
-      .then((data) => setCastDevices(data.devices || []))
-      .catch(() => setCastError('No se pudo buscar dispositivos.'))
+    Promise.all([
+      fetch('/api/dlna/devices')
+        .then((res) => res.json())
+        .then((data) => (data.devices || []).map((d) => ({ ...d, kind: 'dlna' })))
+        .catch(() => []),
+      fetch('/api/chromecast/devices')
+        .then((res) => res.json())
+        .then((data) => (data.devices || []).map((d) => ({ ...d, kind: 'chromecast' })))
+        .catch(() => []),
+    ])
+      .then(([dlnaDevices, chromecastDevices]) => {
+        setCastDevices([...chromecastDevices, ...dlnaDevices]);
+      })
       .finally(() => setCastDevicesLoading(false));
   };
 
@@ -413,38 +442,38 @@ export default function VideoControls({
     });
   };
 
-  const startCast = (deviceId) => {
+  const startCast = (device) => {
     setCastConnecting(true);
     setCastError(null);
-    fetch('/api/dlna/cast', {
+    fetch(`${apiPrefix(device.kind)}/cast`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId, videoId: id, profileId, audioIndex }),
+      body: JSON.stringify({ deviceId: device.id, videoId: id, profileId, audioIndex }),
     })
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         if (!ok) throw new Error(data.error || 'No se pudo emitir a este dispositivo.');
         videoRef.current?.pause();
         setCastOpen(false);
-        setCastStatus({ active: true, deviceId, videoId: id, currentTime: 0, playerState: 'PLAYING' });
+        setCastStatus({ active: true, deviceId: device.id, videoId: id, currentTime: 0, playerState: 'PLAYING', kind: device.kind });
       })
       .catch((err) => setCastError(err.message))
       .finally(() => setCastConnecting(false));
   };
 
   const stopCast = () => {
-    fetch('/api/dlna/stop', { method: 'POST' }).catch(() => {});
+    fetch(`${apiPrefix(castStatus?.kind)}/stop`, { method: 'POST' }).catch(() => {});
     setCastStatus(null);
   };
 
   const castTogglePause = () => {
     const path = castStatus?.playerState === 'PAUSED' ? 'resume' : 'pause';
-    fetch(`/api/dlna/${path}`, { method: 'POST' }).catch(() => {});
+    fetch(`${apiPrefix(castStatus?.kind)}/${path}`, { method: 'POST' }).catch(() => {});
   };
 
   const castSeekToRatio = (ratio) => {
     if (!duration) return;
-    fetch('/api/dlna/seek', {
+    fetch(`${apiPrefix(castStatus?.kind)}/seek`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ seconds: ratio * duration }),
@@ -644,7 +673,11 @@ export default function VideoControls({
       <div className={`video-controls ${controlsVisible ? '' : 'video-controls-hidden'}`}>
       {casting && (
         <div className="cast-banner">
-          <span>📺 Emitiendo a {castDevices.find((d) => d.id === castStatus.deviceId)?.name || castStatus.deviceId}</span>
+          <span>
+            📺 Emitiendo a{' '}
+            {castDevices.find((d) => d.id === castStatus.deviceId && d.kind === castStatus.kind)?.name ||
+              castStatus.deviceId}
+          </span>
           <button className="secondary" onClick={stopCast}>
             ■ Detener
           </button>
@@ -855,7 +888,7 @@ export default function VideoControls({
             className={`control-btn ${castOpen || casting ? 'control-btn-active' : ''}`}
             onClick={toggleCastPanel}
             aria-label="Emitir a la TV"
-            title="Emitir a la TV (DLNA)"
+            title="Emitir a la TV (DLNA/Chromecast)"
           >
             📺
           </button>
@@ -865,16 +898,16 @@ export default function VideoControls({
               {castDevicesLoading && <span className="subtitle-search-hint">Buscando dispositivos…</span>}
               {!castDevicesLoading && castDevices.length === 0 && (
                 <span className="subtitle-search-hint">
-                  No se encontró ningún dispositivo DLNA en la red.
+                  No se encontró ningún dispositivo (DLNA o Chromecast) en la red.
                 </span>
               )}
               {castError && <span className="subtitle-search-hint subtitle-search-hint-error">{castError}</span>}
               {castDevices.length > 0 && (
                 <ul className="subtitle-search-results">
                   {castDevices.map((device) => (
-                    <li key={device.id}>
+                    <li key={`${device.kind}:${device.id}`}>
                       <span>{device.name}</span>
-                      <button className="secondary" disabled={castConnecting} onClick={() => startCast(device.id)}>
+                      <button className="secondary" disabled={castConnecting} onClick={() => startCast(device)}>
                         {castConnecting ? 'Conectando…' : 'Emitir'}
                       </button>
                     </li>

@@ -1,12 +1,10 @@
-const os = require('os');
-const path = require('path');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
 const dlnacastsFactory = require('dlnacasts2');
 const hls = require('./hls');
 const profiles = require('./profiles');
 const { getMediaInfo } = require('./mediaInfo');
-const { PORT } = require('./config');
+const { buildSource } = require('./castSource');
 
 // Descubrimiento de dispositivos DLNA/UPnP en la LAN (Fire TV, smart TVs con
 // receptor DLNA activo...) - ver issue #99. dlnacasts2 hace SSDP por debajo y
@@ -22,54 +20,12 @@ const STATUS_POLL_MS = 5000;
 // hls.js). null si no hay nada emitiéndose ahora mismo.
 let session = null;
 
-function localIp() {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
-    }
-  }
-  return null;
-}
-
-// Mismo mapa que server/routes/stream.js: hay que declarar el tipo MIME real
-// del archivo (no asumir "video/mp4" siempre) - un dispositivo DLNA puede
-// rechazar la reproducción si el contenido declarado no coincide con lo que
-// de verdad recibe (visto en directo: un .mkv anunciado como video/mp4
-// provocaba un rechazo inmediato del receptor DLNA de Windows).
-const MIME_TYPES = {
-  '.mp4': 'video/mp4',
-  '.mkv': 'video/x-matroska',
-  '.avi': 'video/x-msvideo',
-  '.webm': 'video/webm',
-  '.mov': 'video/quicktime',
-  '.m4v': 'video/x-m4v',
-};
-
 function getDevices() {
   return dlnacasts.players.map((p) => ({ id: p.name, name: p.name }));
 }
 
 function findPlayer(deviceId) {
   return dlnacasts.players.find((p) => p.name === deviceId) || null;
-}
-
-// URL de origen que se le pasa al dispositivo DLNA: en HTTP (no HTTPS, un
-// reproductor DLNA no acepta nuestro certificado autofirmado). Un vídeo con
-// su original todavía en disco reutiliza /api/stream/:id tal cual (Range
-// completo, ya soporta elegir pista de audio); uno archivado (sin original,
-// solo quedan los segmentos de HLS) usa el remux en directo de más abajo.
-function buildSource(video, audioIndex) {
-  const ip = localIp();
-  const base = `http://${ip}:${PORT}`;
-  if (video.archived) {
-    // El remux en directo siempre saca un MP4 fragmentado de verdad (ver
-    // remuxStream), sea cual sea el contenedor original.
-    return { url: `${base}/api/dlna/remux/${video.id}`, type: 'video/mp4' };
-  }
-  const query = audioIndex != null ? `?audio=${audioIndex}` : '';
-  const type = MIME_TYPES[path.extname(video.relativePath).toLowerCase()] || 'video/mp4';
-  return { url: `${base}/api/stream/${video.id}${query}`, type };
 }
 
 function clearStatusTimer() {
