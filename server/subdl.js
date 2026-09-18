@@ -221,4 +221,15 @@ function migrateVideo(oldId, newId) {
   }
 }
 
-module.exports = { isConfigured, search, downloadSubtitle, listDownloaded, migrateVideo };
+// Para purge.js/deleteContent: al borrar una obra del todo, sin esto la
+// entrada de este registro se quedaría huérfana para siempre (el .vtt que
+// referencia ya no existe, pero listDownloaded ya lo filtra por
+// fs.existsSync - esto es solo para no acumular basura en el registro).
+function forget(videoId) {
+  const registry = loadRegistry();
+  if (!registry[videoId]) return;
+  delete registry[videoId];
+  saveRegistry(registry);
+}
+
+module.exports = { isConfigured, search, downloadSubtitle, listDownloaded, migrateVideo, forget };

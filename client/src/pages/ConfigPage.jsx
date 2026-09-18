@@ -22,6 +22,10 @@ export default function ConfigPage() {
   const [ungroupKey, setUngroupKey] = useState('');
   const [ungrouping, setUngrouping] = useState(false);
   const [ungroupMessage, setUngroupMessage] = useState(null);
+  const [deleteKey, setDeleteKey] = useState('');
+  const [deleteConfirmTitle, setDeleteConfirmTitle] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState(null);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -182,6 +186,37 @@ export default function ConfigPage() {
       setUngroupMessage({ text: err.message, ok: false });
     } finally {
       setUngrouping(false);
+    }
+  };
+
+  // Borra el archivo de vídeo REAL (no solo sus metadatos, a diferencia de
+  // handlePurge arriba). Sin deshacer y sin papelera, así que la única
+  // protección contra un clic sin querer es escribir el título exacto en
+  // "deleteConfirmTitle" - el botón ni siquiera se activa si no coincide
+  // letra por letra, y el servidor lo vuelve a comprobar por su cuenta.
+  const handleDelete = async () => {
+    const key = deleteKey.trim();
+    if (!key || deleteConfirmTitle.trim() !== key) return;
+    setDeleting(true);
+    setDeleteMessage(null);
+    try {
+      const res = await fetch('/api/catalog/delete-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, confirmTitle: deleteConfirmTitle.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setDeleteMessage({
+        text: `Borrado "${key}": ${data.filesDeleted} archivo(s) de vídeo eliminados para siempre.`,
+        ok: true,
+      });
+      setDeleteKey('');
+      setDeleteConfirmTitle('');
+    } catch (err) {
+      setDeleteMessage({ text: err.message, ok: false });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -427,6 +462,51 @@ export default function ConfigPage() {
           {purging ? 'Purgando…' : 'Purgar'}
         </button>
         {purgeMessage && <p className={`config-message ${purgeMessage.ok ? 'ok' : 'error'}`}>{purgeMessage.text}</p>}
+
+        <p className="section-title danger" style={{ marginTop: 32 }}>
+          Borrar contenido
+        </p>
+        <p className="hint">
+          Borra PARA SIEMPRE el archivo de vídeo (esté en su carpeta original o ya trasladado a
+          otro disco para ahorrar espacio) además de todo lo que purgar ya limpia. No hay papelera
+          ni deshacer: solo para cuando de verdad no quieres volver a tener ese contenido.
+        </p>
+        <label htmlFor="deleteKey">Clave (nombre de carpeta/serie tal cual aparece en el catálogo)</label>
+        <input
+          type="text"
+          id="deleteKey"
+          autoComplete="off"
+          value={deleteKey}
+          onChange={(e) => {
+            setDeleteKey(e.target.value);
+            setDeleteConfirmTitle('');
+          }}
+        />
+        {deleteKey.trim() && (
+          <>
+            <label htmlFor="deleteConfirmTitle">
+              Escribe <strong>{deleteKey.trim()}</strong> para confirmar
+            </label>
+            <input
+              type="text"
+              id="deleteConfirmTitle"
+              autoComplete="off"
+              value={deleteConfirmTitle}
+              onChange={(e) => setDeleteConfirmTitle(e.target.value)}
+            />
+          </>
+        )}
+        <button
+          type="button"
+          className="danger"
+          onClick={handleDelete}
+          disabled={deleting || !deleteKey.trim() || deleteConfirmTitle.trim() !== deleteKey.trim()}
+        >
+          {deleting ? 'Borrando…' : 'Borrar para siempre'}
+        </button>
+        {deleteMessage && (
+          <p className={`config-message ${deleteMessage.ok ? 'ok' : 'error'}`}>{deleteMessage.text}</p>
+        )}
       </div>
       {browsing && (
         <FolderBrowser

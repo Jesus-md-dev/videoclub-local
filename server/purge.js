@@ -2,14 +2,36 @@ const fs = require('fs');
 const path = require('path');
 const catalog = require('./catalog');
 const archivedVideos = require('./archivedVideos');
+const movedOriginals = require('./movedOriginals');
 const lostVideos = require('./lostVideos');
 const hls = require('./hls');
 const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
+const subtitles = require('./subtitles');
+const subdl = require('./subdl');
+const localSubtitles = require('./localSubtitles');
+const mediaInfo = require('./mediaInfo');
 const { DATA_PATH, HLS_PATH, THUMBNAILS_PATH } = require('./config');
 const { removeProgressIds } = require('./progressStore');
 
 const TRICKPLAY_DIR = path.join(DATA_PATH, 'trickplay');
+
+// Limpieza compartida por purgeKey y deleteContent (ver más abajo): todo lo
+// que cuelga del id de un vídeo salvo el propio archivo de vídeo original.
+function forgetVideo(video) {
+  archivedVideos.forget(video.id);
+  movedOriginals.forget(video.id);
+  lostVideos.forget(video.id);
+  hls.forget(video.id);
+  thumbnails.forget(video.id);
+  subdl.forget(video.id);
+  localSubtitles.forget(video.id);
+  subtitles.removeAllFor(video.id);
+  fs.rmSync(path.join(HLS_PATH, video.id), { recursive: true, force: true });
+  fs.rmSync(path.join(THUMBNAILS_PATH, `${video.id}.jpg`), { force: true });
+  fs.rmSync(path.join(TRICKPLAY_DIR, `${video.id}.json`), { force: true });
+  fs.rmSync(path.join(TRICKPLAY_DIR, `${video.id}.jpg`), { force: true });
+}
 
 // Quita del catálogo una obra completa cuya carpeta se ha borrado a mano
 // (p.ej. porque quedaban demasiados episodios perdidos sin solución - ver
@@ -23,20 +45,47 @@ async function purgeKey(key) {
   if (!videos.length) return { removed: 0 };
 
   const ids = videos.map((v) => v.id);
-  for (const video of videos) {
-    archivedVideos.forget(video.id);
-    lostVideos.forget(video.id);
-    hls.forget(video.id);
-    thumbnails.forget(video.id);
-    fs.rmSync(path.join(HLS_PATH, video.id), { recursive: true, force: true });
-    fs.rmSync(path.join(THUMBNAILS_PATH, `${video.id}.jpg`), { force: true });
-    fs.rmSync(path.join(TRICKPLAY_DIR, `${video.id}.json`), { force: true });
-    fs.rmSync(path.join(TRICKPLAY_DIR, `${video.id}.jpg`), { force: true });
-  }
+  for (const video of videos) forgetVideo(video);
   removeProgressIds(ids);
   metadata.forgetMetadata(key);
   await catalog.scan();
   return { removed: ids.length };
 }
 
-module.exports = { purgeKey };
+// Borrado real y definitivo de una obra: a diferencia de purgeKey (solo
+// para cuando el archivo original YA no existe en disco), esto además
+// borra el propio archivo de vídeo de donde esté de verdad -su carpeta
+// original, o el disco al que se haya trasladado para ahorrar espacio, ver
+// moveOriginal.js/movedOriginals.js- antes de hacer la misma limpieza de
+// metadatos/HLS/subtítulos/caché. Un vídeo ya "archivado" (su original se
+// borró hace tiempo al generar su HLS, ver archivedVideos.js) no tiene
+// ningún archivo que borrar aquí, solo la limpieza de metadatos de
+// siempre.
+//
+// Pensado para llamarse solo tras confirmar de verdad la intención de
+// borrar (ver routes/purge.js: exige repetir el título exacto tanto en el
+// cliente como -otra vez- en el propio servidor), no como un botón de un
+// solo clic: el archivo de vídeo original no tiene papelera ni deshacer.
+async function deleteContent(key) {
+  const { videos } = catalog.listDir(key);
+  if (!videos.length) return { removed: 0, filesDeleted: 0 };
+
+  const ids = videos.map((v) => v.id);
+  let filesDeleted = 0;
+  for (const video of videos) {
+    if (!archivedVideos.isArchived(video.id)) {
+      const realPath = mediaInfo.inputPathFor(video);
+      if (realPath && fs.existsSync(realPath)) {
+        fs.rmSync(realPath, { force: true });
+        filesDeleted += 1;
+      }
+    }
+    forgetVideo(video);
+  }
+  removeProgressIds(ids);
+  metadata.forgetMetadata(key);
+  await catalog.scan();
+  return { removed: ids.length, filesDeleted };
+}
+
+module.exports = { purgeKey, deleteContent };

@@ -40,4 +40,27 @@ router.post(
   })
 );
 
+// Borra el archivo de vídeo real (no solo sus metadatos, ver /catalog/purge
+// arriba). Operación irreversible: además de la confirmación que ya exige
+// el cliente (escribir el título exacto), se vuelve a exigir aquí -
+// "confirmTitle" tiene que coincidir con "key" letra por letra- para que
+// nada pueda llegar a borrar un archivo real sin pasar por esa doble
+// comprobación, ni siquiera por un futuro error en el cliente.
+router.post(
+  '/catalog/delete-content',
+  asyncHandler(async (req, res) => {
+    const { key, confirmTitle } = req.body || {};
+    if (!key) {
+      res.status(400).json({ error: 'Falta "key"' });
+      return;
+    }
+    if (typeof confirmTitle !== 'string' || confirmTitle.trim() !== key.trim()) {
+      res.status(400).json({ error: 'El título de confirmación no coincide.' });
+      return;
+    }
+    const result = await purge.deleteContent(key);
+    res.json(result);
+  })
+);
+
 module.exports = router;

@@ -1550,6 +1550,21 @@ video {
   cursor: not-allowed;
 }
 
+.section-title.danger {
+  color: var(--danger);
+}
+
+button.danger {
+  background: var(--danger);
+  color: #fff;
+  border: none;
+}
+
+button.danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .config-message {
   margin-top: 16px;
   font-size: 14px;

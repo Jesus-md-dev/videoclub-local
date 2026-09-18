@@ -179,4 +179,12 @@ function migrateVideo(oldId, newId) {
   }
 }
 
-module.exports = { importBuffer, listImported, autoImportSidecars, autoImportAllSidecars, migrateVideo };
+// Para purge.js/deleteContent: mismo motivo que subdl.js:forget.
+function forget(videoId) {
+  const registry = store.get();
+  if (!registry[videoId]) return;
+  delete registry[videoId];
+  store.save();
+}
+
+module.exports = { importBuffer, listImported, autoImportSidecars, autoImportAllSidecars, migrateVideo, forget };

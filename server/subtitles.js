@@ -39,4 +39,21 @@ function extractSubtitle(video, streamIndex) {
   return promise;
 }
 
-module.exports = { extractSubtitle, outputFile };
+// Para purge.js/deleteContent: borra todos los subtítulos de un vídeo (los
+// tres orígenes -extraído, SubDL, importado- comparten el mismo prefijo de
+// nombre "<id>-", ver outputFile), sin tener que conocer aquí el streamIndex
+// exacto de cada uno.
+function removeAllFor(videoId) {
+  let entries;
+  try {
+    entries = fs.readdirSync(SUBTITLES_PATH);
+  } catch {
+    return;
+  }
+  const prefix = `${videoId}-`;
+  for (const name of entries) {
+    if (name.startsWith(prefix)) fs.rmSync(path.join(SUBTITLES_PATH, name), { force: true });
+  }
+}
+
+module.exports = { extractSubtitle, outputFile, removeAllFor };
