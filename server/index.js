@@ -90,6 +90,9 @@ app.use(
     setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
   })
 );
+// Una sola vez aquí para toda la app, en vez de que cada router que lee
+// req.body lo repitiera con su propio `router.use(express.json())`.
+app.use(express.json());
 app.use('/api', videosRouter);
 app.use('/api', streamRouter);
 app.use('/api', thumbnailRouter);
@@ -127,6 +130,20 @@ app.get('/cert', (req, res) => {
 // Fallback para las rutas de React Router (recarga directa de /watch/:id, /config, ...).
 app.get(/^(?!\/api).*/, (req, res) => {
   res.sendFile(path.join(CLIENT_DIST, 'index.html'));
+});
+
+// Middleware de error centralizado: antes cada ruta hacía su propio
+// try/catch + res.status(500).json({error: err.message}) (o directamente no
+// capturaba nada, dejando la petición colgada - ver asyncHandler.js). Los
+// handlers envueltos con asyncHandler llegan aquí vía next(err); los que
+// necesitan un código concreto (400/404/409...) lo siguen marcando ellos
+// mismos con `err.status` antes de relanzar, o responden directamente sin
+// pasar por aquí. Tiene que ir DESPUÉS de todas las rutas (así es como
+// Express reconoce un middleware de error: 4 parámetros).
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error(`Error en ${req.method} ${req.path}: ${err.message}`);
+  res.status(err.status || 500).json({ error: err.message });
 });
 
 function localIps() {

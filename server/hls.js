@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
-const { ffmpeg, getMediaInfo, inputPathFor, ffprobePath, forgetAnalysis } = require('./mediaInfo');
+const { getMediaInfo, inputPathFor, ffprobePath, forgetAnalysis } = require('./mediaInfo');
 const { HLS_PATH } = require('./config');
 const { runLimited } = require('./ffmpeg-limiter');
 const subtitles = require('./subtitles');
@@ -10,16 +10,13 @@ const trickplay = require('./trickplay');
 const archivedVideos = require('./archivedVideos');
 const lostVideos = require('./lostVideos');
 const moveOriginal = require('./moveOriginal');
+const { isTenBit, checkGpuAvailable } = require('./gpu');
 
 // Issue #58/#59/#61 del plan HLS: generación + estado/progreso/prioridad.
 // Las rutas HTTP están en routes/hls.js, el reproductor (#60) en el cliente.
 
 const COMPATIBLE_VIDEO_CODECS = ['h264'];
 const SEGMENT_SECONDS = 6;
-
-function isTenBit(videoStream) {
-  return Boolean(videoStream?.pix_fmt?.includes('10')) || videoStream?.profile === 'High 10';
-}
 
 function toPosix(p) {
   return p.split(path.sep).join('/');
@@ -62,37 +59,6 @@ function labelFor(stream, fallbackIndex) {
   const lang = stream.tags?.language;
   const raw = (lang && LANGUAGE_NAMES[lang]) || stream.tags?.title || lang || `Pista${fallbackIndex + 1}`;
   return sanitizeLabel(raw);
-}
-
-// Detección de GPU (NVENC) igual que transcode.js: se prueba una vez y se
-// reutiliza el resultado; si falla, todas las codificaciones caen a CPU.
-let gpuAvailable = null;
-let gpuCheckPromise = null;
-function checkGpuAvailable() {
-  if (gpuAvailable !== null) return Promise.resolve(gpuAvailable);
-  if (gpuCheckPromise) return gpuCheckPromise;
-  gpuCheckPromise = new Promise((resolve) => {
-    fs.mkdirSync(HLS_PATH, { recursive: true });
-    const checkFile = path.join(HLS_PATH, '.gpu-check.mp4');
-    ffmpeg()
-      .input('color=black:s=320x240:d=0.1')
-      .inputFormat('lavfi')
-      .videoCodec('h264_nvenc')
-      .outputOptions(['-frames:v 1'])
-      .format('mp4')
-      .on('error', () => {
-        gpuAvailable = false;
-        fs.rm(checkFile, { force: true }, () => {});
-        resolve(false);
-      })
-      .on('end', () => {
-        gpuAvailable = true;
-        fs.rm(checkFile, { force: true }, () => {});
-        resolve(true);
-      })
-      .save(checkFile);
-  });
-  return gpuCheckPromise;
 }
 
 // Construye el "-var_stream_map" que le dice al muxer HLS de ffmpeg cómo
@@ -578,7 +544,7 @@ async function runGeneration(video, priority) {
     const durationSeconds = Number(info.format?.duration) || null;
 
     const videoCopy = COMPATIBLE_VIDEO_CODECS.includes(videoStream.codec_name) && !isTenBit(videoStream);
-    const useGpu = !videoCopy && (await checkGpuAvailable());
+    const useGpu = !videoCopy && (await checkGpuAvailable(HLS_PATH));
 
     status.set(video.id, 'processing');
     progress.set(video.id, { percent: videoCopy ? null : 0, startedAt: Date.now() });

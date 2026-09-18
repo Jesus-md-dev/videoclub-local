@@ -3,8 +3,6 @@ const analytics = require('../analytics');
 
 const router = express.Router();
 
-router.use(express.json());
-
 // Lista blanca de eventos: para no acabar guardando cualquier cosa que
 // mande el navegador de cualquiera, ni datos personales sin querer.
 const ALLOWED_EVENTS = new Set([

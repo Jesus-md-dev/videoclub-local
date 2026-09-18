@@ -1,10 +1,9 @@
 const express = require('express');
 const metadata = require('../metadata');
 const catalog = require('../catalog');
+const asyncHandler = require('../asyncHandler');
 
 const router = express.Router();
-
-router.use(express.json());
 
 // Fuerza nombre y carátula de TODA la biblioteca desde TMDB (en español),
 // sin tocar lo que no encuentre. Se lanza en segundo plano (puede tardar
@@ -30,52 +29,49 @@ router.get('/metadata/force-tmdb-status', (req, res) => {
 
 // Olvida la caché de una clave (nombre de carpeta de serie/anime o de
 // vídeo suelto) y la vuelve a buscar ya mismo, sin reiniciar el servidor.
-router.post('/metadata/refresh', async (req, res) => {
-  const { key } = req.body || {};
-  if (!key) {
-    res.status(400).json({ error: 'Falta "key"' });
-    return;
-  }
-  try {
+router.post(
+  '/metadata/refresh',
+  asyncHandler(async (req, res) => {
+    const { key } = req.body || {};
+    if (!key) {
+      res.status(400).json({ error: 'Falta "key"' });
+      return;
+    }
     const data = await metadata.refreshMetadata(key);
     res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  })
+);
 
 // Fija a mano los metadatos de una clave a partir de un id de TMDB
 // conocido (para cuando la búsqueda automática encuentra la ficha
 // equivocada, o hace falta la carátula de una temporada en concreto).
-router.post('/metadata/override', async (req, res) => {
-  const { key, tmdbType, tmdbId, season } = req.body || {};
-  if (!key || !tmdbType || !tmdbId) {
-    res.status(400).json({ error: 'Faltan "key", "tmdbType" ("tv" o "movie") y/o "tmdbId"' });
-    return;
-  }
-  try {
+router.post(
+  '/metadata/override',
+  asyncHandler(async (req, res) => {
+    const { key, tmdbType, tmdbId, season } = req.body || {};
+    if (!key || !tmdbType || !tmdbId) {
+      res.status(400).json({ error: 'Faltan "key", "tmdbType" ("tv" o "movie") y/o "tmdbId"' });
+      return;
+    }
     const data = await metadata.overrideFromTmdb(key, { tmdbType, tmdbId, season });
     res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  })
+);
 
 // Hasta 3 fichas candidatas de TMDB (nombre, año, carátula) para que la
 // persona elija cuál es la correcta a mano, en vez de fiarse a ciegas de
 // la búsqueda automática (ver ConfigPage/QuickInfoModal "Cambiar carátula").
-router.get('/metadata/candidates', async (req, res) => {
-  const key = typeof req.query.key === 'string' ? req.query.key : '';
-  if (!key) {
-    res.status(400).json({ error: 'Falta "key"' });
-    return;
-  }
-  try {
+router.get(
+  '/metadata/candidates',
+  asyncHandler(async (req, res) => {
+    const key = typeof req.query.key === 'string' ? req.query.key : '';
+    if (!key) {
+      res.status(400).json({ error: 'Falta "key"' });
+      return;
+    }
     const candidates = await metadata.getPosterCandidates(key);
     res.json({ candidates });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  })
+);
 
 module.exports = router;

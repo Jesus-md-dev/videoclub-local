@@ -1,10 +1,8 @@
-const fs = require('fs');
-const path = require('path');
-const { DATA_PATH } = require('./config');
+const { createJsonRegistry } = require('./jsonRegistry');
 
 // Vídeos cuyo archivo original SÍ existe de verdad, pero se trasladó fuera
-// de getVideosPath() (a otro disco, ver scripts/mover-originales-a-d.js)
-// para ahorrar espacio en el disco externo una vez su HLS ya está listo. A
+// de getVideosPath() (a otro disco, ver server/moveOriginal.js) para
+// ahorrar espacio en el disco externo una vez su HLS ya está listo. A
 // diferencia de archivedVideos.js (vídeos SIN ninguna copia real, solo su
 // HLS), aquí sí hay un archivo real en `absolutePath` - simplemente no está
 // bajo la carpeta de vídeos, así que el escaneo normal (catalog.js: walk())
@@ -15,24 +13,10 @@ const { DATA_PATH } = require('./config');
 // escanear: si se desconecta, el vídeo sigue apareciendo en la web con los
 // datos ya conocidos (carátula, género, seguir viendo con su HLS...), en
 // vez de desaparecer hasta que se reconecte y se vuelva a escanear.
-const FILE = path.join(DATA_PATH, 'moved-originals.json');
-
-let registry = load();
-
-function load() {
-  try {
-    return JSON.parse(fs.readFileSync(FILE, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
-
-function save() {
-  fs.mkdirSync(DATA_PATH, { recursive: true });
-  fs.writeFileSync(FILE, JSON.stringify(registry, null, 2));
-}
+const store = createJsonRegistry('moved-originals.json');
 
 function register(video, absolutePath) {
+  const registry = store.get();
   registry[video.id] = {
     relativePath: video.relativePath,
     title: video.title,
@@ -40,19 +24,19 @@ function register(video, absolutePath) {
     modifiedAt: video.modifiedAt,
     absolutePath,
   };
-  save();
+  store.save();
 }
 
 function get(id) {
-  return registry[id] || null;
+  return store.get()[id] || null;
 }
 
 function isMoved(id) {
-  return Boolean(registry[id]);
+  return Boolean(store.get()[id]);
 }
 
 function getAll() {
-  return registry;
+  return store.get();
 }
 
 // Para purgar del todo una obra cuya carpeta se ha borrado a mano (ver
@@ -60,25 +44,21 @@ function getAll() {
 // catalog.js la seguiría añadiendo al catálogo para siempre a partir de
 // este registro.
 function forget(id) {
+  const registry = store.get();
   if (!registry[id]) return;
   delete registry[id];
-  save();
+  store.save();
 }
 
 // Mismo patrón que archivedVideos.js: para normalize.js, poder renombrar el
 // nombre/ruta "virtual" que sigue mostrando el catálogo aunque el archivo
 // real ya no viva bajo getVideosPath().
 function rename(oldId, newId, info, absolutePath) {
+  const registry = store.get();
   if (!registry[oldId]) return;
   delete registry[oldId];
   registry[newId] = { ...info, absolutePath };
-  save();
+  store.save();
 }
 
-// Para POST /api/admin/reload: recarga desde disco por si algo editó
-// moved-originals.json por fuera de este proceso sin reiniciar el servidor.
-function reloadRegistry() {
-  registry = load();
-}
-
-module.exports = { register, get, isMoved, getAll, forget, rename, reloadRegistry };
+module.exports = { register, get, isMoved, getAll, forget, rename, reloadRegistry: store.reload };

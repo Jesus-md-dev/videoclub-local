@@ -1,44 +1,12 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import HiddenMenu from '../components/HiddenMenu';
-
-function formatSize(bytes) {
-  if (!bytes) return '';
-  const gb = bytes / 1e9;
-  if (gb >= 1) return `${gb.toFixed(1)} GB`;
-  return `${(bytes / 1e6).toFixed(0)} MB`;
-}
+import usePolling from '../hooks/usePolling';
+import { formatSize } from '../utils/format';
 
 export default function MoveQueuePage() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer;
-
-    const load = () => {
-      fetch('/api/move-queue')
-        .then((res) => res.json())
-        .then((json) => {
-          if (cancelled) return;
-          setData(json);
-          timer = setTimeout(load, 3000);
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setError('No se pudo cargar el estado del traslado.');
-            timer = setTimeout(load, 5000);
-          }
-        });
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, []);
+  const { data, error } = usePolling('/api/move-queue', {
+    errorMessage: 'No se pudo cargar el estado del traslado.',
+  });
 
   return (
     <>

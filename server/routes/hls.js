@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const catalog = require('../catalog');
 const hls = require('../hls');
+const asyncHandler = require('../asyncHandler');
 
 const router = express.Router();
 
@@ -70,19 +71,18 @@ router.post('/hls/:id/retry', (req, res) => {
 // Sirve el manifiesto maestro. Se llama solo cuando /status ya ha dicho
 // 'ready' (o se está dispuesto a esperar): si aún no existe, arranca la
 // generación y espera aquí mismo a que termine antes de responder.
-router.get('/hls/:id/master.m3u8', async (req, res) => {
-  const video = catalog.getVideoById(req.params.id);
-  if (!video) {
-    res.status(404).json({ error: 'Vídeo no encontrado' });
-    return;
-  }
-  try {
+router.get(
+  '/hls/:id/master.m3u8',
+  asyncHandler(async (req, res) => {
+    const video = catalog.getVideoById(req.params.id);
+    if (!video) {
+      res.status(404).json({ error: 'Vídeo no encontrado' });
+      return;
+    }
     const master = await hls.generateHls(video, 'high');
     sendPlaylist(res, master);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  })
+);
 
 // Sirve el manifiesto de una variante (vídeo o una pista de audio) y sus
 // segmentos, ya generados por /master.m3u8. Los segmentos ya generados no

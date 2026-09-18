@@ -1,44 +1,25 @@
-const fs = require('fs');
-const path = require('path');
-const { DATA_PATH } = require('./config');
+const { createJsonRegistry } = require('./jsonRegistry');
 
 // Claves de agrupación (ver catalog.js:groupKeyFor) que, aunque tengan más
 // de un vídeo en su carpeta, NO son una serie/anime sino varios títulos
 // sueltos metidos en la misma carpeta (p.ej. "Berserk" con las 3 películas
 // de "La Edad de Oro"): se listan cada una como su propia película en vez
 // de agruparse como una sola "carpeta".
-const FILE = path.join(DATA_PATH, 'catalog-ungrouped.json');
-
-let ungrouped = load();
-
-function load() {
-  try {
-    return new Set(JSON.parse(fs.readFileSync(FILE, 'utf-8')));
-  } catch {
-    return new Set();
-  }
-}
-
-function save() {
-  fs.mkdirSync(DATA_PATH, { recursive: true });
-  fs.writeFileSync(FILE, JSON.stringify([...ungrouped], null, 2));
-}
+const store = createJsonRegistry('catalog-ungrouped.json', {
+  defaultValue: new Set(),
+  serialize: (set) => JSON.stringify([...set], null, 2),
+  deserialize: (text) => new Set(JSON.parse(text)),
+});
 
 function isUngrouped(key) {
-  return ungrouped.has(key);
+  return store.get().has(key);
 }
 
 function setUngrouped(key, value) {
+  const ungrouped = store.get();
   if (value) ungrouped.add(key);
   else ungrouped.delete(key);
-  save();
+  store.save();
 }
 
-// Para POST /api/admin/reload (ver adminReload.js): recarga desde disco por
-// si algo editó catalog-ungrouped.json por fuera de este proceso (migración,
-// restauración de backup...) sin tener que reiniciar el servidor entero.
-function reloadUngrouped() {
-  ungrouped = load();
-}
-
-module.exports = { isUngrouped, setUngrouped, reloadUngrouped };
+module.exports = { isUngrouped, setUngrouped, reloadUngrouped: store.reload };

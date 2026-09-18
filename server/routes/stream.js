@@ -4,6 +4,7 @@ const path = require('path');
 const catalog = require('../catalog');
 const { getVideosPath } = require('../config');
 const transcode = require('../transcode');
+const asyncHandler = require('../asyncHandler');
 
 const router = express.Router();
 
@@ -109,57 +110,64 @@ function serveOriginal(req, res, video) {
 
 // Solo para el modo "Reproducir sin convertir" (#62): el reproductor
 // normal usa HLS (/api/hls/:id/status, server/hls.js). El pipeline antiguo
-// de comprobación/conversión completa (transcode.ensureChecked/getStatus/
-// playableFile/forcePriorityFor) ya no lo llama nada, así que se ha
-// quitado de aquí junto con la ruta /priority que lo controlaba.
-router.get('/stream/:id/status', async (req, res) => {
-  const video = catalog.getVideoById(req.params.id);
-  if (!video) {
-    res.status(404).json({ error: 'Vídeo no encontrado' });
-    return;
-  }
-  const audioIndex = parseAudioIndex(req);
+// de comprobación/conversión completa que tenía transcode.js ya no lo
+// llamaba nada y se quitó de ahí del todo (junto con la ruta /priority que
+// lo controlaba): hoy transcode.js solo hace el remux rápido de audio de
+// abajo (ensureRawAudio/rawAudioProgress/rawAudioFile).
+router.get(
+  '/stream/:id/status',
+  asyncHandler(async (req, res) => {
+    const video = catalog.getVideoById(req.params.id);
+    if (!video) {
+      res.status(404).json({ error: 'Vídeo no encontrado' });
+      return;
+    }
+    const audioIndex = parseAudioIndex(req);
 
-  // El archivo original se sirve tal cual (pista de audio por defecto).
-  // Si se pide un idioma distinto, la mayoría de navegadores no permiten
-  // elegir entre las demás pistas embebidas de un vídeo servido así, así
-  // que se prepara un remux rápido (solo copia, sin recodificar) con
-  // únicamente esa pista de audio.
-  const remux = await transcode.ensureRawAudio(video, audioIndex);
-  if (remux === 'original' || remux === 'ready') {
-    res.json({ status: 'compatible', progress: null });
-    return;
-  }
-  if (remux === 'failed') {
-    res.json({ status: 'failed', progress: null });
-    return;
-  }
-  res.json({ status: 'processing', progress: transcode.rawAudioProgress(video, audioIndex) });
-});
+    // El archivo original se sirve tal cual (pista de audio por defecto).
+    // Si se pide un idioma distinto, la mayoría de navegadores no permiten
+    // elegir entre las demás pistas embebidas de un vídeo servido así, así
+    // que se prepara un remux rápido (solo copia, sin recodificar) con
+    // únicamente esa pista de audio.
+    const remux = await transcode.ensureRawAudio(video, audioIndex);
+    if (remux === 'original' || remux === 'ready') {
+      res.json({ status: 'compatible', progress: null });
+      return;
+    }
+    if (remux === 'failed') {
+      res.json({ status: 'failed', progress: null });
+      return;
+    }
+    res.json({ status: 'processing', progress: transcode.rawAudioProgress(video, audioIndex) });
+  })
+);
 
-router.get('/stream/:id', async (req, res) => {
-  const video = catalog.getVideoById(req.params.id);
-  if (!video) {
-    res.status(404).json({ error: 'Vídeo no encontrado' });
-    return;
-  }
+router.get(
+  '/stream/:id',
+  asyncHandler(async (req, res) => {
+    const video = catalog.getVideoById(req.params.id);
+    if (!video) {
+      res.status(404).json({ error: 'Vídeo no encontrado' });
+      return;
+    }
 
-  const audioIndex = parseAudioIndex(req);
+    const audioIndex = parseAudioIndex(req);
 
-  const remux = await transcode.ensureRawAudio(video, audioIndex);
-  if (remux === 'ready') {
-    const file = transcode.rawAudioFile(video, audioIndex);
-    const contentType = MIME_TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
-    sendFileWithRange(req, res, file, contentType);
-    return;
-  }
-  if (remux === 'processing' || remux === 'checking') {
-    res.status(503).json({ error: 'Cambiando de idioma, un momento', preparing: true });
-    return;
-  }
-  // 'original' (mismo idioma que el de por defecto) o 'failed' (el remux
-  // ha fallado): se sirve el archivo tal cual, con su audio por defecto.
-  serveOriginal(req, res, video);
-});
+    const remux = await transcode.ensureRawAudio(video, audioIndex);
+    if (remux === 'ready') {
+      const file = transcode.rawAudioFile(video, audioIndex);
+      const contentType = MIME_TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
+      sendFileWithRange(req, res, file, contentType);
+      return;
+    }
+    if (remux === 'processing' || remux === 'checking') {
+      res.status(503).json({ error: 'Cambiando de idioma, un momento', preparing: true });
+      return;
+    }
+    // 'original' (mismo idioma que el de por defecto) o 'failed' (el remux
+    // ha fallado): se sirve el archivo tal cual, con su audio por defecto.
+    serveOriginal(req, res, video);
+  })
+);
 
 module.exports = router;

@@ -4,8 +4,6 @@ const backup = require('../backup');
 
 const router = express.Router();
 
-router.use(express.json());
-
 router.get('/profiles', (req, res) => {
   res.json(profiles.listProfiles());
 });

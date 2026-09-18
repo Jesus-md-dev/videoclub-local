@@ -3,6 +3,7 @@ const catalog = require('../catalog');
 const hls = require('../hls');
 const { MAX_CONCURRENT_FFMPEG } = require('../ffmpeg-limiter');
 const { resolveFailed } = require('../resolveFailed');
+const asyncHandler = require('../asyncHandler');
 
 const router = express.Router();
 
@@ -80,9 +81,12 @@ router.get('/queue', (req, res) => {
 // Ya no hay botón en /queue para esto (se resuelve solo una vez al
 // arrancar el servidor, ver server/index.js) - el endpoint se deja para
 // quien quiera forzarlo a mano por API sin esperar a un reinicio.
-router.post('/queue/resolve-failed', async (req, res) => {
-  const result = await resolveFailed();
-  res.json(result);
-});
+router.post(
+  '/queue/resolve-failed',
+  asyncHandler(async (req, res) => {
+    const result = await resolveFailed();
+    res.json(result);
+  })
+);
 
 module.exports = router;

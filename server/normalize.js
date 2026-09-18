@@ -8,8 +8,9 @@ const hls = require('./hls');
 const archivedVideos = require('./archivedVideos');
 const mediaInfo = require('./mediaInfo');
 const subdl = require('./subdl');
+const { migrateProgressId } = require('./progressStore');
+const { migrateFile } = require('./fsUtils');
 
-const PROGRESS_DIR = path.join(DATA_PATH, 'progress');
 const TRICKPLAY_DIR = path.join(DATA_PATH, 'trickplay');
 const SUBTITLES_DIR = path.join(DATA_PATH, 'subtitles');
 
@@ -149,36 +150,6 @@ function buildCandidate(video) {
   return { newRelativePath, groupKey };
 }
 
-// Mismo patrón que dedupe.js: el id sale de un hash de la ruta relativa, así
-// que renombrar cambia el id. Se migra el progreso/carátula/vista
-// previa/HLS ya generado al id nuevo para no perderlos ni tener que
-// regenerar nada.
-function migrateProgress(oldId, newId) {
-  if (!fs.existsSync(PROGRESS_DIR)) return;
-  for (const file of fs.readdirSync(PROGRESS_DIR)) {
-    const full = path.join(PROGRESS_DIR, file);
-    let data;
-    try {
-      data = JSON.parse(fs.readFileSync(full, 'utf-8'));
-    } catch {
-      continue;
-    }
-    if (data[oldId]) {
-      data[newId] = { ...data[oldId], ...(data[newId] || {}) };
-      delete data[oldId];
-      fs.writeFileSync(full, JSON.stringify(data, null, 2));
-    }
-  }
-}
-
-function migrateFile(oldPath, newPath) {
-  if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) fs.renameSync(oldPath, newPath);
-}
-
-function migrateDir(oldDir, newDir) {
-  if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) fs.renameSync(oldDir, newDir);
-}
-
 // Windows no distingue mayúsculas/minúsculas al buscar un archivo: si el
 // único cambio es de capitalización ("HunterxHunter" -> "HunterXHunter"),
 // el nuevo nombre "ya existe" porque en realidad es el propio archivo que se
@@ -241,12 +212,12 @@ async function safeRename(oldAbsPath, newAbsPath) {
 // buscarla de cero bajo el nombre ya renombrado.
 function migrateVideoData(oldId, newId, oldGroupKey, newRelativePath) {
   if (newId !== oldId) {
-    migrateProgress(oldId, newId);
+    migrateProgressId(oldId, newId);
     thumbnails.forget(oldId);
     migrateFile(thumbnails.thumbnailFile(oldId), thumbnails.thumbnailFile(newId));
     migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.json`), path.join(TRICKPLAY_DIR, `${newId}.json`));
     migrateFile(path.join(TRICKPLAY_DIR, `${oldId}.jpg`), path.join(TRICKPLAY_DIR, `${newId}.jpg`));
-    migrateDir(path.join(HLS_PATH, oldId), path.join(HLS_PATH, newId));
+    migrateFile(path.join(HLS_PATH, oldId), path.join(HLS_PATH, newId));
     migrateSubtitles(oldId, newId);
     subdl.migrateVideo(oldId, newId);
     // El análisis de ffprobe (codec-checks.json) también está indexado por

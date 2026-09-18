@@ -1,24 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const { DATA_PATH, getVideosPath } = require('./config');
+const { getVideosPath } = require('./config');
+const { createJsonRegistry } = require('./jsonRegistry');
 
 // Registro persistente de vídeos ya detectados como perdidos (ver
 // hls.js:isLost), para no reescribir la lista humana en cada petición y
 // para poder ir añadiendo según se detectan, no solo en una foto fija.
-const REGISTRY_FILE = path.join(DATA_PATH, 'lost-videos.json');
-
-function loadRegistry() {
-  try {
-    return JSON.parse(fs.readFileSync(REGISTRY_FILE, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
-
-function saveRegistry(registry) {
-  fs.mkdirSync(DATA_PATH, { recursive: true });
-  fs.writeFileSync(REGISTRY_FILE, JSON.stringify(registry, null, 2));
-}
+const store = createJsonRegistry('lost-videos.json');
 
 // Fuera de la carpeta de vídeos pero en el mismo disco, para no mezclarla
 // con la biblioteca y que el escaneo del catálogo no la confunda con
@@ -60,11 +48,19 @@ function buildManifestText(registry) {
   return out;
 }
 
-let registry = loadRegistry();
+function rewriteManifest(registry) {
+  try {
+    fs.mkdirSync(manifestDir(), { recursive: true });
+    fs.writeFileSync(manifestPath(), buildManifestText(registry), 'utf-8');
+  } catch (err) {
+    console.warn(`No se pudo actualizar la lista de vídeos perdidos: ${err.message}`);
+  }
+}
 
 // Se llama cada vez que hls.js detecta un vídeo perdido (ver isLost). No
 // hace nada si ya estaba registrado, así que es barato llamarla a menudo.
 function recordLost(video) {
+  const registry = store.get();
   if (registry[video.id]) return;
   registry[video.id] = {
     relativePath: video.relativePath,
@@ -73,35 +69,19 @@ function recordLost(video) {
     modifiedAt: video.modifiedAt,
     detectedAt: new Date().toISOString(),
   };
-  saveRegistry(registry);
-  try {
-    fs.mkdirSync(manifestDir(), { recursive: true });
-    fs.writeFileSync(manifestPath(), buildManifestText(registry), 'utf-8');
-  } catch (err) {
-    console.warn(`No se pudo actualizar la lista de vídeos perdidos: ${err.message}`);
-  }
+  store.save();
+  rewriteManifest(registry);
 }
 
 // Para purgar del todo una obra (ver purge.js): quita este id de la lista
 // de "Volver a descargar" y regenera el fichero, para no dejar ahí un
 // episodio que ya se ha decidido no reponer.
 function forget(id) {
+  const registry = store.get();
   if (!registry[id]) return;
   delete registry[id];
-  saveRegistry(registry);
-  try {
-    fs.mkdirSync(manifestDir(), { recursive: true });
-    fs.writeFileSync(manifestPath(), buildManifestText(registry), 'utf-8');
-  } catch (err) {
-    console.warn(`No se pudo actualizar la lista de vídeos perdidos: ${err.message}`);
-  }
+  store.save();
+  rewriteManifest(registry);
 }
 
-// Para POST /api/admin/reload (ver adminReload.js): recarga desde disco por
-// si algo editó lost-videos.json por fuera de este proceso (migración,
-// restauración de backup...) sin tener que reiniciar el servidor entero.
-function reloadRegistry() {
-  registry = loadRegistry();
-}
-
-module.exports = { recordLost, forget, reloadRegistry };
+module.exports = { recordLost, forget, reloadRegistry: store.reload };

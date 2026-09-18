@@ -7,31 +7,31 @@ const metadata = require('../metadata');
 const hls = require('../hls');
 const watcher = require('../watcher');
 const backup = require('../backup');
+const asyncHandler = require('../asyncHandler');
 
 const router = express.Router();
-
-router.use(express.json());
 
 router.get('/settings', (req, res) => {
   res.json({ videosPath: getVideosPath() });
 });
 
-router.post('/settings', async (req, res) => {
-  const { videosPath } = req.body;
-  if (!videosPath || typeof videosPath !== 'string') {
-    res.status(400).json({ error: 'Falta el campo "videosPath"' });
-    return;
-  }
+router.post(
+  '/settings',
+  asyncHandler(async (req, res) => {
+    const { videosPath } = req.body;
+    if (!videosPath || typeof videosPath !== 'string') {
+      res.status(400).json({ error: 'Falta el campo "videosPath"' });
+      return;
+    }
 
-  try {
-    setVideosPath(videosPath);
+    try {
+      setVideosPath(videosPath);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
     backup.backupNow();
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-    return;
-  }
 
-  try {
     const videos = await catalog.scan();
     mediaInfo.pruneStore(videos.map((v) => v.id));
     thumbnails.generateMissingThumbnails(videos);
@@ -39,9 +39,7 @@ router.post('/settings', async (req, res) => {
     hls.warmAll(videos);
     watcher.start();
     res.json({ videosPath: getVideosPath(), count: videos.length });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  })
+);
 
 module.exports = router;

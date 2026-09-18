@@ -1,13 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import HiddenMenu from '../components/HiddenMenu';
-
-function formatSize(bytes) {
-  if (!bytes) return '';
-  const gb = bytes / 1e9;
-  if (gb >= 1) return `${gb.toFixed(1)} GB`;
-  return `${(bytes / 1e6).toFixed(0)} MB`;
-}
+import usePolling from '../hooks/usePolling';
+import { formatSize } from '../utils/format';
 
 function formatDuration(ms) {
   const totalSec = Math.round(ms / 1000);
@@ -35,41 +30,13 @@ function formatRemaining(item) {
 }
 
 export default function QueuePage() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+  const { data, error } = usePolling('/api/queue', { errorMessage: 'No se pudo cargar el estado de la cola.' });
   const [retrying, setRetrying] = useState(new Set());
 
   const handleRetry = (id) => {
     setRetrying((prev) => new Set(prev).add(id));
     fetch(`/api/hls/${id}/retry`, { method: 'POST' }).catch(() => {});
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer;
-
-    const load = () => {
-      fetch('/api/queue')
-        .then((res) => res.json())
-        .then((json) => {
-          if (cancelled) return;
-          setData(json);
-          timer = setTimeout(load, 3000);
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setError('No se pudo cargar el estado de la cola.');
-            timer = setTimeout(load, 5000);
-          }
-        });
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, []);
 
   return (
     <>

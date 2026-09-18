@@ -7,30 +7,9 @@ const hls = require('./hls');
 const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
 const { DATA_PATH, HLS_PATH, THUMBNAILS_PATH } = require('./config');
+const { removeProgressIds } = require('./progressStore');
 
-const PROGRESS_DIR = path.join(DATA_PATH, 'progress');
 const TRICKPLAY_DIR = path.join(DATA_PATH, 'trickplay');
-
-function removeProgressFor(ids) {
-  if (!fs.existsSync(PROGRESS_DIR)) return;
-  for (const file of fs.readdirSync(PROGRESS_DIR)) {
-    const full = path.join(PROGRESS_DIR, file);
-    let data;
-    try {
-      data = JSON.parse(fs.readFileSync(full, 'utf-8'));
-    } catch {
-      continue;
-    }
-    let changed = false;
-    for (const id of ids) {
-      if (data[id]) {
-        delete data[id];
-        changed = true;
-      }
-    }
-    if (changed) fs.writeFileSync(full, JSON.stringify(data, null, 2));
-  }
-}
 
 // Quita del catálogo una obra completa cuya carpeta se ha borrado a mano
 // (p.ej. porque quedaban demasiados episodios perdidos sin solución - ver
@@ -54,7 +33,7 @@ async function purgeKey(key) {
     fs.rmSync(path.join(TRICKPLAY_DIR, `${video.id}.json`), { force: true });
     fs.rmSync(path.join(TRICKPLAY_DIR, `${video.id}.jpg`), { force: true });
   }
-  removeProgressFor(ids);
+  removeProgressIds(ids);
   metadata.forgetMetadata(key);
   await catalog.scan();
   return { removed: ids.length };

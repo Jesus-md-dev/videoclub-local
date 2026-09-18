@@ -1,6 +1,4 @@
-const fs = require('fs');
-const path = require('path');
-const { DATA_PATH } = require('./config');
+const { createJsonRegistry } = require('./jsonRegistry');
 
 // Vídeos cuyo archivo original se borró tras generar su HLS (solo pasa
 // cuando el vídeo ya era H.264 compatible: el HLS es un simple remux del
@@ -9,39 +7,25 @@ const { DATA_PATH } = require('./config');
 // escaneo de disco (el archivo ya no está) - por eso esto tiene que
 // sobrevivir a un reinicio/cambio de servidor igual que perfiles o
 // progreso (ver backup.js).
-const FILE = path.join(DATA_PATH, 'hls-archived.json');
-
-let registry = load();
-
-function load() {
-  try {
-    return JSON.parse(fs.readFileSync(FILE, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
-
-function save() {
-  fs.mkdirSync(DATA_PATH, { recursive: true });
-  fs.writeFileSync(FILE, JSON.stringify(registry, null, 2));
-}
+const store = createJsonRegistry('hls-archived.json');
 
 function archive(video) {
+  const registry = store.get();
   registry[video.id] = {
     relativePath: video.relativePath,
     title: video.title,
     size: video.size,
     modifiedAt: video.modifiedAt,
   };
-  save();
+  store.save();
 }
 
 function isArchived(id) {
-  return Boolean(registry[id]);
+  return Boolean(store.get()[id]);
 }
 
 function getAll() {
-  return registry;
+  return store.get();
 }
 
 // Para purgar del todo una obra cuya carpeta se ha borrado a mano (ver
@@ -49,9 +33,10 @@ function getAll() {
 // catálogo para siempre a partir de este registro, aunque ya no quede ni
 // rastro suyo en disco.
 function forget(id) {
+  const registry = store.get();
   if (!registry[id]) return;
   delete registry[id];
-  save();
+  store.save();
 }
 
 // Para normalize.js: un vídeo archivado no tiene archivo real que renombrar
@@ -62,17 +47,11 @@ function forget(id) {
 // coincidir (si la ruta nueva da la casualidad de tener el mismo hash, muy
 // raro) - se soporta igualmente.
 function rename(oldId, newId, info) {
+  const registry = store.get();
   if (!registry[oldId]) return;
   delete registry[oldId];
   registry[newId] = info;
-  save();
+  store.save();
 }
 
-// Para POST /api/admin/reload (ver adminReload.js): recarga desde disco por
-// si algo editó hls-archived.json por fuera de este proceso (migración,
-// restauración de backup...) sin tener que reiniciar el servidor entero.
-function reloadRegistry() {
-  registry = load();
-}
-
-module.exports = { archive, isArchived, getAll, forget, rename, reloadRegistry };
+module.exports = { archive, isArchived, getAll, forget, rename, reloadRegistry: store.reload };

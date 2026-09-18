@@ -9,9 +9,8 @@ const MAX_CONCURRENT_FFMPEG = 10;
 let running = 0;
 // Dos carriles: lo que el usuario está pidiendo ver AHORA ('high') adelanta
 // en la cola a lo que el precalentamiento en segundo plano ('low') aún no
-// ha empezado. No interrumpe nada ya en marcha (eso lo gestiona cada
-// subsistema si lo necesita, como transcode.js con forcePriority), solo
-// decide qué entra primero en el siguiente hueco libre.
+// ha empezado. No interrumpe nada ya en marcha, solo decide qué entra
+// primero en el siguiente hueco libre.
 const highQueue = [];
 const lowQueue = [];
 

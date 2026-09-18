@@ -1,5 +1,6 @@
 const express = require('express');
 const adminReload = require('../adminReload');
+const asyncHandler = require('../asyncHandler');
 
 const router = express.Router();
 
@@ -8,9 +9,12 @@ const router = express.Router();
 // este proceso (migración, restauración de backup, un script de limpieza
 // suelto) sin tener que reiniciar el servidor entero y cortar generaciones
 // HLS en curso.
-router.post('/admin/reload', async (req, res) => {
-  const result = await adminReload.reloadAll();
-  res.json(result);
-});
+router.post(
+  '/admin/reload',
+  asyncHandler(async (req, res) => {
+    const result = await adminReload.reloadAll();
+    res.json(result);
+  })
+);
 
 module.exports = router;

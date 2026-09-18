@@ -4,6 +4,7 @@ const thumbnails = require('../thumbnails');
 const metadata = require('../metadata');
 const hls = require('../hls');
 const profiles = require('../profiles');
+const asyncHandler = require('../asyncHandler');
 
 const router = express.Router();
 
@@ -149,17 +150,16 @@ router.get('/genres', (req, res) => {
   res.json(metadata.allGenres());
 });
 
-router.post('/scan', async (req, res) => {
-  try {
+router.post(
+  '/scan',
+  asyncHandler(async (req, res) => {
     const videos = await catalog.scan();
     // Generar carátulas, precalentar géneros y HLS en segundo plano, sin bloquear la respuesta.
     thumbnails.generateMissingThumbnails(videos);
     metadata.warmAll(catalog.getAllGroupKeys());
     hls.warmAll(videos);
     res.json({ count: videos.length });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  })
+);
 
 module.exports = router;

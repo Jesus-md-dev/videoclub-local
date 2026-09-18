@@ -3,24 +3,17 @@ const path = require('path');
 const { ffmpeg, getMediaInfo, inputPathFor } = require('./mediaInfo');
 const { TRANSCODED_PATH } = require('./config');
 const { runLimited } = require('./ffmpeg-limiter');
-const dedupe = require('./dedupe');
-
-const COMPATIBLE_VIDEO_CODECS = ['h264'];
-const COMPATIBLE_AUDIO_CODECS = ['aac', 'mp3'];
-const COMPATIBLE_CONTAINERS = ['.mp4', '.m4v'];
-
-// H.264 de 10 bits ("Hi10p"/"High 10") es un caso especial molesto: muchos
-// reproductores por hardware (sobre todo TVs/palos de streaming como Fire
-// TV) no lo aceptan como H.264 normal, así que caen a descodificación por
-// software y eso es justo lo que provoca reproducción lenta/con tirones.
-// Antes solo se miraba el nombre del códec, no la profundidad de bits, así
-// que estos archivos se servían "tal cual" en vez de convertirse a 8 bits.
-function isTenBit(videoStream) {
-  return Boolean(videoStream?.pix_fmt?.includes('10')) || videoStream?.profile === 'High 10';
-}
+const { checkGpuAvailable } = require('./gpu');
 
 // Estado por clave ('<id>' para la pista de audio por defecto, o '<id>#a<index>'
-// para una pista de audio concreta): 'checking' | 'compatible' | 'processing' | 'ready' | 'failed'
+// para una pista de audio concreta): 'checking' | 'processing' | 'ready' | 'failed'
+//
+// El pipeline completo de conversión/sustitución del original (que usaba
+// más estados aquí, como 'compatible') ya no se usa: la reproducción va
+// toda por HLS (ver hls.js). Lo único vivo de este archivo es el remux
+// rápido para poder elegir pista de audio en el modo "sin convertir"
+// (?raw=1, ver routes/stream.js: ensureRawAudio/rawAudioProgress/rawAudioFile),
+// que comparte la cola/ejecución de ffmpeg de abajo.
 const status = new Map();
 const progress = new Map(); // key -> { percent: 0-100 | null, startedAt: number }
 const defaultAudioCache = new Map(); // video.id -> índice de la pista de audio por defecto
@@ -89,10 +82,10 @@ async function getMediaInfoWithRetries(video, attempts = 3, delayMs = 1200) {
 
 async function defaultAudioIndex(video) {
   if (defaultAudioCache.has(video.id)) return defaultAudioCache.get(video.id);
-  // Se llama sin try/catch desde varios sitios (ensureChecked, resolveKey,
-  // ensureRawAudio...); un archivo corrupto o con datos inválidos hace que
-  // ffprobe falle, y sin capturarlo aquí esa excepción no cogida tumbaba
-  // todo el proceso de Node (ffprobe exited with code 1).
+  // Se llama sin try/catch desde ensureRawAudio; un archivo corrupto o con
+  // datos inválidos hace que ffprobe falle, y sin capturarlo aquí esa
+  // excepción no cogida tumbaba todo el proceso de Node (ffprobe exited
+  // with code 1).
   let index = null;
   try {
     const info = await getMediaInfoWithRetries(video);
@@ -104,49 +97,6 @@ async function defaultAudioIndex(video) {
   }
   defaultAudioCache.set(video.id, index);
   return index;
-}
-
-async function resolveKey(video, audioIndex) {
-  const defaultAudio = await defaultAudioIndex(video);
-  const effectiveAudio = audioIndex != null ? Number(audioIndex) : defaultAudio;
-  return effectiveAudio === defaultAudio ? video.id : `${video.id}#a${effectiveAudio}`;
-}
-
-// Se detecta una sola vez si la GPU (NVENC) funciona de verdad en este
-// equipo probando una codificación mínima; si algo falla (sin GPU NVIDIA,
-// controlador antiguo, etc.) se usa libx264 (CPU) para todo, sin más aviso.
-let gpuAvailable = null;
-let gpuCheckPromise = null;
-function checkGpuAvailable() {
-  if (gpuAvailable !== null) return Promise.resolve(gpuAvailable);
-  // Con varias conversiones arrancando casi a la vez al iniciar el
-  // servidor, sin esto cada una dispararía su propia prueba de GPU en
-  // paralelo; se comparte la misma promesa para que solo se pruebe una vez.
-  if (gpuCheckPromise) return gpuCheckPromise;
-  gpuCheckPromise = new Promise((resolve) => {
-    fs.mkdirSync(TRANSCODED_PATH, { recursive: true });
-    const checkFile = path.join(TRANSCODED_PATH, '.gpu-check.mp4');
-    ffmpeg()
-      .input('color=black:s=320x240:d=0.1')
-      .inputFormat('lavfi')
-      .videoCodec('h264_nvenc')
-      .outputOptions(['-frames:v 1'])
-      .format('mp4')
-      .on('error', () => {
-        gpuAvailable = false;
-        fs.rm(checkFile, { force: true }, () => {});
-        console.warn('GPU (NVENC) no disponible en este equipo: las conversiones usarán la CPU (más lentas).');
-        resolve(false);
-      })
-      .on('end', () => {
-        gpuAvailable = true;
-        fs.rm(checkFile, { force: true }, () => {});
-        console.log('GPU (NVENC) disponible: las conversiones que necesiten recodificar usarán la GPU.');
-        resolve(true);
-      })
-      .save(checkFile);
-  });
-  return gpuCheckPromise;
 }
 
 // PQ (HDR10) o HLG: sin esto, un vídeo HDR recodificado a 8 bits SDR sale
@@ -215,8 +165,7 @@ function buildOutputOptions({ videoCopy, audioCopy, audioMapIndex, hdr, sourceHe
 const MAX_CONCURRENT_JOBS = 1;
 
 // Los trabajos de ffmpeg en marcha ahora mismo (puede haber varios a la
-// vez), por clave, para poder interrumpir uno en concreto desde
-// forcePriority().
+// vez), por clave.
 const activeJobs = new Map(); // key -> { key, command, interrupted, meta, priority }
 
 function runOnce(inputPath, tmpOutput, key, opts, useGpu, format = 'mp4', meta = null, priority = 'low') {
@@ -276,7 +225,7 @@ async function runFfmpegNow(inputPath, key, opts, meta, priority) {
   const ext = opts.outputExt || '.mp4';
   const format = opts.outputFormat || 'mp4';
   const tmpOutput = `${outputFile(key, ext)}.tmp${ext}`;
-  const useGpu = !opts.videoCopy && (await checkGpuAvailable());
+  const useGpu = !opts.videoCopy && (await checkGpuAvailable(TRANSCODED_PATH));
 
   try {
     await runOnce(inputPath, tmpOutput, key, opts, useGpu, format, meta, priority);
@@ -297,8 +246,7 @@ async function runFfmpegNow(inputPath, key, opts, meta, priority) {
 // Cola con dos carriles: lo que el usuario está pidiendo ver AHORA ("high")
 // adelanta a lo que el precalentamiento en segundo plano ("low") aún no ha
 // empezado. Hasta MAX_CONCURRENT_JOBS conversiones a la vez en vez de una
-// sola; si se pide interrumpir alguna con forcePriority(), sigue su curso
-// salvo que haga falta el hueco.
+// sola.
 const ffmpegHighQueue = [];
 const ffmpegLowQueue = [];
 
@@ -320,209 +268,6 @@ function runFfmpeg(inputPath, key, opts, priority = 'low', meta = null) {
     (priority === 'high' ? ffmpegHighQueue : ffmpegLowQueue).push(task);
     drainFfmpegQueue();
   });
-}
-
-// Adelanta esta clave para que empiece cuanto antes: si ya hay un hueco
-// libre, basta con ponerla la primera de la cola alta. Si no, se interrumpe
-// un trabajo activo de precalentamiento en segundo plano (nunca uno que
-// otro dispositivo esté viendo ahora mismo) para hacerle sitio.
-function forcePriority(key) {
-  if (activeJobs.has(key)) return true;
-
-  // >= 0, no > 0: si ya está el primero de la cola alta pero aún no ha
-  // arrancado (todos los huecos ocupados), sigue haciendo falta comprobar
-  // más abajo si hay que interrumpir algo para hacerle sitio ya.
-  const highIdx = ffmpegHighQueue.findIndex((t) => t.key === key);
-  if (highIdx >= 0) {
-    if (highIdx > 0) {
-      const [task] = ffmpegHighQueue.splice(highIdx, 1);
-      ffmpegHighQueue.unshift(task);
-    }
-  } else {
-    const lowIdx = ffmpegLowQueue.findIndex((t) => t.key === key);
-    if (lowIdx >= 0) {
-      const [task] = ffmpegLowQueue.splice(lowIdx, 1);
-      ffmpegHighQueue.unshift(task);
-    } else {
-      return false;
-    }
-  }
-
-  if (activeJobs.size >= MAX_CONCURRENT_JOBS) {
-    const victim = [...activeJobs.values()].find((job) => job.priority === 'low');
-    if (victim) {
-      victim.interrupted = true;
-      victim.command.kill('SIGKILL');
-    }
-    // Si todos los huecos los ocupan otros usuarios viendo algo ahora mismo,
-    // no se interrumpe a nadie: esta clave ya está la primera de la cola y
-    // arrancará en cuanto se libere el primer hueco.
-  }
-
-  drainFfmpegQueue();
-  return true;
-}
-
-async function ensureChecked(video, audioIndex = null, priority = 'low') {
-  // Atajo para el caso más común (pista por defecto): si el archivo ya
-  // convertido sigue en disco, no hace falta ni ffprobe ni resolver el
-  // índice de audio por defecto. Sin esto, cada reinicio del servidor (el
-  // estado en memoria se pierde, pero los archivos convertidos no)
-  // obligaba a repetir ffprobe en TODA la biblioteca, incluidos los vídeos
-  // que ya estaban listos desde hace tiempo.
-  if (audioIndex == null) {
-    const quickKey = video.id;
-    const quickCurrent = status.get(quickKey);
-    if (quickCurrent) return quickCurrent;
-    if (fs.existsSync(outputFile(quickKey))) {
-      status.set(quickKey, 'ready');
-      return 'ready';
-    }
-  }
-
-  const defaultAudio = await defaultAudioIndex(video);
-  const effectiveAudio = audioIndex != null ? Number(audioIndex) : defaultAudio;
-  const useDefault = effectiveAudio === defaultAudio;
-  const key = useDefault ? video.id : `${video.id}#a${effectiveAudio}`;
-
-  const current = status.get(key);
-  if (current) return current;
-
-  if (fs.existsSync(outputFile(key))) {
-    status.set(key, 'ready');
-    return 'ready';
-  }
-
-  status.set(key, 'checking');
-
-  const ext = path.extname(video.relativePath).toLowerCase();
-  let info;
-  try {
-    info = await getMediaInfoWithRetries(video);
-  } catch (err) {
-    console.warn(`No se pudo analizar "${video.title}": ${err.message}`);
-    status.set(key, 'failed');
-    return 'failed';
-  }
-
-  const videoStream = info.streams.find((s) => s.codec_type === 'video');
-  const audioStream = info.streams.find((s) => s.index === effectiveAudio);
-
-  const videoOk =
-    Boolean(videoStream) && COMPATIBLE_VIDEO_CODECS.includes(videoStream.codec_name) && !isTenBit(videoStream);
-  const audioOk = !audioStream || COMPATIBLE_AUDIO_CODECS.includes(audioStream.codec_name);
-  const containerOk = COMPATIBLE_CONTAINERS.includes(ext);
-
-  if (useDefault && videoOk && audioOk && containerOk) {
-    status.set(key, 'compatible');
-    return 'compatible';
-  }
-
-  status.set(key, 'processing');
-  runFfmpeg(
-    inputPathFor(video),
-    key,
-    {
-      videoCopy: videoOk,
-      audioCopy: audioOk,
-      audioMapIndex: useDefault ? null : effectiveAudio,
-      hdr: isHdrSource(videoStream),
-      sourceHeight: videoStream?.height || null,
-    },
-    priority,
-    { id: video.id, title: video.title, size: video.size }
-  )
-    .then(() => {
-      status.set(key, 'ready');
-      // Solo para la pista por defecto: sustituye ya mismo el original por
-      // el convertido, para no acabar con las dos copias ocupando espacio.
-      // No es fatal si falla (p.ej. ya hay un .bak de un intento previo):
-      // el vídeo se queda sirviéndose desde la caché como hasta ahora.
-      if (useDefault) {
-        dedupe.replaceWithTranscoded(video, outputFile(key)).catch((err) => {
-          console.warn(`No se pudo sustituir el original de "${video.title}" por la versión convertida: ${err.message}`);
-        });
-      }
-    })
-    .catch((err) => {
-      if (err.interrupted) {
-        // No se marca como fallida: se ha interrumpido a propósito para dar
-        // paso a otro vídeo. Se reintenta sola en segundo plano (baja
-        // prioridad) en vez de quedarse a medias para siempre.
-        status.delete(key);
-        ensureChecked(video, audioIndex, 'low');
-        return;
-      }
-      console.warn(`No se pudo convertir "${video.title}": ${err.message}`);
-      status.set(key, 'failed');
-    });
-
-  return 'processing';
-}
-
-// Interrumpe la conversión en marcha (si es de otro vídeo distinto) y
-// adelanta este vídeo al principio de la cola. Solo tiene efecto si el
-// vídeo ya está en curso de conversión ('processing'); si aún no se ha
-// pedido, primero hay que llamar a ensureChecked.
-async function forcePriorityFor(video, audioIndex = null) {
-  const key = await resolveKey(video, audioIndex);
-  if (status.get(key) !== 'processing') return false;
-  return forcePriority(key);
-}
-
-async function getStatus(video, audioIndex = null) {
-  const key = await resolveKey(video, audioIndex);
-  return status.get(key) || 'unknown';
-}
-
-// Igual que getStatus pero sin comprobar nada nuevo (para pintar el catálogo
-// al instante): la pista por defecto siempre usa `video.id` como clave, así
-// que no hace falta resolver de forma asíncrona.
-function peekStatus(video) {
-  return status.get(video.id) || 'unknown';
-}
-
-// Para el catálogo: distingue entre "convirtiéndose ahora mismo" (uno de los
-// trabajos de ffmpeg activos, puede haber varios a la vez) y "en cola,
-// pendiente de conversión" (ya se sabe que la necesita, pero le toca esperar
-// su turno porque ya están ocupados todos los huecos). 'unknown'/'checking'
-// significa que aún no se sabe (warmAll no ha llegado a comprobarlo todavía).
-function peekProcessingState(video) {
-  const key = video.id;
-  if (status.get(key) !== 'processing') return null;
-  return activeJobs.has(key) ? 'active' : 'queued';
-}
-
-// Porcentaje (0-100) de la conversión en curso ahora mismo para esta pista
-// por defecto, o null si no está activa (en cola pero sin empezar, o no
-// necesita conversión). Para pintar el catálogo sin bloquear.
-function peekProgressPercent(video) {
-  const entry = progress.get(video.id);
-  return entry && typeof entry.percent === 'number' ? entry.percent : null;
-}
-
-// Foto instantánea de la cola de conversión real (para una página de
-// estado): los trabajos activos ahora mismo (puede haber varios a la vez) y
-// el resto en el orden exacto en que les tocará su turno (alta prioridad
-// primero, luego baja).
-function getQueueSnapshot() {
-  const active = [...activeJobs.values()].map((job) => ({
-    key: job.key,
-    ...job.meta,
-    percent: progress.get(job.key)?.percent ?? null,
-  }));
-  const queued = [...ffmpegHighQueue, ...ffmpegLowQueue].map((task, index) => ({
-    key: task.key,
-    ...task.meta,
-    position: index + 1,
-  }));
-  return { active, queued };
-}
-
-// Claves marcadas como 'failed' (no se pudieron analizar o convertir), para
-// poder revisarlas desde la página de estado.
-function getFailedKeys() {
-  return [...status.entries()].filter(([, value]) => value === 'failed').map(([key]) => key);
 }
 
 // En modo "sin convertir" (?raw=1) se sirve el archivo tal cual, así que el
@@ -596,62 +341,8 @@ function rawAudioFile(video, audioIndex) {
   return fs.existsSync(file) ? file : null;
 }
 
-// Progreso de la conversión en curso (0-100, o null si aún no se puede
-// estimar) y el tiempo transcurrido, para mostrar una barra de carga real.
-async function getProgress(video, audioIndex = null) {
-  const key = await resolveKey(video, audioIndex);
-  const entry = progress.get(key);
-  if (!entry) return null;
-  return { percent: entry.percent, elapsedMs: Date.now() - entry.startedAt };
-}
-
-async function playableFile(video, audioIndex = null) {
-  const key = await resolveKey(video, audioIndex);
-  const file = outputFile(key);
-  return fs.existsSync(file) ? file : null;
-}
-
-// Comprueba (pista de audio por defecto) todos los vídeos del catálogo en
-// segundo plano, para que el catálogo pueda marcar cuanto antes cuáles
-// necesitan conversión. La comprobación en sí (ffprobe) es rápida: no espera
-// a que cada conversión real termine antes de pasar al siguiente vídeo, eso
-// ya lo serializa la cola de ffmpeg (ensureChecked encola el trabajo y
-// vuelve al momento). Antes esta función sí esperaba a que cada conversión
-// acabase antes de comprobar el siguiente, así que con una cola de miles de
-// vídeos casi ninguno llegaba a comprobarse de verdad.
-async function warmAll(videos) {
-  // Sin nada forzado explícitamente (forcePriorityFor, al abrir un vídeo
-  // concreto), el precalentamiento en segundo plano prioriza los archivos
-  // más ligeros primero: se terminan muchos antes y hay más contenido listo
-  // para ver cuanto antes, en vez de tardar mucho en el primero.
-  const ordered = [...videos].sort((a, b) => (a.size || 0) - (b.size || 0));
-  for (const video of ordered) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      await ensureChecked(video);
-    } catch (err) {
-      // No debería llegar aquí (ensureChecked ya captura sus propios
-      // errores), pero un fallo inesperado en un vídeo no debe impedir
-      // comprobar el resto de la biblioteca.
-      console.warn(`Error al precalentar "${video.title}": ${err.message}`);
-    }
-  }
-}
-
 module.exports = {
-  ensureChecked,
-  getStatus,
-  peekStatus,
-  peekProcessingState,
-  peekProgressPercent,
-  getProgress,
-  playableFile,
-  warmAll,
-  forcePriorityFor,
   ensureRawAudio,
   rawAudioProgress,
   rawAudioFile,
-  getQueueSnapshot,
-  getFailedKeys,
-  MAX_CONCURRENT_JOBS,
 };
