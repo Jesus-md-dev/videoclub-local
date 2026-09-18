@@ -269,6 +269,63 @@ export default function VideoControls({
     video.muted = !video.muted;
   };
 
+  // Atajos de teclado/mando (D-pad): antes ni el play/pausa ni avanzar ni
+  // el volumen se podían controlar sin ratón/touch salvo llegando por Tab
+  // al botón exacto. Espacio/flechas/M/F funcionan desde cualquier sitio
+  // del reproductor, igual que en cualquier reproductor de vídeo (YouTube,
+  // Netflix...) - se desactivan solo cuando el foco está en un control que
+  // ya usa esas teclas para lo suyo (el volumen, un <select>, un campo de
+  // texto), para no interferir con su comportamiento nativo.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const active = document.activeElement;
+      const tag = active?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (active?.getAttribute('role') === 'slider') return;
+
+      const video = videoRef.current;
+      if (!video) return;
+
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          video.currentTime = Math.max(0, video.currentTime - 10);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          video.currentTime = Math.min(video.duration || video.currentTime + 10, video.currentTime + 10);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          video.volume = Math.min(1, video.volume + 0.1);
+          video.muted = false;
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          video.volume = Math.max(0, video.volume - 0.1);
+          break;
+        case 'KeyM':
+          e.preventDefault();
+          toggleMute();
+          break;
+        case 'KeyF':
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+        default:
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoRef]);
+
   // Cierra el panel abierto (ajustes o búsqueda) al hacer clic fuera de él.
   useEffect(() => {
     if (!subtitleSettingsOpen && !subtitleSearchOpen) return undefined;

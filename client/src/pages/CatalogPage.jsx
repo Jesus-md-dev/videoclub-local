@@ -7,6 +7,7 @@ import HiddenMenu from '../components/HiddenMenu';
 import Row from '../components/Row';
 import QuickInfoModal from '../components/QuickInfoModal';
 import ServerUnreachable from '../components/ServerUnreachable';
+import useSpatialNavigation from '../hooks/useSpatialNavigation';
 
 function processingBadgeLabel(state, percent) {
   if (state === 'active') return `Procesando… ${typeof percent === 'number' ? `${percent}%` : ''}`.trim();
@@ -361,6 +362,11 @@ export default function CatalogPage() {
   // Se incrementa tras cambiar una carátula a mano (PosterPicker) para
   // forzar una recarga inmediata, sin esperar al sondeo periódico.
   const [catalogVersion, setCatalogVersion] = useState(0);
+
+  // Flechas de mando/teclado entre carátulas (ver el hook): desactivada
+  // mientras el modal de información rápida está abierto, para no mover el
+  // fondo a la vez que se navega dentro de él.
+  useSpatialNavigation('.card', { enabled: !quickInfoTarget });
 
   const searching = term.trim().length > 0;
 
