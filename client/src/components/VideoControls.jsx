@@ -7,12 +7,14 @@ function trackLabel(track) {
 }
 
 // El origen de una pista de subtítulo se distingue por el prefijo de su
-// "index" (ver server/tracks.js: "ext<hash>" = descargado de SubDL; un
-// número o "<n>" suelto = incrustado en el propio archivo, o ya extraído
-// de él). Solo tiene sentido para subtítulos, no para audio.
+// "index" (ver server/tracks.js: "ext<hash>" = descargado de SubDL,
+// "local<hash>" = importado a mano o detectado junto al vídeo; un número o
+// "<n>" suelto = incrustado en el propio archivo, o ya extraído de él).
+// Solo tiene sentido para subtítulos, no para audio.
 function subtitleSourceLabel(track) {
   const index = String(track.index);
   if (index.startsWith('ext')) return 'SubDL';
+  if (index.startsWith('local')) return 'importado';
   return 'del vídeo';
 }
 
@@ -70,6 +72,9 @@ export default function VideoControls({
   // Posición (dentro de subtitleSearchResults) del resultado que se está
   // descargando ahora mismo, para mostrar "Descargando…" solo en ese botón.
   const [downloadingIndex, setDownloadingIndex] = useState(null);
+  const [importingFile, setImportingFile] = useState(false);
+  const [importError, setImportError] = useState(null);
+  const importFileInputRef = useRef(null);
   // El streamIndex ("ext<hash>"/"os<fileId>") del subtítulo recién
   // descargado: en cuanto aparece en subtitleTracks (tras onSubtitlesDownloaded,
   // que vuelve a pedir /api/tracks) se activa solo, sin que haga falta
@@ -497,6 +502,40 @@ export default function VideoControls({
       .finally(() => setDownloadingIndex(null));
   };
 
+  // Un archivo (.srt/.vtt) que ya tenía la persona, en vez de buscado en
+  // SubDL - se manda tal cual en base64 (server/routes/tracks.js decide si
+  // hace falta decodificarlo como Windows-1252, no aquí) para no perder
+  // nada al leerlo como texto en el navegador.
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImportingFile(true);
+    setImportError(null);
+    file
+      .arrayBuffer()
+      .then((buf) => {
+        let binary = '';
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+        const contentBase64 = btoa(binary);
+        return fetch('/api/subtitle/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: id, filename: file.name, contentBase64 }),
+        });
+      })
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) throw new Error(data.error || 'No se pudo importar el archivo');
+        setPendingActivateStreamIndex(String(data.index));
+        setSubtitleSearchOpen(false);
+        onSubtitlesDownloaded?.();
+      })
+      .catch((err) => setImportError(err.message))
+      .finally(() => setImportingFile(false));
+  };
+
   const handleSubtitleChange = (e) => {
     const video = videoRef.current;
     if (!video) return;
@@ -626,8 +665,7 @@ export default function VideoControls({
 
         <div className="controls-spacer" />
 
-        {(subtitleTracks.length > 0 || subtitleSearchReady) && (
-          <div className="subtitle-controls" ref={subtitleSettingsRef}>
+        <div className="subtitle-controls" ref={subtitleSettingsRef}>
             <select
               className="track-select"
               value={subtitleIndex}
@@ -641,6 +679,22 @@ export default function VideoControls({
                 </option>
               ))}
             </select>
+            <input
+              type="file"
+              accept=".srt,.vtt"
+              ref={importFileInputRef}
+              style={{ display: 'none' }}
+              onChange={handleImportFile}
+            />
+            <button
+              className="control-btn"
+              onClick={() => importFileInputRef.current?.click()}
+              disabled={importingFile}
+              aria-label="Importar subtítulo"
+              title="Importar un archivo .srt/.vtt que ya tengas"
+            >
+              {importingFile ? '…' : '📁'}
+            </button>
             {subtitleSearchReady && (
               <button
                 className={`control-btn ${subtitleSearchOpen ? 'control-btn-active' : ''}`}
@@ -733,8 +787,10 @@ export default function VideoControls({
                 </button>
               </div>
             )}
-          </div>
-        )}
+            {importError && (
+              <span className="subtitle-search-hint subtitle-search-hint-error">{importError}</span>
+            )}
+        </div>
 
         <div className="cast-controls" ref={castPanelRef}>
           <button

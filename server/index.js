@@ -40,6 +40,7 @@ const metadata = require('./metadata');
 const hls = require('./hls');
 const moveOriginal = require('./moveOriginal');
 const normalize = require('./normalize');
+const localSubtitles = require('./localSubtitles');
 const { resolveFailed } = require('./resolveFailed');
 const watcher = require('./watcher');
 const videosRouter = require('./routes/videos');
@@ -92,7 +93,11 @@ app.use(
 );
 // Una sola vez aquí para toda la app, en vez de que cada router que lee
 // req.body lo repitiera con su propio `router.use(express.json())`.
-app.use(express.json());
+// Límite más generoso que el 100kb por defecto: un subtítulo importado a
+// mano (routes/tracks.js: POST /subtitle/import) viaja aquí como texto en
+// base64 dentro del JSON (evita añadir una dependencia de subida de
+// archivos solo para esto), y eso puede pasar de 100kb con un .srt largo.
+app.use(express.json({ limit: '5mb' }));
 app.use('/api', videosRouter);
 app.use('/api', streamRouter);
 app.use('/api', thumbnailRouter);
@@ -196,6 +201,12 @@ async function scanIfConfigured() {
     // que ya está bien), cubre lo que no captó autoNormalizeNewFiles antes
     // de tener esto activado, o tras un cambio en las reglas de detección.
     normalize.runNormalizeAll().catch((err) => console.warn(`Normalización al arrancar: ${err.message}`));
+    // Detecta solos los subtítulos (.srt/.vtt) que ya vivieran junto a un
+    // vídeo en su carpeta, sin tener que abrir cada uno para que se note
+    // (ver localSubtitles.js). También pasa una vez al día (abajo).
+    Promise.resolve()
+      .then(() => localSubtitles.autoImportAllSidecars(videos))
+      .catch((err) => console.warn(`Importación de subtítulos al arrancar: ${err.message}`));
     watcher.start();
   } catch (err) {
     console.error(`Error al escanear la carpeta de vídeos: ${err.message}`);
@@ -213,6 +224,9 @@ function runPeriodicMaintenance() {
   metadata
     .forceTmdbRefreshAll(catalog.getAllGroupKeys())
     .catch((err) => console.warn(`Actualización TMDB periódica: ${err.message}`));
+  Promise.resolve()
+    .then(() => localSubtitles.autoImportAllSidecars(catalog.getCatalog()))
+    .catch((err) => console.warn(`Importación de subtítulos periódica: ${err.message}`));
 }
 
 // Copia de seguridad periódica (por si algo se escribe sin pasar por una

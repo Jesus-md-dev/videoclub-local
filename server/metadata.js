@@ -360,6 +360,7 @@ async function fetchTmdbMovie(query, priority, year) {
     type: 'movie',
     cleanName: match.title || null,
     poster: match.poster_path ? `https://image.tmdb.org/t/p/w500${match.poster_path}` : null,
+    popularity: match.popularity ?? 0,
   };
 }
 
@@ -436,6 +437,7 @@ async function fetchTmdbTv(query, priority, year) {
     type: isAnime ? 'anime' : 'tv',
     cleanName: match.name || null,
     poster,
+    popularity: match.popularity ?? 0,
   };
 }
 
@@ -540,8 +542,19 @@ async function fetchBest(query, priority, year) {
       if (tmdbTv && tmdbTv.genres.length) return tmdbTv;
     } else {
       tmdbTv = await fetchTmdbTv(query, priority, year);
-      if (tmdbTv && tmdbTv.genres.length) return tmdbTv;
       tmdbMovie = await fetchTmdbMovie(query, priority, year);
+      // Sin año que desambigüe, un título corto puede coincidir EXACTO con
+      // dos obras sin relación en TMDB, una serie y una película (p.ej.
+      // "Triangle": probar siempre en el mismo orden fijo encontraba antes
+      // una serie de TV británica de 1981 poco conocida que la película de
+      // terror de 2009, mucho más popular - la serie "ganaba" solo por
+      // haberse mirado primero, no por ser la que de verdad se buscaba).
+      // Cuando las dos búsquedas resuelven un candidato válido, se prefiere
+      // el más popular en TMDB en vez de la primera categoría probada.
+      if (tmdbTv?.genres.length && tmdbMovie?.genres.length) {
+        return tmdbTv.popularity >= tmdbMovie.popularity ? tmdbTv : tmdbMovie;
+      }
+      if (tmdbTv && tmdbTv.genres.length) return tmdbTv;
       if (tmdbMovie && tmdbMovie.genres.length) return tmdbMovie;
     }
   } catch (err) {

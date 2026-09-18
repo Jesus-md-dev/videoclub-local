@@ -3,6 +3,7 @@ const path = require('path');
 const { getMediaInfo } = require('./mediaInfo');
 const { HLS_PATH, DATA_PATH } = require('./config');
 const subdl = require('./subdl');
+const localSubtitles = require('./localSubtitles');
 
 const SUBTITLES_DIR = path.join(DATA_PATH, 'subtitles');
 
@@ -133,7 +134,12 @@ function readSubtitlesFromDisk(video) {
 }
 
 async function getTracks(video) {
-  const downloaded = subdl.listDownloaded(video.id);
+  // Detecta solo, sin que haga falta subir nada a mano, un .srt/.vtt que ya
+  // viviera junto al vídeo en su carpeta (ver localSubtitles.js). Barato
+  // (un solo readdir de esa carpeta) e idempotente, así que no pasa nada
+  // por repetirlo cada vez que se piden las pistas de un vídeo.
+  localSubtitles.autoImportSidecars(video);
+  const downloaded = [...subdl.listDownloaded(video.id), ...localSubtitles.listImported(video.id)];
   try {
     const info = await getMediaInfo(video);
     const audio = info.streams.filter((s) => s.codec_type === 'audio').map(describeTrack);

@@ -8,6 +8,7 @@ const hls = require('./hls');
 const archivedVideos = require('./archivedVideos');
 const mediaInfo = require('./mediaInfo');
 const subdl = require('./subdl');
+const localSubtitles = require('./localSubtitles');
 const { migrateProgressId } = require('./progressStore');
 const { migrateFile } = require('./fsUtils');
 
@@ -220,6 +221,7 @@ function migrateVideoData(oldId, newId, oldGroupKey, newRelativePath) {
     migrateFile(path.join(HLS_PATH, oldId), path.join(HLS_PATH, newId));
     migrateSubtitles(oldId, newId);
     subdl.migrateVideo(oldId, newId);
+    localSubtitles.migrateVideo(oldId, newId);
     // El análisis de ffprobe (codec-checks.json) también está indexado por
     // id: para un vídeo archivado (sin original ya en disco) perderlo es
     // definitivo, no se puede volver a analizar - ver mediaInfo.js.

@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { DATA_PATH, getSubdlApiKey } = require('./config');
 const { outputFile: subtitleFile } = require('./subtitles');
+const { decodeSubtitleBuffer, srtToVtt } = require('./subtitleConvert');
 
 // Subtítulos de mejor calidad/variedad que los que ya lleve incrustados el
 // archivo (o cuando no lleva ninguno): busca y descarga desde SubDL
@@ -145,22 +146,6 @@ async function search({ query, season, episode, languages = 'ES', type = null })
     }
   }
   return results.sort((a, b) => b.downloadCount - a.downloadCount);
-}
-
-// Muchos .srt antiguos (sobre todo en español) no están en UTF-8 sino en
-// Windows-1252/ISO-8859-1 - decodificarlos como UTF-8 sin más deja tildes y
-// "ñ" como el carácter de reemplazo "�". Se decodifica primero como UTF-8
-// y, si aparece ese carácter (señal de que no lo era), se decodifica de
-// nuevo como latin1 (mismo rango de acentuadas que Windows-1252 en la
-// práctica para subtítulos).
-function decodeSubtitleBuffer(buf) {
-  const utf8 = buf.toString('utf-8');
-  return utf8.includes('\uFFFD') ? buf.toString('latin1') : utf8;
-}
-
-function srtToVtt(raw) {
-  if (/^\uFEFF?WEBVTT/i.test(raw.trim())) return raw;
-  return `WEBVTT\n\n${raw.replace(/\r+/g, '').replace(/(\d\d:\d\d:\d\d),(\d\d\d)/g, '$1.$2')}`;
 }
 
 function loadRegistry() {
