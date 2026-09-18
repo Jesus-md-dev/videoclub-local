@@ -37,6 +37,9 @@ export default function App() {
       <Route path="/queue" element={<QueuePage />} />
       <Route path="/move-queue" element={<MoveQueuePage />} />
       <Route path="/stats" element={<StatsPage />} />
+      {/* Cualquier ruta no reconocida: antes se quedaba en blanco (React
+          Router no tenía ninguna coincidencia ni fallback). */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
