@@ -3,7 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/placeholder.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: sin esto, env(safe-area-inset-*) (ver
+         index.css, notch/isla dinámica en horizontal) no llega a activarse
+         en Safari/iOS - el navegador nunca dibuja bajo esa zona, así que no
+         hay nada que compensar. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- "Añadir a inicio" en iOS: sin esto, Safari abre en su pestaña
+         normal (con su propia barra) en vez de a pantalla completa como
+         cualquier PWA instalada, y usa una captura de pantalla en vez del
+         icono real de la app. -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Videoclub" />
     <title>Videoclub Local</title>
     <!-- Rótulo tipo tienda de vídeo (solo para títulos grandes: el texto
          normal sigue en una fuente de lectura estándar, por accesibilidad). -->

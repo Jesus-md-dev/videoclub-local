@@ -1806,6 +1806,46 @@ video {
 }
 
 /* ---- Móvil: objetivos táctiles más grandes, cuadrícula más apretada ---- */
+/* Dispositivos táctiles, sin importar el ancho de pantalla (una tablet de
+   10" sigue sin "hover" de verdad, así que el breakpoint de tablet de más
+   abajo no basta por sí solo): los botones que dependían de :hover para
+   hacerse visibles (antes solo .card-remove tenía el arreglo de "siempre
+   visible" en el breakpoint de móvil; .card-info-btn se quedaba invisible
+   del todo en pantalla táctil pura) se muestran siempre, y los objetivos
+   pequeños crecen hacia el mínimo táctil recomendado (~44px; aquí un poco
+   menos porque son iconos secundarios en la esquina de una carátula
+   estrecha, no el botón principal). "touch-action: manipulation" evita el
+   double-tap-to-zoom accidental en objetivos pequeños y juntos. */
+@media (hover: none), (pointer: coarse) {
+  .card-remove,
+  .card-info-btn {
+    opacity: 1;
+    touch-action: manipulation;
+  }
+
+  .card-remove {
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+  }
+
+  .card-info-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+  }
+
+  .seek-bar {
+    padding: 14px 0;
+    touch-action: none;
+  }
+
+  .control-btn,
+  .row-arrow {
+    touch-action: manipulation;
+  }
+}
+
 @media (max-width: 480px) {
   header {
     padding: 14px 16px;

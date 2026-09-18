@@ -111,6 +111,7 @@ export default function WatchPage() {
   const playerRef = useRef(null);
   const hlsRef = useRef(null);
   const shellRef = useRef(null);
+  const wasControlsHiddenRef = useRef(false);
   const resumeTimeRef = useRef(null);
   const savedProgressRef = useRef(null);
   const profileId = getActiveProfileId();
@@ -578,7 +579,27 @@ export default function WatchPage() {
                 ref={playerRef}
                 autoPlay
                 playsInline
-                onClick={(e) => (e.currentTarget.paused ? e.currentTarget.play() : e.currentTarget.pause())}
+                onTouchStart={() => {
+                  // En táctil, un mismo toque dispara touchstart (que
+                  // VideoControls usa para volver a mostrar los controles
+                  // ocultos) Y el click sintético que sigue (que aquí
+                  // pausaría/reproduciría sin querer) - se lee el estado
+                  // justo ANTES de ese click para distinguir "solo estaba
+                  // despertando los controles" de "quiere pausar/reproducir
+                  // de verdad" (con controles ya visibles). En ratón esto no
+                  // se dispara nunca, así que el comportamiento de siempre
+                  // (clic = pausa/reproduce) no cambia.
+                  wasControlsHiddenRef.current = Boolean(
+                    shellRef.current?.querySelector('.video-controls-hidden')
+                  );
+                }}
+                onClick={(e) => {
+                  if (wasControlsHiddenRef.current) {
+                    wasControlsHiddenRef.current = false;
+                    return;
+                  }
+                  e.currentTarget.paused ? e.currentTarget.play() : e.currentTarget.pause();
+                }}
               >
                 {tracks.subtitles.map((track) => (
                   <track
