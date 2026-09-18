@@ -89,7 +89,11 @@ export default function ProfilesPage() {
 
         {creating ? (
           <form className="profile-card-wrap" onSubmit={handleCreate}>
+            <label htmlFor="profile-name-input" className="sr-only">
+              Nombre del perfil
+            </label>
             <input
+              id="profile-name-input"
               className="profile-name-input"
               autoFocus
               maxLength={30}

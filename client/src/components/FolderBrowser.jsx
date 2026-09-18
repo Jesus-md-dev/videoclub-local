@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import useFocusTrap from '../hooks/useFocusTrap';
 
 export default function FolderBrowser({ startPath, onSelect, onClose }) {
   const [currentPath, setCurrentPath] = useState(startPath || null);
@@ -6,6 +7,17 @@ export default function FolderBrowser({ startPath, onSelect, onClose }) {
   const [entries, setEntries] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const modalRef = useRef(null);
+
+  useFocusTrap(modalRef, true);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   useEffect(() => {
     setLoading(true);
@@ -28,7 +40,7 @@ export default function FolderBrowser({ startPath, onSelect, onClose }) {
 
   return (
     <div className="browser-overlay" onClick={onClose}>
-      <div className="browser-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="browser-modal" ref={modalRef} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <p className="section-title">Examinar carpetas</p>
         <p className="browser-current">{currentPath || 'Unidades disponibles'}</p>
 

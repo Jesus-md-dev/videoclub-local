@@ -60,6 +60,41 @@ body {
   min-height: 100vh;
 }
 
+/* Contenido solo para lectores de pantalla: visualmente oculto, pero
+   presente para quien navega con teclado/lector - a diferencia de
+   display:none, sigue anunciándose. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Oculto salvo al recibir el foco (primer Tab de la página): sin esto,
+   cada carga obligaba a tabular por el logo, el buscador y el botón del
+   menú antes de llegar al catálogo en sí. */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 16px;
+  z-index: 1000;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 6px;
+  font-weight: 600;
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus-visible {
+  top: 16px;
+}
+
 header {
   padding: 24px clamp(16px, 4vw, 48px);
   border-bottom: 3px solid var(--border);
@@ -552,6 +587,46 @@ main {
   border: 2px solid var(--border);
   border-radius: 14px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+}
+
+.shortcuts-help {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--bg-alt);
+  border: 2px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+}
+
+.shortcuts-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shortcuts-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.shortcut-keys {
+  flex: 0 0 auto;
+  min-width: 60px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-family: monospace;
+  font-size: 0.85em;
+  text-align: center;
 }
 
 .quickinfo-close {

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import Hls from 'hls.js';
 import VideoControls from '../components/VideoControls';
 import HiddenMenu from '../components/HiddenMenu';
+import ShortcutsHelp from '../components/ShortcutsHelp';
 import { getActiveProfileId } from '../profile';
 import { DEFAULT_SUBTITLE_PREFS, SUBTITLE_SIZE_EM, SUBTITLE_BG_COLOR, fetchSubtitlePrefs, saveSubtitlePrefs } from '../subtitlePrefs';
 import { track } from '../analytics';
@@ -82,6 +83,15 @@ function formatRemaining(progress) {
   const seconds = remainingSec % 60;
   return `~${minutes}m ${seconds}s restantes`;
 }
+
+const WATCH_SHORTCUTS = [
+  { keys: 'Espacio', label: 'Reproducir/pausar' },
+  { keys: '← →', label: 'Retroceder/avanzar 10s' },
+  { keys: '↑ ↓', label: 'Subir/bajar volumen' },
+  { keys: 'M', label: 'Silenciar' },
+  { keys: 'F', label: 'Pantalla completa' },
+  { keys: 'Esc', label: 'Volver al catálogo' },
+];
 
 export default function WatchPage() {
   const { id } = useParams();
@@ -469,6 +479,30 @@ export default function WatchPage() {
   const backTo = video?.seriesKey ? `/?dir=${encodeURIComponent(video.seriesKey)}` : '/';
   const backLabel = video?.seriesKey ? '← Volver a episodios' : '← Volver al catálogo';
 
+  // Escape vuelve al catálogo (o a la lista de episodios), igual que el
+  // enlace "← Volver..." - antes no hacía nada con teclado. Si hay pantalla
+  // completa activa, se deja que el propio navegador la cierre primero (un
+  // segundo Escape ya vuelve atrás): si no, un solo Escape haría las dos
+  // cosas a la vez.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== 'Escape' || document.fullscreenElement) return;
+      navigate(backTo);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [backTo, navigate]);
+
+  // Foco inicial con sentido al entrar por teclado: antes nada lo recibía
+  // (ni el <video>, ni ningún control), así que había que tabular a ciegas
+  // para encontrar el reproductor. El contenedor general, no un botón
+  // concreto, para no forzar "play" ni nada más solo por llegar aquí -
+  // desde ahí, Tab ya lleva al primer control, y espacio/flechas funcionan
+  // igual (VideoControls no exige nada enfocado en concreto).
+  useEffect(() => {
+    if (ready) shellRef.current?.focus();
+  }, [ready]);
+
   // La cabecera fija solo hace falta mientras no hay reproductor todavía
   // (cargando/preparando/error): en cuanto hay vídeo listo, todo eso pasa a
   // vivir dentro del reproductor como una barra superior que aparece y
@@ -528,7 +562,7 @@ export default function WatchPage() {
         )}
         {!error && video && ready && (
           <div className="player-column player-column-fill">
-            <div className="player-shell" ref={shellRef}>
+            <div className="player-shell" ref={shellRef} tabIndex={-1}>
               {/* Los subtítulos nativos (<track>) los pinta el propio
                   navegador vía el pseudo-elemento ::cue - no hay otra forma
                   de darle tamaño/color propios que con CSS scopeado así. */}
@@ -600,6 +634,7 @@ export default function WatchPage() {
           </div>
         )}
       </div>
+      <ShortcutsHelp shortcuts={WATCH_SHORTCUTS} />
     </>
   );
 }

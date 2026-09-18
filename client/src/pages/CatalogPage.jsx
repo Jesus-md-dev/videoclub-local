@@ -7,7 +7,15 @@ import HiddenMenu from '../components/HiddenMenu';
 import Row from '../components/Row';
 import QuickInfoModal from '../components/QuickInfoModal';
 import ServerUnreachable from '../components/ServerUnreachable';
+import ShortcutsHelp from '../components/ShortcutsHelp';
 import useSpatialNavigation from '../hooks/useSpatialNavigation';
+
+const CATALOG_SHORTCUTS = [
+  { keys: '↑↓←→', label: 'Moverse entre carátulas' },
+  { keys: '/', label: 'Ir al buscador' },
+  { keys: 'Enter', label: 'Abrir la carátula enfocada' },
+  { keys: 'Esc', label: 'Cerrar la ficha rápida' },
+];
 
 function processingBadgeLabel(state, percent) {
   if (state === 'active') return `Procesando… ${typeof percent === 'number' ? `${percent}%` : ''}`.trim();
@@ -368,6 +376,22 @@ export default function CatalogPage() {
   // fondo a la vez que se navega dentro de él.
   useSpatialNavigation('.card', { enabled: !quickInfoTarget });
 
+  // Atajo "/" para saltar directo al buscador desde cualquier sitio de la
+  // página (patrón habitual en sitios con mucho contenido) - antes solo se
+  // llegaba tabulando desde el principio. Se ignora si ya se está
+  // escribiendo en un campo de texto (para no robarle la propia "/").
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== '/') return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      e.preventDefault();
+      document.getElementById('search')?.focus();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const searching = term.trim().length > 0;
 
   useEffect(() => {
@@ -562,6 +586,9 @@ export default function CatalogPage() {
 
   return (
     <>
+      <a className="skip-link" href="#main">
+        Saltar al contenido
+      </a>
       <header>
         <Link className="logo" to="/">
           VIDEO<span>CLUB</span>
@@ -569,14 +596,14 @@ export default function CatalogPage() {
         <input
           id="search"
           type="search"
-          placeholder="Buscar título..."
+          placeholder="Buscar título... (atajo: /)"
           autoComplete="off"
           value={term}
           onChange={(e) => handleSearch(e.target.value)}
         />
         <HiddenMenu />
       </header>
-      <main>
+      <main id="main" tabIndex={-1}>
         {!searching && <Breadcrumb dir={dir} onNavigate={goToDir} />}
         {!searching && !dir && <GenreFilter genres={genres} active={genre} onToggle={toggleGenre} />}
         {!searching && dir && <EpisodeGroupFilter groups={groups} active={groupKey} onToggle={toggleGroup} />}
@@ -667,6 +694,7 @@ export default function CatalogPage() {
         onOpenFolder={goToDir}
         onMetadataChanged={() => setCatalogVersion((v) => v + 1)}
       />
+      <ShortcutsHelp shortcuts={CATALOG_SHORTCUTS} />
     </>
   );
 }

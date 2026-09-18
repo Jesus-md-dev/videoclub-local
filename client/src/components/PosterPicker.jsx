@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import useFocusTrap from '../hooks/useFocusTrap';
 
 // Deja elegir a mano entre hasta 3 fichas candidatas de TMDB (nombre, año,
 // carátula) para una clave del catálogo, para cuando la búsqueda
@@ -7,6 +8,23 @@ export default function PosterPicker({ metadataKey, onClose, onApplied }) {
   const [candidates, setCandidates] = useState(null);
   const [error, setError] = useState(null);
   const [applying, setApplying] = useState(null);
+  const pickerRef = useRef(null);
+
+  useFocusTrap(pickerRef, true);
+
+  // Como cualquier modal: Escape también cierra (antes solo el botón ✕ o
+  // el clic fuera). Va sobre "window" y no se propaga más allá de aquí, así
+  // que cierra SOLO este selector, no también el QuickInfoModal de detrás.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   useEffect(() => {
     setError(null);
@@ -40,7 +58,7 @@ export default function PosterPicker({ metadataKey, onClose, onApplied }) {
 
   return (
     <div className="quickinfo-backdrop" onClick={onClose}>
-      <div className="poster-picker" onClick={(e) => e.stopPropagation()}>
+      <div className="poster-picker" ref={pickerRef} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <button className="quickinfo-close" onClick={onClose} aria-label="Cerrar">
           ✕
         </button>

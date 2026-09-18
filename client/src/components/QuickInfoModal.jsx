@@ -1,23 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PosterPicker from './PosterPicker';
+import useFocusTrap from '../hooks/useFocusTrap';
 
 // Ficha rápida ("más info" estilo Netflix): un vistazo sin salir del
 // catálogo, en vez de tener que navegar y volver atrás solo para ver el
 // género o cuántos episodios lleva vistos una serie.
 export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetadataChanged }) {
   const [pickingPoster, setPickingPoster] = useState(false);
+  const cardRef = useRef(null);
+
+  // Mueve el foco dentro del modal al abrir, atrapa Tab mientras está
+  // abierto, y lo devuelve a la carátula que lo abrió al cerrar.
+  useFocusTrap(cardRef, Boolean(target) && !pickingPoster);
 
   // Como cualquier modal: Escape también cierra, no solo el botón ✕ o
-  // hacer clic fuera.
+  // hacer clic fuera. Mientras PosterPicker está abierto encima, es ÉSE el
+  // que debe cerrarse primero con Escape, no los dos a la vez.
   useEffect(() => {
-    if (!target) return undefined;
+    if (!target || pickingPoster) return undefined;
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [target, onClose]);
+  }, [target, pickingPoster, onClose]);
 
   if (!target) return null;
   const { type, data, progress } = target;
@@ -31,7 +38,7 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
 
   return (
     <div className="quickinfo-backdrop" onClick={onClose}>
-      <div className="quickinfo-card" onClick={(e) => e.stopPropagation()}>
+      <div className="quickinfo-card" ref={cardRef} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <button className="quickinfo-close" onClick={onClose} aria-label="Cerrar">
           ✕
         </button>
