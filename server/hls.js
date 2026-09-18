@@ -10,7 +10,7 @@ const trickplay = require('./trickplay');
 const archivedVideos = require('./archivedVideos');
 const lostVideos = require('./lostVideos');
 const moveOriginal = require('./moveOriginal');
-const { isTenBit, checkGpuAvailable } = require('./gpu');
+const { isTenBit, isHdr, checkGpuAvailable } = require('./gpu');
 
 // Issue #58/#59/#61 del plan HLS: generación + estado/progreso/prioridad.
 // Las rutas HTTP están en routes/hls.js, el reproductor (#60) en el cliente.
@@ -296,7 +296,7 @@ async function verifyGeneratedHlsWithRetry(masterPath, expectedDurationSeconds) 
   }
 }
 
-function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy, useGpu, durationSeconds, onProgress }) {
+function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy, useGpu, hdr, durationSeconds, onProgress }) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(outDir, { recursive: true });
 
@@ -305,7 +305,10 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
     // pesado (HEVC/10 bits) se descodifica por CPU y ese es el cuello de
     // botella real aunque la codificación ya use NVENC. Solo tiene sentido
     // si además se va a recodificar (videoCopy no decodifica ni un frame).
-    if (useGpu && !videoCopy) args.push('-hwaccel', 'cuda');
+    // Con HDR se descodifica siempre por CPU (sin -hwaccel cuda): el filtro
+    // de tone-mapping de abajo necesita fotogramas normales en RAM, no los
+    // que quedan en memoria de la GPU tras una descodificación acelerada.
+    if (useGpu && !videoCopy && !hdr) args.push('-hwaccel', 'cuda');
     args.push('-i', inputPath, '-map', '0:v:0');
     audioStreams.forEach((stream) => {
       args.push('-map', `0:${stream.index}`);
@@ -313,12 +316,38 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
 
     args.push('-c:v', videoCopy ? 'copy' : useGpu ? 'h264_nvenc' : 'libx264');
     if (!videoCopy) {
+      // HDR de origen: decodificar+tonemapear+recodificar es una conversión
+      // con pérdida en dos pasos (no un simple remux de contenedor), y encima
+      // partiendo de un rango dinámico mucho más amplio que se está
+      // comprimiendo a la fuerza - con la misma calidad de siempre (cq/crf
+      // 23) el degradado de cielos/sombras que deja el tonemap se nota mucho
+      // más (banding). Un poco más de calidad solo para este caso concreto,
+      // no en todas las conversiones.
       if (useGpu) {
-        args.push('-preset', 'p4', '-rc', 'vbr', '-cq', '23');
+        args.push('-preset', 'p4', '-rc', 'vbr', '-cq', hdr ? '20' : '23');
       } else {
-        args.push('-preset', 'veryfast', '-crf', '23');
+        args.push('-preset', 'veryfast', '-crf', hdr ? '18' : '23');
       }
-      args.push('-pix_fmt', 'yuv420p');
+      if (hdr) {
+        // HDR (PQ/HLG o Dolby Vision, ver gpu.js:isHdr) a SDR de verdad, no
+        // solo un cambio de formato de píxel: sin pasar antes por luz lineal
+        // (zscale transfer=linear) y aplicar el propio tonemap (hable:
+        // conserva mejor las luces altas que un simple recorte), la imagen
+        // sale oscura y lavada de color - la curva PQ codifica mucho más
+        // rango de luminancia que SDR en los mismos valores numéricos, así
+        // que interpretarla directamente como si fuera BT.709 aplasta las
+        // sombras. La segunda zscale ya deja declarado bt709 en la salida
+        // (transferencia+matriz+primarios+rango "tv"/limited, no solo el
+        // format=yuv420p): sin fijar el rango explícito, un reproductor
+        // podría interpretar la salida como rango completo y deslavar los
+        // negros otra vez, aunque el color en sí ya esté bien convertido.
+        args.push(
+          '-vf',
+          'zscale=transfer=linear:npl=100,tonemap=tonemap=hable:desat=0,zscale=transfer=bt709:matrix=bt709:primaries=bt709:range=tv,format=yuv420p'
+        );
+      } else {
+        args.push('-pix_fmt', 'yuv420p');
+      }
     }
     // Por pista, no en bloque: si una pista ya es AAC (el caso normal en
     // esta biblioteca), copiarla es prácticamente instantáneo - antes se
@@ -544,6 +573,7 @@ async function runGeneration(video, priority) {
     const durationSeconds = Number(info.format?.duration) || null;
 
     const videoCopy = COMPATIBLE_VIDEO_CODECS.includes(videoStream.codec_name) && !isTenBit(videoStream);
+    const hdr = !videoCopy && isHdr(videoStream);
     const useGpu = !videoCopy && (await checkGpuAvailable(HLS_PATH));
 
     status.set(video.id, 'processing');
@@ -569,7 +599,7 @@ async function runGeneration(video, priority) {
       try {
         // eslint-disable-next-line no-await-in-loop
         const ffmpegStderr = await runLimited(
-          () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu: attempts[i], durationSeconds, onProgress }),
+          () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu: attempts[i], hdr, durationSeconds, onProgress }),
           priority
         );
         // ffmpeg puede salir con código 0 (éxito) y aun así dejar el

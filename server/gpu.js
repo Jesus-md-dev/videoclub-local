@@ -10,6 +10,28 @@ function isTenBit(videoStream) {
   return Boolean(videoStream?.pix_fmt?.includes('10')) || videoStream?.profile === 'High 10';
 }
 
+// HDR10 (transferencia PQ/smpte2084) o HLG (arib-std-b67): sin convertir de
+// verdad la curva de color al recodificar a 8 bits, el resultado no sale
+// "un poco peor", sale MAL - los valores de luminancia de HDR (pensados
+// para mostrarse con una curva PQ) se interpretan con la curva normal
+// (gamma/BT.709), así que la imagen sale oscura y lavada de color, no solo
+// con menos rango dinámico. Visto de verdad con "Michael (2026)" (HEVC Main
+// 10, bt2020/smpte2084).
+function isHdr(videoStream) {
+  const transfer = videoStream?.color_transfer;
+  if (transfer === 'smpte2084' || transfer === 'arib-std-b67') return true;
+  // Dolby Vision: en perfiles de una sola capa (5, 8.x) suele venir también
+  // con color_transfer=smpte2084 (de ahí que ya lo pille el caso de arriba),
+  // pero el perfil 5 (sin capa base HDR10 compatible) puede no declararlo
+  // igual - el códec en sí ("dvhe"/"dvh1" para HEVC, "dva1"/"dvav" para
+  // H.264) es una señal más fiable de que hay HDR de por medio pase lo que
+  // pase con ese campo. Solo se usa la capa base (el "enhancement layer"
+  // propio de Dolby Vision se ignora al no tener licencia para decodificarlo),
+  // pero tonemapear esa capa base es muchísimo mejor que no tonemapear nada.
+  const tag = videoStream?.codec_tag_string?.toLowerCase() || '';
+  return ['dvhe', 'dvh1', 'dva1', 'dvav'].includes(tag);
+}
+
 // Detecta una sola vez si la GPU (NVENC) funciona de verdad en este equipo
 // probando una codificación mínima; si algo falla (sin GPU NVIDIA, driver
 // antiguo, etc.) se usa libx264 (CPU) para todo, sin más aviso. El
@@ -50,4 +72,4 @@ function checkGpuAvailable(workDir) {
   return gpuCheckPromise;
 }
 
-module.exports = { isTenBit, checkGpuAvailable };
+module.exports = { isTenBit, isHdr, checkGpuAvailable };
