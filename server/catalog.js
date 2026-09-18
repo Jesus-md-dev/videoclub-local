@@ -368,7 +368,19 @@ async function performScan() {
   // fuera de esta carpeta - se listan igual a partir del registro para que
   // el catálogo no dependa de que ese otro disco esté conectado ahora mismo.
   for (const [id, info] of Object.entries(movedOriginals.getAll())) {
-    if (seenIds.has(id)) continue; // no debería pasar, pero por si acaso
+    // El escaneo del disco es la fuente de verdad: si walk() ha encontrado
+    // de verdad un archivo en su sitio original (E:), es imposible que a la
+    // vez esté también trasladado a otro disco - el registro está obsoleto
+    // (visto de verdad con ~148 episodios de Dragon Ball GT: una entrada de
+    // un traslado que nunca se llegó a completar del todo en su día). Se
+    // olvida aquí mismo para que el vídeo vuelva a ser candidato normal al
+    // traslado automático (moveOriginal.js), en vez de quedarse invisible
+    // para siempre (mediaInfo.inputPathFor seguiría apuntando a una ruta
+    // que ya no existe, sin ningún aviso).
+    if (seenIds.has(id)) {
+      movedOriginals.forget(id);
+      continue;
+    }
     results.push({
       id,
       title: info.title,
