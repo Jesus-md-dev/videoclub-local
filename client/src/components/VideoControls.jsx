@@ -638,15 +638,6 @@ export default function VideoControls({
               </button>
             </div>
           )}
-          {audioTracks.length > 1 && (
-            <select className="track-select" value={audioIndex ?? ''} onChange={onAudioChange}>
-              {audioTracks.map((track) => (
-                <option key={track.index} value={track.index}>
-                  Audio: {trackLabel(track)}
-                </option>
-              ))}
-            </select>
-          )}
           <HiddenMenu />
         </div>
       </div>
@@ -721,6 +712,16 @@ export default function VideoControls({
         </div>
 
         <div className="controls-spacer" />
+
+        {audioTracks.length > 1 && (
+          <select className="track-select" value={audioIndex ?? ''} onChange={onAudioChange} aria-label="Audio">
+            {audioTracks.map((track) => (
+              <option key={track.index} value={track.index}>
+                Audio: {trackLabel(track)}
+              </option>
+            ))}
+          </select>
+        )}
 
         <div className="subtitle-controls" ref={subtitleSettingsRef}>
             <select
