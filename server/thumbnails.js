@@ -42,6 +42,14 @@ function generateThumbnail(video) {
   if (!ffmpegPath || generating.has(video.id) || hasThumbnail(video.id)) {
     return Promise.resolve();
   }
+  // Comprobación barata antes de meter esto en la cola de ffmpeg: sin esto,
+  // un vídeo cuyo archivo real ya no está donde debería (huérfano de
+  // verdad, o su disco de traslado desconectado ahora mismo) desperdiciaba
+  // un intento de verdad en cada reinicio/reescaneo para siempre, aunque
+  // nunca vaya a funcionar mientras el archivo siga sin estar accesible.
+  if (!fs.existsSync(inputPathFor(video))) {
+    return Promise.resolve();
+  }
   generating.add(video.id);
 
   // El escaneo inicial y el vigilante de carpeta (watcher) pueden llamar a

@@ -503,8 +503,23 @@ function getProgress(video) {
 // (ver `E:\Volver a descargar\episodios-perdidos.txt`, ~180 episodios cuya
 // carpeta data/hls se borró a mano para liberar espacio sin saber que para
 // estos era la única copia que quedaba).
+//
+// Mismo trato para un vídeo que NUNCA se archivó ni se trasladó (issue
+// #112): si el catálogo lo lista pero su archivo no está donde debería (ni
+// en la carpeta de vídeos, ni en el registro de traslado), es un huérfano
+// de verdad, no un fallo puntual - reintentarlo en cada reinicio para
+// siempre no lo va a arreglar, solo desperdicia tiempo y satura el disco
+// externo sin necesidad (visto de verdad con varios episodios de Galactik
+// Football que llevaban así mucho tiempo). "video.movedTo" es la señal
+// clave que distingue esto de un vídeo cuyo disco de traslado está
+// simplemente desconectado ahora mismo (ver movedOriginals.js) - ESE caso
+// SÍ debe seguir reintentándose, es temporal y conocido, no "perdido".
 function isLost(video) {
-  return archivedVideos.isArchived(video.id) && !hasValidMasterPlaylist(video) && !fs.existsSync(inputPathFor(video));
+  if (!hasValidMasterPlaylist(video) && !fs.existsSync(inputPathFor(video))) {
+    if (archivedVideos.isArchived(video.id)) return true;
+    if (!video.archived && !video.movedTo) return true;
+  }
+  return false;
 }
 
 // Arranca la generación si hace falta (no bloquea: se lanza en segundo

@@ -182,6 +182,78 @@ function localIps() {
   return ips;
 }
 
+// Todo lo que puede tardar de verdad (normalizar nombres, precalentar HLS,
+// traslado automático, subtítulos...) va aquí, SIN que scanIfConfigured lo
+// espere - si no, el servidor entero no respondería ni una sola petición
+// hasta que todo esto terminara, a veces varios minutos con un catálogo
+// grande. "initialVideos" es el escaneo ya hecho al arrancar; se vuelve a
+// escanear tras normalizar porque los renombrados lo dejan desactualizado.
+async function warmUpInBackground(initialVideos) {
+  let videos = initialVideos;
+  // Precalienta la caché de géneros en segundo plano (puede tardar si hay
+  // muchas series/películas); el catálogo funciona igual mientras tanto.
+  metadata.warmAll(catalog.getAllGroupKeys());
+
+  // Pasada completa de normalización de nombres ANTES de precalentar HLS,
+  // no en paralelo (issue #112): runNormalizeAll() renombra archivos de
+  // verdad en disco, y hls.warmAll() de abajo recorre una lista de vídeos
+  // tomada de ESTE escaneo - si los dos corrían a la vez, warmAll podía
+  // llegar tarde a un vídeo que normalize.js ya había renombrado mientras
+  // tanto, e intentar generar su HLS con una ruta que ya no existía
+  // ("No such file or directory" para archivos que en realidad seguían
+  // ahí, solo que con otro nombre). Verificado en producción con varios
+  // episodios de Galactik Football que fallaban así en cada reinicio, uno
+  // detrás de otro, saturando el disco externo justo cuando alguien podía
+  // estar viendo algo a la vez. Es idempotente (no toca lo que ya está
+  // bien), así que en el caso normal (nada que renombrar) esto añade poco
+  // retraso real antes de empezar a precalentar - y como esta función entera
+  // ya no bloquea el arranque del servidor (ver más arriba), ese retraso
+  // tampoco deja el sitio sin responder mientras tanto.
+  try {
+    // runNormalizeAll() no espera a que los renombrados terminen de verdad:
+    // arranca el trabajo en segundo plano y devuelve el control al momento
+    // (pensado para el botón manual de /config, que sondea su progreso con
+    // getProgress() en vez de esperar la promesa). Aquí SÍ hace falta
+    // esperar a que termine de verdad antes de seguir, o el arreglo de
+    // arriba no sirve de nada - se sondea igual que ya hace ese botón.
+    await normalize.runNormalizeAll();
+    while (normalize.getProgress().running) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    videos = await catalog.scan();
+  } catch (err) {
+    console.warn(`Normalización al arrancar: ${err.message}`);
+  }
+
+  // Precalienta HLS en segundo plano (prioridad baja: quien le da a play
+  // ahora mismo sigue adelantando en la cola, ver #61/ffmpeg-limiter.js).
+  hls.warmAll(videos);
+  // Encola para traslado (ver moveOriginal.js) todo lo que ya estaba con
+  // el HLS listo de antes de tener esto activado - si no, el gancho
+  // automático (hls.js, justo cuando termina de generarse) nunca se
+  // dispararía para ellos, y el ahorro de espacio solo aplicaría a vídeos
+  // nuevos a partir de ahora. Sin carpeta configurada, no hace nada.
+  for (const video of videos) {
+    if (video.archived || video.movedTo) continue;
+    if (hls.getStatus(video) === 'ready') {
+      moveOriginal.maybeMoveOriginal(video).catch(() => {});
+    }
+  }
+  // Reintenta lo fallido UNA SOLA VEZ al arrancar (no en bucle: un fallo
+  // persistente de verdad no debe reintentarse para siempre sin que nadie
+  // se entere, ver server/resolveFailed.js).
+  resolveFailed().catch((err) => console.warn(`Resolver fallidos al arrancar: ${err.message}`));
+  // Detecta solos los subtítulos (.srt/.vtt) que ya vivieran junto a un
+  // vídeo en su carpeta, sin tener que abrir cada uno para que se note (ver
+  // localSubtitles.js). También pasa una vez al día (abajo).
+  try {
+    await localSubtitles.autoImportAllSidecars(videos);
+  } catch (err) {
+    console.warn(`Importación de subtítulos al arrancar: ${err.message}`);
+  }
+}
+
 async function scanIfConfigured() {
   const videosPath = getVideosPath();
   if (!videosPath) {
@@ -193,38 +265,11 @@ async function scanIfConfigured() {
     console.log(`Catálogo: ${videos.length} vídeo(s) encontrados en ${videosPath}`);
     mediaInfo.pruneStore(videos.map((v) => v.id));
     thumbnails.generateMissingThumbnails(videos);
-    // Precalienta la caché de géneros en segundo plano (puede tardar si hay
-    // muchas series/películas); el catálogo funciona igual mientras tanto.
-    metadata.warmAll(catalog.getAllGroupKeys());
-    // Precalienta HLS en segundo plano (prioridad baja: quien le da a play
-    // ahora mismo sigue adelantando en la cola, ver #61/ffmpeg-limiter.js).
-    hls.warmAll(videos);
-    // Encola para traslado (ver moveOriginal.js) todo lo que ya estaba con
-    // el HLS listo de antes de tener esto activado - si no, el gancho
-    // automático (hls.js, justo cuando termina de generarse) nunca se
-    // dispararía para ellos, y el ahorro de espacio solo aplicaría a vídeos
-    // nuevos a partir de ahora. Sin carpeta configurada, no hace nada.
-    for (const video of videos) {
-      if (video.archived || video.movedTo) continue;
-      if (hls.getStatus(video) === 'ready') {
-        moveOriginal.maybeMoveOriginal(video).catch(() => {});
-      }
-    }
-    // Reintenta lo fallido UNA SOLA VEZ al arrancar (no en bucle: un fallo
-    // persistente de verdad no debe reintentarse para siempre sin que nadie
-    // se entere, ver server/resolveFailed.js).
-    resolveFailed().catch((err) => console.warn(`Resolver fallidos al arrancar: ${err.message}`));
-    // Pasada completa de normalización de nombres: idempotente (no toca lo
-    // que ya está bien), cubre lo que no captó autoNormalizeNewFiles antes
-    // de tener esto activado, o tras un cambio en las reglas de detección.
-    normalize.runNormalizeAll().catch((err) => console.warn(`Normalización al arrancar: ${err.message}`));
-    // Detecta solos los subtítulos (.srt/.vtt) que ya vivieran junto a un
-    // vídeo en su carpeta, sin tener que abrir cada uno para que se note
-    // (ver localSubtitles.js). También pasa una vez al día (abajo).
-    Promise.resolve()
-      .then(() => localSubtitles.autoImportAllSidecars(videos))
-      .catch((err) => console.warn(`Importación de subtítulos al arrancar: ${err.message}`));
     watcher.start();
+    // No se espera (ver el comentario de warmUpInBackground): el servidor
+    // ya puede empezar a responder peticiones con lo que hay del catálogo
+    // mientras esto sigue en marcha detrás.
+    warmUpInBackground(videos).catch((err) => console.error(`Precalentamiento en segundo plano: ${err.message}`));
   } catch (err) {
     console.error(`Error al escanear la carpeta de vídeos: ${err.message}`);
   }
