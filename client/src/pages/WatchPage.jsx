@@ -87,11 +87,22 @@ function trackLabel(track) {
 // defecto, por mucho idioma distinto que se eligiera. Se busca por idioma
 // (LANGUAGE="jpn", etc., el mismo valor en ambos sitios) directamente
 // dentro de la lista real del reproductor, nunca por posición prestada.
-function findByLanguage(list, language) {
+// "occurrence": cuántas pistas con este MISMO idioma hay antes de la que se
+// busca en tracks.audio (0 = la primera de ese idioma, 1 = la segunda...).
+// Sin esto, un archivo con dos pistas "spa" a la vez (Latino Y Castellano,
+// caso real y nada raro en este catálogo) siempre encontraba la primera
+// ("Latino") por mucho que se pidiera la segunda ("Castellano") - el idioma
+// solo identifica el GRUPO de pistas candidatas, no distingue cuál de
+// varias del mismo idioma es la que se quiere.
+function findByLanguage(list, language, occurrence = 0) {
   if (!language || !list) return -1;
+  let seen = -1;
   for (let i = 0; i < list.length; i += 1) {
     const trackLang = list[i].lang || list[i].language;
-    if (trackLang && trackLang.toLowerCase() === language.toLowerCase()) return i;
+    if (trackLang && trackLang.toLowerCase() === language.toLowerCase()) {
+      seen += 1;
+      if (seen === occurrence) return i;
+    }
   }
   return -1;
 }
@@ -105,9 +116,9 @@ function findByLanguage(list, language) {
 // cae a la posición ordinal entre pistas de audio: sí es consistente
 // entre tracks.audio y el manifiesto/audioTracks del reproductor, porque
 // ambos se derivan del mismo análisis del archivo en el mismo orden.
-function findAudioTrackPosition(list, wantedTrack, ordinalPosition) {
+function findAudioTrackPosition(list, wantedTrack, ordinalPosition, occurrence = 0) {
   if (!list) return -1;
-  const byLanguage = findByLanguage(list, wantedTrack?.language);
+  const byLanguage = findByLanguage(list, wantedTrack?.language, occurrence);
   if (byLanguage >= 0) return byLanguage;
   if (ordinalPosition != null && ordinalPosition >= 0 && ordinalPosition < list.length) return ordinalPosition;
   return -1;
@@ -248,7 +259,14 @@ export default function WatchPage() {
     const lang = subtitlePrefs.audioLanguage;
     const title = subtitlePrefs.audioTitle;
     if ((!lang && !title) || tracks.audio.length === 0) return;
-    const match = (lang && tracks.audio.find((t) => t.language === lang)) || (title && tracks.audio.find((t) => t.title === title));
+    // Si hay varias pistas con el mismo idioma (p.ej. "Latino" y "Castellano",
+    // ambas "spa"), el idioma solo no basta para distinguirlas - se prioriza
+    // la que además coincide en título antes de conformarse con la primera.
+    const sameLanguage = lang ? tracks.audio.filter((t) => t.language === lang) : [];
+    const match =
+      (sameLanguage.length > 1 && title && sameLanguage.find((t) => t.title === title)) ||
+      sameLanguage[0] ||
+      (title && tracks.audio.find((t) => t.title === title));
     if (match) setAudioIndex(match.index);
   }, [id, tracks.audio, subtitlePrefs.audioLanguage, subtitlePrefs.audioTitle]);
 
@@ -384,7 +402,12 @@ export default function WatchPage() {
         if (audioIndex == null) return;
         const wanted = tracks.audio.find((t) => t.index === audioIndex);
         const ordinal = tracks.audio.findIndex((t) => t.index === audioIndex);
-        const position = findAudioTrackPosition(instance.audioTracks, wanted, ordinal);
+        // Cuántas pistas anteriores comparten el mismo idioma: distingue
+        // "Latino" de "Castellano" (ambas "spa") al buscar por idioma.
+        const occurrence = wanted
+          ? tracks.audio.slice(0, ordinal).filter((t) => t.language === wanted.language).length
+          : 0;
+        const position = findAudioTrackPosition(instance.audioTracks, wanted, ordinal, occurrence);
         if (position >= 0 && instance.audioTrack !== position) instance.audioTrack = position;
       });
       instance.loadSource(masterUrl);
@@ -403,8 +426,11 @@ export default function WatchPage() {
       if (audioIndex != null) {
         const wanted = tracks.audio.find((t) => t.index === audioIndex);
         const ordinal = tracks.audio.findIndex((t) => t.index === audioIndex);
+        const occurrence = wanted
+          ? tracks.audio.slice(0, ordinal).filter((t) => t.language === wanted.language).length
+          : 0;
         const onLoadedMeta = () => {
-          const position = findAudioTrackPosition(player.audioTracks, wanted, ordinal);
+          const position = findAudioTrackPosition(player.audioTracks, wanted, ordinal, occurrence);
           if (position >= 0 && player.audioTracks) {
             for (let i = 0; i < player.audioTracks.length; i += 1) {
               player.audioTracks[i].enabled = i === position;
