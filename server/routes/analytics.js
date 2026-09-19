@@ -12,6 +12,9 @@ const ALLOWED_EVENTS = new Set([
   'play_complete',
   'stall',
   'play_error',
+  // issue #111: diagnóstico más fino de tirones/fallos de reproducción.
+  'hls_error',
+  'reload_while_stuck',
 ]);
 
 router.post('/analytics/track', (req, res) => {

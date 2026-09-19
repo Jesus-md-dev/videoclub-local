@@ -78,6 +78,21 @@ export default function StatsPage() {
               emptyText="Sin tirones registrados."
             />
             <TopList title="Vídeos con más errores" entries={data.topErrors} emptyText="Sin errores registrados." />
+            <TopList
+              title="Vídeos con más fallos de hls.js"
+              entries={data.topHlsErrors}
+              emptyText="Sin fallos de hls.js registrados."
+            />
+            <TopList
+              title="Tipos de fallo de hls.js más frecuentes"
+              entries={data.topHlsErrorTypes}
+              emptyText="Sin fallos de hls.js registrados."
+            />
+            <TopList
+              title="Vídeos con recarga de rescate (reproducción atascada)"
+              entries={data.topReloadsWhileStuck}
+              emptyText="Sin recargas de rescate registradas."
+            />
           </>
         )}
       </div>

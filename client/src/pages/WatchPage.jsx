@@ -24,6 +24,31 @@ function saveProgress(profileId, id, videoEl) {
   }).catch(() => {});
 }
 
+// Estado del <video> en el momento de un tirón/fallo (issue #111: antes solo
+// se registraba "ocurrió un fallo", sin nada para saber POR QUÉ - ni rango
+// de buffer, ni si la red iba lenta, ni el motivo real de hls.js si el fallo
+// venía de ahí). Se adjunta a cada evento de analítica relacionado con la
+// reproducción para poder estudiarlos de verdad después, no solo contarlos.
+function playbackDiagnostics(videoEl) {
+  const buffered = [];
+  for (let i = 0; i < videoEl.buffered.length; i += 1) {
+    buffered.push([Number(videoEl.buffered.start(i).toFixed(1)), Number(videoEl.buffered.end(i).toFixed(1))]);
+  }
+  const connection = navigator.connection;
+  return {
+    currentTime: Number(videoEl.currentTime.toFixed(1)),
+    duration: Number.isFinite(videoEl.duration) ? Number(videoEl.duration.toFixed(1)) : null,
+    readyState: videoEl.readyState,
+    networkState: videoEl.networkState,
+    buffered,
+    // effectiveType ("4g"/"3g"/...) y downlink (Mbps estimados): solo
+    // Chrome/Edge lo exponen, undefined en Firefox/Safari - optional
+    // chaining lo deja sin más en ese caso, no hace falta comprobar antes.
+    connectionType: connection?.effectiveType || null,
+    downlinkMbps: connection?.downlink ?? null,
+  };
+}
+
 // Más fiable que fetch al cerrar la pestaña/navegar fuera: el navegador
 // garantiza el envío aunque la página ya se esté descargando.
 function saveProgressOnUnload(profileId, id, videoEl) {
@@ -33,6 +58,21 @@ function saveProgressOnUnload(profileId, id, videoEl) {
     type: 'application/json',
   });
   navigator.sendBeacon(progressUrl(profileId, id), blob);
+}
+
+// Distingue una recarga "de rescate" (la reproducción llevaba un buen rato
+// atascada, ver "stall"/stuckRef más abajo) de cerrar la pestaña o navegar a
+// otra página sin más - solo la primera es una señal real de fallo que
+// merece la pena estudiar. fetch() (usado por track(), ver analytics.js) no
+// tiene garantía de completarse durante la descarga de la página, igual que
+// saveProgressOnUnload de arriba - por eso sendBeacon directo, no track().
+function trackStuckOnUnload(videoEl, videoId, title) {
+  if (!navigator.sendBeacon) return;
+  const blob = new Blob(
+    [JSON.stringify({ event: 'reload_while_stuck', videoId, title, ...playbackDiagnostics(videoEl) })],
+    { type: 'application/json' }
+  );
+  navigator.sendBeacon('/api/analytics/track', blob);
 }
 
 function trackLabel(track) {
@@ -104,6 +144,20 @@ export default function WatchPage() {
   const [audioIndex, setAudioIndex] = useState(null);
   const [playbackKey, setPlaybackKey] = useState(0);
   const [stuck, setStuck] = useState(false);
+  // Espejo de "stuck" en un ref: el manejador de beforeunload vive dentro de
+  // un efecto que no depende de "stuck" en su lista de dependencias (no hace
+  // falta recrearlo por eso), así que capturaría un valor de "stuck"
+  // congelado del momento en que se montó, no el real en el instante de
+  // cerrar/recargar la pestaña - justo lo que hace falta para distinguir una
+  // recarga de rescate de una navegación normal (ver trackStuckOnUnload).
+  const stuckRef = useRef(false);
+  // Se activa nada más empezar a esperar datos (evento "waiting"), no solo
+  // cuando ya ha pasado el tiempo suficiente para darse por "atascado" del
+  // todo (stuckRef) - así una recarga de rescate en los primeros segundos de
+  // congelación (antes de que el reintento automático de 15s+15s llegue a
+  // completarse) también queda registrada, no solo las que aguantan hasta
+  // el final de esa espera.
+  const waitingRef = useRef(false);
   const [prevEpisodeId, setPrevEpisodeId] = useState(null);
   const [nextEpisodeId, setNextEpisodeId] = useState(null);
   const [autoAdvanceIn, setAutoAdvanceIn] = useState(null);
@@ -295,8 +349,27 @@ export default function WatchPage() {
       // llegar a ese límite sin perder fluidez real.
       const instance = new Hls({ maxBufferLength: 60, maxMaxBufferLength: 90 });
       hlsRef.current = instance;
+      // Todos los fallos de hls.js, no solo los fatales: antes un tirón
+      // real (fallo de red al pedir un segmento, buffer vaciado...) que
+      // hls.js consigue recuperar solo no dejaba ningún rastro (issue #111)
+      // - así "se paró la reproducción" no se podía estudiar después, solo
+      // adivinar. "player" puede ser undefined mientras hls.js aún se está
+      // conectando al <video> (los primeros instantes tras new Hls()).
       instance.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) console.warn(`hls.js FATAL (${data.type}): ${data.details}`);
+        const currentPlayer = playerRef.current;
+        track('hls_error', {
+          videoId: id,
+          title: video.title,
+          fatal: Boolean(data.fatal),
+          type: data.type,
+          details: data.details,
+          reason: data.reason || data.error?.message || null,
+          responseStatus: data.response?.code ?? null,
+          responseUrl: data.response?.url || data.url || null,
+          frag: data.frag ? { sn: data.frag.sn, level: data.frag.level } : null,
+          ...(currentPlayer ? playbackDiagnostics(currentPlayer) : {}),
+        });
       });
       // Si el idioma preferido (guardado de otro episodio) no es el que
       // trae por defecto este archivo, se aplica en cuanto se conocen las
@@ -393,27 +466,42 @@ export default function WatchPage() {
       setPlaybackKey((k) => k + 1);
     };
     const onWaiting = () => {
+      waitingRef.current = true;
       clearTimeout(stallTimer);
       stallTimer = setTimeout(() => {
+        // Se registra también el primer intento (antes solo el segundo):
+        // si alguien recarga a mano antes de que termine el reintento
+        // automático (15s + otros 15s = hasta 30s), ese primer tirón real
+        // no dejaba ningún rastro para poder estudiarlo después.
+        track('stall', { videoId: id, title: video.title, attempt: autoRetried ? 2 : 1, ...playbackDiagnostics(player) });
         if (!autoRetried) {
           autoRetried = true;
           doRetry();
         } else {
+          stuckRef.current = true;
           setStuck(true);
-          track('stall', { videoId: id, title: video.title });
         }
       }, 15000);
     };
     const clearStall = () => {
+      waitingRef.current = false;
       clearTimeout(stallTimer);
+      stuckRef.current = false;
       setStuck(false);
     };
     const onError = () => {
-      track('play_error', { videoId: id, title: video.title });
+      track('play_error', {
+        videoId: id,
+        title: video.title,
+        errorCode: player.error?.code ?? null,
+        errorMessage: player.error?.message || null,
+        ...playbackDiagnostics(player),
+      });
       if (!autoRetried) {
         autoRetried = true;
         doRetry();
       } else {
+        stuckRef.current = true;
         setStuck(true);
       }
     };
@@ -427,7 +515,10 @@ export default function WatchPage() {
     player.addEventListener('error', onError);
 
     const interval = setInterval(() => saveProgress(profileId, id, player), 5000);
-    const onBeforeUnload = () => saveProgressOnUnload(profileId, id, player);
+    const onBeforeUnload = () => {
+      saveProgressOnUnload(profileId, id, player);
+      if (waitingRef.current || stuckRef.current) trackStuckOnUnload(player, id, video.title);
+    };
     window.addEventListener('beforeunload', onBeforeUnload);
 
     return () => {
@@ -473,6 +564,8 @@ export default function WatchPage() {
   const retryPlayback = () => {
     const player = playerRef.current;
     resumeTimeRef.current = player ? player.currentTime : null;
+    waitingRef.current = false;
+    stuckRef.current = false;
     setStuck(false);
     setPlaybackKey((k) => k + 1);
   };

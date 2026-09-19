@@ -55,6 +55,11 @@ function summary() {
   const genreClicks = {};
   const stallsByVideo = {};
   const errorsByVideo = {};
+  // issue #111: antes solo se sabía CUÁNTO fallaba cada vídeo, no POR QUÉ -
+  // ni el motivo real de hls.js, ni si al final hizo falta recargar a mano.
+  const hlsErrorsByVideo = {};
+  const hlsErrorTypes = {};
+  const reloadsByVideo = {};
 
   for (const e of events) {
     byEvent[e.event] = (byEvent[e.event] || 0) + 1;
@@ -81,6 +86,16 @@ function summary() {
       const key = e.title || e.videoId;
       errorsByVideo[key] = (errorsByVideo[key] || 0) + 1;
     }
+    if (e.event === 'hls_error' && e.videoId) {
+      const key = e.title || e.videoId;
+      hlsErrorsByVideo[key] = (hlsErrorsByVideo[key] || 0) + 1;
+      const typeKey = `${e.type || '?'} / ${e.details || '?'}`;
+      hlsErrorTypes[typeKey] = (hlsErrorTypes[typeKey] || 0) + 1;
+    }
+    if (e.event === 'reload_while_stuck' && e.videoId) {
+      const key = e.title || e.videoId;
+      reloadsByVideo[key] = (reloadsByVideo[key] || 0) + 1;
+    }
   }
 
   return {
@@ -93,6 +108,9 @@ function summary() {
     topGenres: topEntries(genreClicks),
     topStalls: topEntries(stallsByVideo),
     topErrors: topEntries(errorsByVideo),
+    topHlsErrors: topEntries(hlsErrorsByVideo),
+    topHlsErrorTypes: topEntries(hlsErrorTypes),
+    topReloadsWhileStuck: topEntries(reloadsByVideo),
   };
 }
 
