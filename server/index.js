@@ -3,14 +3,13 @@ const https = require('https');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const { PORT, HTTPS_PORT, DATA_PATH, TRANSCODED_PATH, HLS_PATH, getVideosPath } = require('./config');
-console.log(`Convertidos en: ${TRANSCODED_PATH}${TRANSCODED_PATH.startsWith(DATA_PATH) ? ' (local a este PC)' : ''}`);
+const { PORT, HTTPS_PORT, DATA_PATH, HLS_PATH, getVideosPath } = require('./config');
 console.log(`HLS en: ${HLS_PATH}${HLS_PATH.startsWith(DATA_PATH) ? ' (local a este PC)' : ''}`);
 
 // Aviso in-situ para quien vaya a "liberar espacio" borrando carpetas a
-// mano: a diferencia de TRANSCODED_PATH, esta carpeta NO es toda caché
-// desechable (ver README.md, "Cuidado al liberar espacio en disco") - ya
-// pasó una vez (~180 episodios perdidos sin forma de recuperarlos).
+// mano: esta carpeta NO es toda caché desechable (ver README.md, "Cuidado
+// al liberar espacio en disco") - ya pasó una vez (~180 episodios perdidos
+// sin forma de recuperarlos).
 try {
   fs.mkdirSync(HLS_PATH, { recursive: true });
   fs.writeFileSync(
@@ -44,7 +43,6 @@ const localSubtitles = require('./localSubtitles');
 const { resolveFailed } = require('./resolveFailed');
 const watcher = require('./watcher');
 const videosRouter = require('./routes/videos');
-const streamRouter = require('./routes/stream');
 const thumbnailRouter = require('./routes/thumbnail');
 const settingsRouter = require('./routes/settings');
 const browseRouter = require('./routes/browse');
@@ -119,7 +117,6 @@ app.use('/api', (req, res, next) => {
 
 app.use(express.json({ limit: '5mb' }));
 app.use('/api', videosRouter);
-app.use('/api', streamRouter);
 app.use('/api', thumbnailRouter);
 app.use('/api', settingsRouter);
 app.use('/api', browseRouter);
@@ -201,7 +198,6 @@ async function scanIfConfigured() {
     metadata.warmAll(catalog.getAllGroupKeys());
     // Precalienta HLS en segundo plano (prioridad baja: quien le da a play
     // ahora mismo sigue adelantando en la cola, ver #61/ffmpeg-limiter.js).
-    // El pipeline antiguo de transcode.js ya no se usa para esto.
     hls.warmAll(videos);
     // Encola para traslado (ver moveOriginal.js) todo lo que ya estaba con
     // el HLS listo de antes de tener esto activado - si no, el gancho

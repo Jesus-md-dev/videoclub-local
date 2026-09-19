@@ -509,8 +509,7 @@ function isLost(video) {
 
 // Arranca la generación si hace falta (no bloquea: se lanza en segundo
 // plano) y devuelve el estado actual al instante, para poder ofrecer una
-// pantalla de "preparando..." igual que ya hace /api/stream/:id/status con
-// el pipeline antiguo. 'priority': 'high' para quien le ha dado a play
+// pantalla de "preparando...". 'priority': 'high' para quien le ha dado a play
 // ahora mismo (adelanta en la cola compartida de ffmpeg al precalentamiento
 // en segundo plano), 'low' en caso contrario.
 function ensureGenerating(video, priority = 'low') {

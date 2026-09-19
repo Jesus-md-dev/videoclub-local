@@ -50,6 +50,12 @@ function startStatusPolling() {
   }, STATUS_POLL_MS);
 }
 
+// audioIndex se acepta y se ignora a propósito: la firma se mantiene igual
+// que la de chromecast.js (mismo cuerpo del POST desde el cliente para los
+// dos protocolos, ver VideoControls.jsx) aunque el remux en directo
+// (dlna.js:remuxStream) siempre usa la pista de audio por defecto del HLS -
+// no hay forma de elegir otra sin remuxear, y esta función deja de intentarlo.
+// eslint-disable-next-line no-unused-vars
 async function cast({ deviceId, video, profileId, audioIndex }) {
   const player = findPlayer(deviceId);
   if (!player) {
@@ -69,7 +75,7 @@ async function cast({ deviceId, video, profileId, audioIndex }) {
   }
 
   clearStatusTimer();
-  const { url, type } = buildSource(video, audioIndex);
+  const { url, type } = buildSource(video);
   await new Promise((resolve, reject) => {
     player.play(url, { title: video.title, type }, (err) => {
       if (err) reject(err);

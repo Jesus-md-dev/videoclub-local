@@ -47,7 +47,7 @@ function toPublicVideo(video) {
     // esperar a que termine solo por pasar el ratón por encima).
     hlsReady: hls.getStatus(video) === 'ready',
     // El original se borró (era H.264 compatible, el HLS ya es el mismo
-    // vídeo, ver hls.js): "Reproducir sin convertir" no puede funcionar.
+    // vídeo, ver hls.js): no queda ningún archivo real, solo el HLS.
     archived: video.archived === true,
   };
 }

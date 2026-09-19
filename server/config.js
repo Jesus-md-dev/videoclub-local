@@ -46,16 +46,10 @@ const DATA_PATH = process.env.DATA_PATH
   : findDriveWithFolder('VideoclubDatos') || path.join(__dirname, '..', 'data');
 const THUMBNAILS_PATH = path.join(DATA_PATH, 'thumbnails');
 const SETTINGS_FILE = path.join(DATA_PATH, 'settings.json');
-// Los vídeos ya convertidos pueden ocupar mucho (decenas/cientos de GB):
-// por defecto se busca una carpeta "VideoclubTranscoded" en cualquier
-// unidad (igual razón que DATA_PATH/VIDEOS_PATH: no depender de la letra
-// que le toque al disco externo en cada PC), y si no se encuentra ninguna
-// cae dentro de DATA_PATH.
-const TRANSCODED_PATH = process.env.TRANSCODED_PATH
-  ? path.resolve(process.env.TRANSCODED_PATH)
-  : findDriveWithFolder('VideoclubTranscoded') || path.join(DATA_PATH, 'transcoded');
-// Igual que TRANSCODED_PATH: los paquetes HLS (segmentos de vídeo + una
-// pista aparte por cada idioma de audio) también pueden ocupar mucho. Un
+// Los paquetes HLS (segmentos de vídeo + una pista aparte por cada idioma
+// de audio) pueden ocupar mucho: por defecto se busca una carpeta
+// "VideoclubHLS" en cualquier unidad (igual razón que DATA_PATH/VIDEOS_PATH:
+// no depender de la letra que le toque al disco externo en cada PC). Un
 // HLS generado en un PC cuyo HLS_PATH no llegara a resolver aquí (p.ej. si
 // cayera en la carpeta local de esa máquina en vez del disco externo)
 // dejaría, tras archivar el original, un vídeo sin ninguna copia accesible
@@ -202,7 +196,6 @@ module.exports = {
   HTTPS_PORT,
   DATA_PATH,
   THUMBNAILS_PATH,
-  TRANSCODED_PATH,
   HLS_PATH,
   MOVED_ORIGINALS_PATH,
   VIDEO_EXTENSIONS,

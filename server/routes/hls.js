@@ -39,8 +39,7 @@ function sendPlaylist(res, filePath) {
 }
 
 // Estado de la generación, para pintar "preparando..." en vez de dejar al
-// reproductor esperando el manifiesto a ciegas (igual que
-// /api/stream/:id/status con el pipeline antiguo). 'high': quien pregunta
+// reproductor esperando el manifiesto a ciegas. 'high': quien pregunta
 // esto es alguien con el reproductor abierto ahora mismo, así que arrancar
 // la generación (si hace falta) adelanta al precalentamiento en segundo
 // plano en la cola compartida de ffmpeg.

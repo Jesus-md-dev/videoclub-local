@@ -35,12 +35,10 @@ function isHdr(videoStream) {
 // Detecta una sola vez si la GPU (NVENC) funciona de verdad en este equipo
 // probando una codificación mínima; si algo falla (sin GPU NVIDIA, driver
 // antiguo, etc.) se usa libx264 (CPU) para todo, sin más aviso. El
-// resultado se comparte entre TODOS los llamantes (HLS y la conversión de
-// compatibilidad, antes cada uno con su propia copia de este código y su
-// propio caché por separado: la prueba llegaba a hacerse dos veces al
-// arrancar, una por módulo). `workDir` es la carpeta donde se escribe el
-// archivo de prueba desechable (cada llamante usa la suya: HLS_PATH o
-// TRANSCODED_PATH), da igual cuál se use la primera vez.
+// resultado se cachea para toda la vida del proceso, así que solo se
+// comprueba una vez aunque hls.js lo llame para cada vídeo que necesite
+// recodificar. `workDir` es la carpeta donde se escribe el archivo de
+// prueba desechable (HLS_PATH).
 let gpuAvailable = null;
 let gpuCheckPromise = null;
 function checkGpuAvailable(workDir) {
