@@ -23,7 +23,13 @@ function forEachProgressFile(mutate) {
     } catch {
       continue;
     }
-    if (mutate(data)) fs.writeFileSync(full, JSON.stringify(data, null, 2));
+    if (mutate(data)) {
+      // Atómico (temporal + rename): ver profiles.js:writeJsonAtomic para
+      // el motivo (evitar dejar el archivo a medias si falla la escritura).
+      const tmp = `${full}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+      fs.renameSync(tmp, full);
+    }
   }
 }
 

@@ -31,7 +31,16 @@ function createJsonRegistry(fileName, { defaultValue = {}, serialize, deserializ
 
   function save() {
     fs.mkdirSync(DATA_PATH, { recursive: true });
-    fs.writeFileSync(filePath, toText(value));
+    // Atómico (temporal + rename), no un writeFileSync directo sobre el
+    // archivo final: sin esto, una escritura que falla a mitad (disco
+    // lleno, corte de luz...) puede dejar el archivo vacío o a medias, y la
+    // siguiente carga (load(), que traga cualquier error de parseo y
+    // devuelve defaultValue en silencio) lo confundiría con "no hay nada
+    // guardado todavía" - visto de verdad el 2026-09-20 con el progreso de
+    // "continuar viendo" de un perfil, borrado así por el disco lleno.
+    const tmp = `${filePath}.tmp`;
+    fs.writeFileSync(tmp, toText(value));
+    fs.renameSync(tmp, filePath);
   }
 
   function reload() {

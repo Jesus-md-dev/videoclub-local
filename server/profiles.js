@@ -6,6 +6,21 @@ const { DATA_PATH } = require('./config');
 const PROFILES_FILE = path.join(DATA_PATH, 'profiles.json');
 const PROGRESS_DIR = path.join(DATA_PATH, 'progress');
 
+// fs.writeFileSync directo sobre el archivo final puede dejarlo a medias o
+// vacío si falla a mitad de escritura (disco lleno, corte de luz...) - visto
+// de verdad el 2026-09-20 con E: al 100%: una escritura de progreso falló
+// así, y la siguiente (getProgress -> JSON inválido -> {} en silencio ->
+// writeProgress sobrescribe con solo la entrada nueva) borró todo el
+// historial de "continuar viendo" salvo lo último visto. Escribir primero a
+// un archivo temporal y renombrar es atómico a nivel de sistema de
+// archivos: o se queda el bueno de antes, o el nuevo completo, nunca algo
+// a medias.
+function writeJsonAtomic(file, data) {
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, file);
+}
+
 function readProfiles() {
   try {
     const data = JSON.parse(fs.readFileSync(PROFILES_FILE, 'utf-8'));
@@ -17,7 +32,7 @@ function readProfiles() {
 
 function writeProfiles(profiles) {
   fs.mkdirSync(DATA_PATH, { recursive: true });
-  fs.writeFileSync(PROFILES_FILE, JSON.stringify({ profiles }, null, 2));
+  writeJsonAtomic(PROFILES_FILE, { profiles });
 }
 
 function listProfiles() {
@@ -62,7 +77,7 @@ function getProgress(profileId) {
 
 function writeProgress(profileId, data) {
   fs.mkdirSync(PROGRESS_DIR, { recursive: true });
-  fs.writeFileSync(progressFile(profileId), JSON.stringify(data, null, 2));
+  writeJsonAtomic(progressFile(profileId), data);
 }
 
 function setProgress(profileId, videoId, { time, ratio }) {

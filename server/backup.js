@@ -13,6 +13,17 @@ const { DATA_PATH, reloadVideosPath, reloadTmdbApiKey, reloadSubdlApiKey } = req
 // llevarse los datos a mano a otro PC si hiciera falta.
 const BACKUP_DIR = path.join(__dirname, '..', 'data-backup');
 
+// El espejo de arriba (BACKUP_DIR) es "gana el más reciente" en vivo: si el
+// dato local se corrompe o se sobrescribe con algo peor (p.ej. una
+// escritura a medias por disco lleno), el espejo copia también ese estado
+// malo en cuestión de segundos - no da ningún "antes" al que volver. Así se
+// perdió de verdad el progreso de "continuar viendo" de un perfil el
+// 2026-09-20 (ver profiles.js). Estas instantáneas fechadas son la
+// diferencia: una copia congelada por día, que un futuro fallo similar no
+// puede tocar retroactivamente.
+const SNAPSHOTS_DIR = path.join(BACKUP_DIR, 'snapshots');
+const SNAPSHOT_RETENTION_DAYS = 30;
+
 // Ahí se guarda una copia de todo lo que sería caro o lento de rehacer
 // desde cero: perfiles, progreso de "Continuar viendo"/visto, carpeta
 // configurada, carátulas generadas, caché de géneros/análisis de códecs y
@@ -138,6 +149,67 @@ function backupNow() {
       syncItem(src, path.join(dir, name), type);
     } catch (err) {
       console.warn(`No se pudo actualizar la copia de seguridad de "${name}": ${err.message}`);
+    }
+  }
+  snapshotNow();
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+// Copia recursiva simple: los ítems respaldados son JSON sueltos y unas
+// pocas carpetas de archivos pequeños (carátulas, subtítulos...), nada que
+// necesite streaming ni justifique una dependencia externa.
+function copyRecursive(src, dest) {
+  const stat = fs.statSync(src);
+  if (stat.isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const name of fs.readdirSync(src)) {
+      copyRecursive(path.join(src, name), path.join(dest, name));
+    }
+  } else {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+  }
+}
+
+// Como mucho una instantánea nueva por día (se llama desde backupNow, que
+// ya se repite solo cada 10 minutos y tras cada cambio - de sobra para
+// pillar el primer momento libre de cada día sin necesidad de su propio
+// temporizador). Si ya existe la carpeta de hoy, no se toca - la
+// instantánea es del primer estado del día, no del último, precisamente
+// para no heredar una corrupción de última hora del mismo día en que pasó.
+function snapshotNow() {
+  const dir = backupDir();
+  if (!dir) return;
+  const key = todayKey();
+  const target = path.join(SNAPSHOTS_DIR, key);
+  if (fs.existsSync(target)) return;
+
+  for (const { name } of ITEMS) {
+    const src = path.join(dir, name);
+    if (!fs.existsSync(src)) continue;
+    try {
+      copyRecursive(src, path.join(target, name));
+    } catch (err) {
+      console.warn(`No se pudo incluir "${name}" en la instantánea del ${key}: ${err.message}`);
+    }
+  }
+  console.log(`Instantánea de copia de seguridad guardada: ${target}`);
+  pruneOldSnapshots();
+}
+
+// Nombres de carpeta "YYYY-MM-DD": el constructor de Date los interpreta
+// bien tal cual, no hace falta parsear a mano.
+function pruneOldSnapshots() {
+  if (!fs.existsSync(SNAPSHOTS_DIR)) return;
+  const cutoff = Date.now() - SNAPSHOT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  for (const name of fs.readdirSync(SNAPSHOTS_DIR)) {
+    const time = new Date(name).getTime();
+    if (!Number.isNaN(time) && time < cutoff) {
+      fs.rmSync(path.join(SNAPSHOTS_DIR, name), { recursive: true, force: true });
+      console.log(`Instantánea de copia de seguridad eliminada por antigüedad (${SNAPSHOT_RETENTION_DAYS} días): ${name}`);
     }
   }
 }
