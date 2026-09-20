@@ -362,7 +362,14 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
     // "no hacía nada". Las pistas HLS de un mismo grupo de audio deben
     // compartir formato para poder alternar entre ellas sin recargar nada.
     audioStreams.forEach((stream, i) => {
-      if (stream.codec_name === 'aac') {
+      // Una pista ya en AAC pero multicanal (5.1/7.1) también hay que
+      // recodificarla: copiarla tal cual (channels > 2) es justo el caso
+      // real que rompía Chrome al reproducir - visto con "Ted Lasso"
+      // S01E02 (AAC 5.1 con distribución de canales ambigua): fallaba al
+      // arrancar con "stream parsing failed" en el SourceBuffer de audio,
+      // no solo al cambiar de pista. Nunca copiar audio con más de 2
+      // canales, sea cual sea su códec de origen.
+      if (stream.codec_name === 'aac' && stream.channels <= 2) {
         args.push(`-c:a:${i}`, 'copy');
       } else {
         args.push(`-c:a:${i}`, 'aac', `-b:a:${i}`, '160k', `-ac:a:${i}`, '2');
@@ -770,6 +777,49 @@ const WARM_CONCURRENCY = 1;
 // acumulaban pasadas paralelas todas recorriendo la biblioteca entera
 // detrás de la primera sin aportar nada.
 let warming = false;
+
+// Umbral de seguridad, no una estimación del tamaño real de salida (varía
+// demasiado según duración/pistas de audio como para calcularlo de
+// antemano): por debajo de esto, generar más HLS solo empeora un disco ya
+// al límite (visto de verdad el 2026-09-20 con E: al 100%, 0 bytes
+// libres) sin garantía siquiera de terminar un solo vídeo entero.
+const MIN_FREE_BYTES_TO_GENERATE = 2 * 1024 * 1024 * 1024;
+const DISK_FULL_RETRY_MS = 60 * 1000;
+
+function freeBytesFor(dirPath) {
+  try {
+    const stats = fs.statfsSync(dirPath);
+    return stats.bavail * stats.bsize;
+  } catch {
+    // Si no se puede comprobar, no bloquear el precalentado por esto.
+    return Infinity;
+  }
+}
+
+// Espera aquí mismo (sin consumir el "worker" en otra cosa) hasta que
+// vuelva a haber sitio de verdad, en vez de intentar generar igualmente y
+// dejar una carpeta .tmp a medias que nadie limpia sola. El traslado
+// automático a otro disco (moveOriginal.js) y el propio usuario borrando
+// cosas son las dos formas normales de que esto se libere solo.
+async function waitForDiskSpace() {
+  let warned = false;
+  for (;;) {
+    const free = freeBytesFor(HLS_PATH);
+    if (free >= MIN_FREE_BYTES_TO_GENERATE) {
+      if (warned) console.log('HLS: espacio suficiente de nuevo, se reanuda el precalentado.');
+      return;
+    }
+    if (!warned) {
+      console.warn(
+        `HLS: precalentado en pausa, menos de ${(MIN_FREE_BYTES_TO_GENERATE / 1024 / 1024 / 1024).toFixed(1)}GB libres en "${HLS_PATH}" - se reintenta cada minuto.`
+      );
+      warned = true;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, DISK_FULL_RETRY_MS));
+  }
+}
+
 async function warmAll(videos) {
   if (warming) return;
   warming = true;
@@ -781,6 +831,8 @@ async function warmAll(videos) {
       next += 1;
       if (!video) return;
       try {
+        // eslint-disable-next-line no-await-in-loop
+        await waitForDiskSpace();
         // eslint-disable-next-line no-await-in-loop
         await generateHls(video, 'low');
       } catch (err) {
