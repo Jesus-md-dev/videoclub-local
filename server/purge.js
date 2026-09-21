@@ -88,4 +88,28 @@ async function deleteContent(key) {
   return { removed: ids.length, filesDeleted };
 }
 
-module.exports = { purgeKey, deleteContent };
+// Igual que deleteContent pero para UN solo vídeo (un episodio suelto, no
+// la serie entera) - pensado para el botón de borrar en la ficha rápida de
+// un episodio/película (QuickInfoModal), donde pedir el título exacto
+// sería demasiado para un borrado puntual. No toca el caché de metadatos
+// de la serie (metadata.forgetMetadata): al quedar el resto de episodios,
+// su carátula/género siguen siendo válidos.
+async function deleteVideo(id) {
+  const video = catalog.getVideoById(id);
+  if (!video) return { removed: 0, fileDeleted: false };
+
+  let fileDeleted = false;
+  if (!archivedVideos.isArchived(video.id)) {
+    const realPath = mediaInfo.inputPathFor(video);
+    if (realPath && fs.existsSync(realPath)) {
+      fs.rmSync(realPath, { force: true });
+      fileDeleted = true;
+    }
+  }
+  forgetVideo(video);
+  removeProgressIds([video.id]);
+  await catalog.scan();
+  return { removed: 1, fileDeleted, title: video.title };
+}
+
+module.exports = { purgeKey, deleteContent, deleteVideo };

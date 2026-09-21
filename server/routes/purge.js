@@ -63,4 +63,32 @@ router.post(
   })
 );
 
+// Borra un solo vídeo (un episodio o una película suelta, no una serie
+// entera - ver /catalog/delete-content arriba para eso), desde el botón
+// "Borrar" de la ficha rápida (QuickInfoModal, doble clic "Borrar" -> "¿Seguro?"
+// en el cliente). "confirm: true" es la comprobación de que la petición viene
+// de ese flujo con intención real, no de una llamada suelta - mismo espíritu
+// que el título exacto de /catalog/delete-content, pero sin pedir escribir
+// nada para un borrado puntual de un solo episodio.
+router.post(
+  '/catalog/delete-video',
+  asyncHandler(async (req, res) => {
+    const { id, confirm } = req.body || {};
+    if (!id) {
+      res.status(400).json({ error: 'Falta "id"' });
+      return;
+    }
+    if (confirm !== true) {
+      res.status(400).json({ error: 'Falta confirmar el borrado.' });
+      return;
+    }
+    const result = await purge.deleteVideo(id);
+    if (result.removed === 0) {
+      res.status(404).json({ error: 'Vídeo no encontrado' });
+      return;
+    }
+    res.json(result);
+  })
+);
+
 module.exports = router;
