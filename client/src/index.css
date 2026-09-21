@@ -712,6 +712,18 @@ main {
   border-color: var(--accent);
 }
 
+/* Mismo tamaño/forma que los demás botones de la ficha rápida (Reproducir,
+   Cambiar carátula) - solo el color cambia para avisar de que borra de
+   verdad, sin desentonar en tamaño con el resto. */
+.quickinfo-actions button.danger {
+  border: 2px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 12px 22px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
 /* ---- Elegir carátula (PosterPicker.jsx): 3 fichas candidatas de TMDB
    para corregir a mano cuando la búsqueda automática se equivoca. ---- */
 .poster-picker {
