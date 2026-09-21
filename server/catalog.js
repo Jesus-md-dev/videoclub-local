@@ -242,6 +242,42 @@ async function walk(baseDir) {
 // tratan como series/anime (mostradas como carpeta), y las de un único
 // vídeo como películas sueltas. Esto ignora la carpeta física real en la
 // que esté cada archivo: la agrupación es por lo detectado, no por disco.
+// Quita acentos/mayúsculas/puntuación para comparar títulos a pesar de
+// pequeñas diferencias de formato ("Air Gear" vs "AIR GEAR:").
+function normalizeForMatch(s) {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// ¿Aparece "needle" como frase completa (con límites de palabra, no a
+// media palabra) dentro de "haystack"? "air gear" sí debe encontrarse en
+// "air gear kuro no hane..." pero "gear" no debería confundirse con parte
+// de otra palabra.
+function containsAsPhrase(haystack, needle) {
+  if (!needle) return false;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`).test(haystack);
+}
+
+// Un vídeo suelto (título usado como su propia clave, ver groupKeyFor) cuyo
+// nombre se parece mucho al de una serie que YA existe en el catálogo casi
+// siempre es un episodio mal colocado (fuera de la carpeta de esa serie),
+// no una obra nueva - visto de verdad con las OVAs de "Air Gear" sueltas
+// directamente en Anime/ en vez de dentro de Anime/.../Air Gear/, contadas
+// como dos "películas" independientes hasta que se movieron a mano. Esto
+// no las mueve solo (podría equivocarse), solo avisa en el log para que
+// se revise.
+function looksLikeSameWork(candidateTitle, existingKey) {
+  const a = normalizeForMatch(candidateTitle);
+  const b = normalizeForMatch(existingKey);
+  if (!a || !b || b.length < 4 || a === b) return false;
+  return containsAsPhrase(a, b) || containsAsPhrase(b, a);
+}
+
 function buildLibrary() {
   const groups = new Map();
   for (const video of cache) {
@@ -254,6 +290,8 @@ function buildLibrary() {
   moviesList = [];
   showVideos = new Map();
 
+  const showKeys = [...groups.entries()].filter(([, videos]) => videos.length > 1).map(([key]) => key);
+
   for (const [key, videos] of groups) {
     videos.sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'es', { numeric: true }));
 
@@ -261,6 +299,12 @@ function buildLibrary() {
       showsList.push({ name: key, path: key, thumbnailId: videos[0].id });
       showVideos.set(key, videos);
     } else {
+      const similarShow = showKeys.find((showKey) => looksLikeSameWork(key, showKey));
+      if (similarShow) {
+        console.warn(
+          `Catálogo: "${videos[0].relativePath}" se ha añadido como título suelto, pero su nombre se parece mucho a la serie "${similarShow}" - revisa si es un episodio mal colocado (fuera de su carpeta).`
+        );
+      }
       moviesList.push(videos[0]);
     }
   }
