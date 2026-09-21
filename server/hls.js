@@ -694,11 +694,16 @@ async function runGeneration(video, priority) {
     // ~180 episodios (issue #67/#97): el original NUNCA se borra, pase lo
     // que pase. Sigue precalentando subtítulos/vista previa en segundo plano
     // (no bloquea el "ready"), simplemente sin la parte de borrado.
-    if (videoCopy) {
-      pregenerateExtras(video).catch((err) => {
-        console.warn(`HLS: no se pudieron precalentar subtítulos/vista previa de "${video.title}": ${err.message}`);
-      });
-    }
+    //
+    // Esto es independiente de "videoCopy" (si el vídeo necesitó
+    // recodificarse o no) - antes estaba condicionado a eso por error, así
+    // que cualquier vídeo que necesitara recodificar (HEVC, 10 bits,
+    // HDR/Dolby Vision...) nunca llegaba a extraer sus subtítulos
+    // incrustados. Visto de verdad con "X-Men '97" S02E05 (HEVC 4K Dolby
+    // Vision, 27 pistas de subtítulos en el archivo, ninguna extraída).
+    pregenerateExtras(video).catch((err) => {
+      console.warn(`HLS: no se pudieron precalentar subtítulos/vista previa de "${video.title}": ${err.message}`);
+    });
 
     // Traslado automático a un disco de respaldo frío (ver moveOriginal.js):
     // sin relación con el borrado de arriba - aquí SIEMPRE queda una copia
