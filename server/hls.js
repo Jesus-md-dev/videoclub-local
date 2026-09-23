@@ -787,8 +787,12 @@ let warming = false;
 // demasiado según duración/pistas de audio como para calcularlo de
 // antemano): por debajo de esto, generar más HLS solo empeora un disco ya
 // al límite (visto de verdad el 2026-09-20 con E: al 100%, 0 bytes
-// libres) sin garantía siquiera de terminar un solo vídeo entero.
-const MIN_FREE_BYTES_TO_GENERATE = 2 * 1024 * 1024 * 1024;
+// libres) sin garantía siquiera de terminar un solo vídeo entero. Subido de
+// 2GB a 10GB el 2026-09-23: con películas/episodios de varios GB (4K/HDR)
+// de por medio, 2GB se quedaba corto para generar uno entero con margen de
+// verdad - mejor pecar de conservador (el traslado automático a otro disco
+// libera hueco en cuanto algo termina, así que no hace falta apurar tanto).
+const MIN_FREE_BYTES_TO_GENERATE = 10 * 1024 * 1024 * 1024;
 const DISK_FULL_RETRY_MS = 60 * 1000;
 
 function freeBytesFor(dirPath) {
