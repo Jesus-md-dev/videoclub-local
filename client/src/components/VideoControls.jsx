@@ -184,9 +184,18 @@ export default function VideoControls({
     showThenScheduleHide();
     shell.addEventListener('mousemove', showThenScheduleHide);
     shell.addEventListener('touchstart', showThenScheduleHide);
+    // Sin ratón ni tacto (mando de TV) los controles ocultos (opacity:0 +
+    // pointer-events:none, ver CSS) se quedaban invisibles e inalcanzables
+    // para siempre una vez pasaban los 3s - ninguna tecla los volvía a
+    // mostrar. En document, no en shell: con los controles ya invisibles
+    // (pointer-events:none) el foco puede estar en cualquier otro sitio de
+    // la página, no necesariamente dentro de shell, así que ahí no
+    // burbujearía nada hasta él.
+    document.addEventListener('keydown', showThenScheduleHide);
     return () => {
       shell.removeEventListener('mousemove', showThenScheduleHide);
       shell.removeEventListener('touchstart', showThenScheduleHide);
+      document.removeEventListener('keydown', showThenScheduleHide);
       clearTimeout(hideTimer.current);
     };
   }, [shellRef, playing, dragging]);

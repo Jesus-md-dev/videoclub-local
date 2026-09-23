@@ -49,6 +49,24 @@ const KEY_TO_DIRECTION = {
   ArrowRight: 'right',
 };
 
+// Algunos navegadores de TV (sobre todo motores WebKit/Chromium más
+// antiguos en modelos de hace años) no rellenan "key" en KeyboardEvent como
+// exige el estándar actual - se quedan en la propiedad numérica ya obsoleta
+// (keyCode/which), o a veces directamente no disparan nada reconocible.
+// Sin este resguardo, el mando de esas teles no podía mover el foco a
+// ningún sitio (ni carátulas ni desplegables): las flechas nunca
+// encontraban su dirección en KEY_TO_DIRECTION y no pasaba nada.
+const KEYCODE_TO_DIRECTION = {
+  37: 'left',
+  38: 'up',
+  39: 'right',
+  40: 'down',
+};
+
+function directionFor(e) {
+  return KEY_TO_DIRECTION[e.key] || KEYCODE_TO_DIRECTION[e.keyCode] || KEYCODE_TO_DIRECTION[e.which];
+}
+
 // No interceptar flechas mientras el foco está en un control que ya las usa
 // para su propio cometido (texto, desplegable, control con su propio
 // role="slider"...): ahí deben funcionar como siempre.
@@ -69,7 +87,7 @@ export default function useSpatialNavigation(selector, { enabled = true } = {}) 
     if (!enabled) return undefined;
 
     const handleKeyDown = (e) => {
-      const direction = KEY_TO_DIRECTION[e.key];
+      const direction = directionFor(e);
       if (!direction) return;
       if (ownsArrowKeys(document.activeElement)) return;
 
