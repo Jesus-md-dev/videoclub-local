@@ -125,9 +125,31 @@ async function moveOne(video, onProgress) {
     }
   }
 
-  fs.rmSync(sourceAbs, { force: true });
+  await removeWithRetry(sourceAbs);
   movedOriginals.register(video, destAbs);
   console.log(`Traslado automático: "${video.relativePath}" -> "${destAbs}"`);
+}
+
+// El original recién copiado puede seguir abierto un instante más por OTRO
+// trabajo en marcha sobre el mismo vídeo (extracción de subtítulos/vista
+// previa, ver hls.js: pregenerateExtras, que también lee el original y no
+// se espera a que termine antes de disparar el traslado) - Windows deniega
+// el borrado con EPERM mientras dura ("Permission denied" aunque el propio
+// proceso servidor sea el dueño del candado). Ya hay una copia verificada
+// en destino en este punto, así que reintentar el borrado sin más, en vez
+// de marcar el traslado entero como fallido por un candado que se libera
+// solo en segundos, es seguro.
+async function removeWithRetry(absPath, attempts = 5, delayMs = 2000) {
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      fs.rmSync(absPath, { force: true });
+      return;
+    } catch (err) {
+      if (i === attempts - 1) throw err;
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
 }
 
 async function processQueue() {
