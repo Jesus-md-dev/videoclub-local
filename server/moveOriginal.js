@@ -32,6 +32,9 @@ const movedOriginals = require('./movedOriginals');
 // conservador que ffmpeg-limiter.js con los procesos ffmpeg.
 const queue = [];
 let processing = false;
+// Ver moveOne: si un borrado "con éxito" deja el original en su sitio,
+// seguir con el resto de la cola solo duplicaría cada archivo en destino.
+let deletesBroken = false;
 
 // video.id -> { state: 'queued'|'moving'|'done'|'failed', percent, title, size, error }
 const status = new Map();
@@ -126,6 +129,16 @@ async function moveOne(video, onProgress) {
   }
 
   await removeWithRetry(sourceAbs);
+  // Con el volumen de la biblioteca dañado (NTFS "debe ejecutarse CHKDSK",
+  // visto de verdad en E:), fs.rmSync puede volver sin error y el archivo
+  // seguir ahí. Registrarlo igual como trasladado no ahorra nada: el
+  // siguiente escaneo lo ve aún en su sitio, olvida la entrada (ver
+  // catalog.js) y lo vuelve a encolar - un bucle que iba llenando el disco
+  // destino con copias sin liberar un byte en el origen.
+  if (fs.existsSync(sourceAbs)) {
+    deletesBroken = true;
+    throw new Error(`el borrado de "${sourceAbs}" no ha tenido efecto (¿disco con errores? prueba chkdsk /F); se pausan los traslados hasta reiniciar`);
+  }
   movedOriginals.register(video, destAbs);
   console.log(`Traslado automático: "${video.relativePath}" -> "${destAbs}"`);
 }
@@ -159,6 +172,11 @@ async function processQueue() {
   while (queue.length > 0) {
     const video = queue.shift();
     const entry = status.get(video.id);
+    if (deletesBroken) {
+      entry.state = 'failed';
+      entry.error = 'traslados en pausa: el disco de origen no está aplicando los borrados';
+      continue; // eslint-disable-line no-continue
+    }
     entry.state = 'moving';
     try {
       // eslint-disable-next-line no-await-in-loop
@@ -200,6 +218,7 @@ async function processQueue() {
 
 async function maybeMoveOriginal(video) {
   if (!MOVED_ORIGINALS_PATH) return; // sin carpeta configurada: desactivado
+  if (deletesBroken) return;
   if (video.archived === true || video.movedTo) return;
   if (status.has(video.id)) return; // ya en cola, movido o fallido antes
 
