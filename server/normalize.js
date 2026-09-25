@@ -317,13 +317,17 @@ async function applyMovedRename(video, newRelativePath) {
   const newAbsPath = path.join(path.dirname(oldAbsPath), path.basename(newRelativePath));
   const oldGroupKey = catalog.metadataKeyFor(video);
 
-  if (!fs.existsSync(oldAbsPath)) throw new Error(`No se encuentra el original trasladado en "${oldAbsPath}".`);
-  if (!isCaseOnlyRename(oldAbsPath, newAbsPath) && fs.existsSync(newAbsPath)) {
+  // El original trasladado puede no existir ya (visto de verdad: ~900
+  // episodios registrados en D: que ya no estaban en ningún disco). Su HLS
+  // sí sigue ahí, así que como con un archivado basta con renombrar el
+  // registro - no hay archivo real que mover.
+  const fileExists = fs.existsSync(oldAbsPath);
+  if (fileExists && !isCaseOnlyRename(oldAbsPath, newAbsPath) && fs.existsSync(newAbsPath)) {
     throw new Error(`Ya existe un archivo en "${newAbsPath}"; se omite por seguridad.`);
   }
 
   const oldId = video.id;
-  await safeRename(oldAbsPath, newAbsPath);
+  if (fileExists) await safeRename(oldAbsPath, newAbsPath);
   const newId = catalog.idFor(newRelativePath);
 
   movedOriginals.rename(oldId, newId, {
