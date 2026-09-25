@@ -10,9 +10,11 @@ router.get(
   '/normalize/preview',
   asyncHandler(async (req, res) => {
     const candidates = await normalize.previewCandidates();
+    // ?all=1: la lista entera, para revisar un cambio grande antes de lanzarlo.
+    const shown = req.query.all === '1' ? candidates : candidates.slice(0, 30);
     res.json({
       count: candidates.length,
-      items: candidates.slice(0, 30).map((c) => ({ from: c.video.relativePath, to: c.newRelativePath })),
+      items: shown.map((c) => ({ from: c.video.relativePath, to: c.newRelativePath })),
     });
   })
 );

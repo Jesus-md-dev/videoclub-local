@@ -6,6 +6,7 @@ const metadata = require('./metadata');
 const thumbnails = require('./thumbnails');
 const hls = require('./hls');
 const archivedVideos = require('./archivedVideos');
+const movedOriginals = require('./movedOriginals');
 const mediaInfo = require('./mediaInfo');
 const subdl = require('./subdl');
 const localSubtitles = require('./localSubtitles');
@@ -75,7 +76,21 @@ function extractEpisodeMarker(video) {
     const season = catalog.seasonNumberFor(video);
     if (season != null) return `S${String(season).padStart(2, '0')}E01`;
   }
+  // "Inuyasha 001 [HEVC 1080p][ENG Subs]-inuyashafull" o "Naruto - 039":
+  // nombre de la serie, número de episodio y quizá etiquetas de release.
+  // Solo si lo que va antes del número es el propio nombre de la carpeta
+  // (también sin etiquetas): así "Película 2" suelta, o un número que sea
+  // parte del título, no se toma por un episodio.
+  m = metadata.stripReleaseTags(rawTitle).match(/^(.+?)[\s\-_.]+0*(\d{1,4})$/);
+  if (m && comparableName(m[1]) === comparableName(metadata.stripReleaseTags(catalog.metadataKeyFor(video)))) {
+    const season = catalog.seasonNumberFor(video) ?? 1;
+    return `S${String(season).padStart(2, '0')}E${m[2].padStart(2, '0')}`;
+  }
   return null;
+}
+
+function comparableName(str) {
+  return str.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
 // Una película suelta usa su propio nombre de archivo como clave de
@@ -131,7 +146,20 @@ function buildCandidate(video) {
   const existingYear = metadata.extractYear(groupKey);
   if (existingYear && meta.year && existingYear !== String(meta.year)) return null;
 
-  const baseName = sanitizeName(meta.cleanName || coreGroupKey);
+  // Sin nombre de TMDB, al menos se quitan las etiquetas de release
+  // ("1080p WEBRip x265...") y el año suelto que suele ir justo antes, que
+  // pasa a ir entre paréntesis como en el resto de películas.
+  let fallbackName = metadata.stripReleaseTags(coreGroupKey);
+  let fallbackYear = null;
+  if (fallbackName !== coreGroupKey) {
+    const m = fallbackName.match(/^(.+?)[\s._]+((?:19|20)\d{2})$/);
+    if (m) [, fallbackName, fallbackYear] = m;
+    fallbackName = fallbackName.replace(/[._]/g, ' ');
+  }
+  const baseName = sanitizeName(meta.cleanName || fallbackName);
+  // Sin año de TMDB (aún sin respuesta, o no encontrada) se conserva el que
+  // ya traía el nombre: si no, "Película (2026)" pasaba a "Película".
+  const year = meta.year || (meta.cleanName ? null : fallbackYear) || existingYear;
   const ext = path.extname(video.relativePath).toLowerCase();
   const dir = path.dirname(video.relativePath);
 
@@ -141,7 +169,7 @@ function buildCandidate(video) {
     if (!marker) return null;
     newBaseName = `${baseName} - ${marker}`;
   } else {
-    newBaseName = meta.year ? `${baseName} (${meta.year})` : baseName;
+    newBaseName = year ? `${baseName} (${year})` : baseName;
   }
 
   const newFileName = `${sanitizeName(newBaseName)}${ext}`;
@@ -277,6 +305,39 @@ function applyArchivedRename(video, newRelativePath) {
   return { oldId, newId, from: video.relativePath, to: newRelativePath };
 }
 
+// Un vídeo cuyo original ya se trasladó a otro disco (ver moveOriginal.js)
+// no está bajo getVideosPath(): applyRename fallaba con "No se encuentra el
+// archivo original" y el episodio se quedaba con el nombre viejo para
+// siempre. Se renombra el archivo allí donde está de verdad, en su misma
+// carpeta, y se actualiza el registro de trasladados.
+async function applyMovedRename(video, newRelativePath) {
+  const moved = movedOriginals.get(video.id);
+  if (!moved) throw new Error('No consta en el registro de originales trasladados.');
+  const oldAbsPath = moved.absolutePath;
+  const newAbsPath = path.join(path.dirname(oldAbsPath), path.basename(newRelativePath));
+  const oldGroupKey = catalog.metadataKeyFor(video);
+
+  if (!fs.existsSync(oldAbsPath)) throw new Error(`No se encuentra el original trasladado en "${oldAbsPath}".`);
+  if (!isCaseOnlyRename(oldAbsPath, newAbsPath) && fs.existsSync(newAbsPath)) {
+    throw new Error(`Ya existe un archivo en "${newAbsPath}"; se omite por seguridad.`);
+  }
+
+  const oldId = video.id;
+  await safeRename(oldAbsPath, newAbsPath);
+  const newId = catalog.idFor(newRelativePath);
+
+  movedOriginals.rename(oldId, newId, {
+    relativePath: newRelativePath,
+    title: path.basename(newRelativePath, path.extname(newRelativePath)),
+    size: video.size,
+    modifiedAt: video.modifiedAt,
+  }, newAbsPath);
+
+  migrateVideoData(oldId, newId, oldGroupKey, newRelativePath);
+
+  return { oldId, newId, from: video.relativePath, to: newRelativePath };
+}
+
 async function previewCandidates() {
   const candidates = [];
   for (const video of catalog.getCatalog()) {
@@ -312,6 +373,9 @@ async function runNormalizeAll() {
       try {
         if (video.archived) {
           applyArchivedRename(video, newRelativePath);
+        } else if (video.movedTo) {
+          // eslint-disable-next-line no-await-in-loop
+          await applyMovedRename(video, newRelativePath);
         } else {
           // eslint-disable-next-line no-await-in-loop
           await applyRename(video, newRelativePath);

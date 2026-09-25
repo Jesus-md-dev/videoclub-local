@@ -192,10 +192,22 @@ function normalizeGenres(list) {
   return result;
 }
 
-// Quita años, paréntesis/corchetes y separadores típicos de nombres de
-// release para dejar un título de búsqueda razonable.
+// Etiquetas técnicas de un nombre de release (resolución, origen, códec de
+// vídeo/audio): todo lo que venga a partir de la primera ya no es parte del
+// título. Sin esto, "Ice Cream Man 2026 1080p WEBRip x265 DDP5 1-CSP" se
+// buscaba tal cual (solo sin el año) y ninguna fuente encontraba nada.
+const RELEASE_TAG = /(?:^|[\s._\-[(])(?:2160p|1080p|720p|576p|480p|4k|uhd|web[\s._-]?(?:rip|dl)|blu[\s._-]?ray|bdrip|brrip|dvdrip|hdrip|hdtv|remux|x26[45]|h[\s._]?26[45]|hevc|xvid|divx|10bit|hdr(?:10)?|ddp?\d?|dd\+|e?ac3|aac\d?|dts(?:-hd)?|truehd|atmos)(?=$|[\s._\-\])])/i;
+
+function stripReleaseTags(name) {
+  const m = name.match(RELEASE_TAG);
+  if (!m || m.index === 0) return name;
+  return name.slice(0, m.index).replace(/[\s._\-[(]+$/, '');
+}
+
+// Quita etiquetas de release, años, paréntesis/corchetes y separadores
+// típicos para dejar un título de búsqueda razonable.
 function cleanQuery(name) {
-  return name
+  return stripReleaseTags(name)
     .replace(/[([][^)\]]*[)\]]/g, ' ')
     .replace(/\b(19|20)\d{2}\b/g, ' ')
     .replace(/[._]/g, ' ')
@@ -1012,6 +1024,7 @@ module.exports = {
   getPosterCandidates,
   migrateCacheKey,
   extractYear,
+  stripReleaseTags,
   reloadCache,
   reloadOverrides,
 };
