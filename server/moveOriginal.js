@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const { MOVED_ORIGINALS_PATH } = require('./config');
 const { inputPathFor } = require('./mediaInfo');
 const movedOriginals = require('./movedOriginals');
+const fsUtils = require('./fsUtils');
 
 // Traslada automáticamente a MOVED_ORIGINALS_PATH (si hay una carpeta
 // configurada) el original de cada vídeo, justo después de que su HLS quede
@@ -129,15 +130,15 @@ async function moveOne(video, onProgress) {
   }
 
   await removeWithRetry(sourceAbs);
-  // Con el volumen de la biblioteca dañado (NTFS "debe ejecutarse CHKDSK",
-  // visto de verdad en E:), fs.rmSync puede volver sin error y el archivo
-  // seguir ahí. Registrarlo igual como trasladado no ahorra nada: el
+  // Si el borrado vuelve sin error pero el archivo sigue ahí (pasaba con
+  // fs.rmSync y nombres con tildes, ver fsUtils.unlinkIfExists; o con un
+  // volumen dañado), registrarlo igual como trasladado no ahorra nada: el
   // siguiente escaneo lo ve aún en su sitio, olvida la entrada (ver
   // catalog.js) y lo vuelve a encolar - un bucle que iba llenando el disco
   // destino con copias sin liberar un byte en el origen.
   if (fs.existsSync(sourceAbs)) {
     deletesBroken = true;
-    throw new Error(`el borrado de "${sourceAbs}" no ha tenido efecto (¿disco con errores? prueba chkdsk /F); se pausan los traslados hasta reiniciar`);
+    throw new Error(`el borrado de "${sourceAbs}" no ha tenido efecto; se pausan los traslados hasta reiniciar`);
   }
   movedOriginals.register(video, destAbs);
   console.log(`Traslado automático: "${video.relativePath}" -> "${destAbs}"`);
@@ -155,7 +156,7 @@ async function moveOne(video, onProgress) {
 async function removeWithRetry(absPath, attempts = 5, delayMs = 2000) {
   for (let i = 0; i < attempts; i += 1) {
     try {
-      fs.rmSync(absPath, { force: true });
+      fsUtils.unlinkIfExists(absPath);
       return;
     } catch (err) {
       if (i === attempts - 1) throw err;

@@ -10,4 +10,17 @@ function migrateFile(oldPath, newPath) {
   }
 }
 
-module.exports = { migrateFile };
+// Borra un archivo suelto (no carpetas). No usar fs.rmSync para esto: en
+// Node 24 sobre Windows vuelve SIN error y deja el archivo en su sitio si
+// el nombre lleva caracteres no ASCII ("más", "Dónde"...) - visto de
+// verdad con los traslados a D:, que "borraban" el original de E: sin
+// liberar nada. fs.unlinkSync sí funciona; que ya no exista no es error.
+function unlinkIfExists(filePath) {
+  try {
+    fs.unlinkSync(filePath);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+}
+
+module.exports = { migrateFile, unlinkIfExists };

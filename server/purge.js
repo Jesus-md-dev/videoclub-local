@@ -13,6 +13,7 @@ const localSubtitles = require('./localSubtitles');
 const mediaInfo = require('./mediaInfo');
 const { DATA_PATH, HLS_PATH, THUMBNAILS_PATH } = require('./config');
 const { removeProgressIds } = require('./progressStore');
+const { unlinkIfExists } = require('./fsUtils');
 
 const TRICKPLAY_DIR = path.join(DATA_PATH, 'trickplay');
 
@@ -76,7 +77,7 @@ async function deleteContent(key) {
     if (!archivedVideos.isArchived(video.id)) {
       const realPath = mediaInfo.inputPathFor(video);
       if (realPath && fs.existsSync(realPath)) {
-        fs.rmSync(realPath, { force: true });
+        unlinkIfExists(realPath);
         filesDeleted += 1;
       }
     }
@@ -102,7 +103,7 @@ async function deleteVideo(id) {
   if (!archivedVideos.isArchived(video.id)) {
     const realPath = mediaInfo.inputPathFor(video);
     if (realPath && fs.existsSync(realPath)) {
-      fs.rmSync(realPath, { force: true });
+      unlinkIfExists(realPath);
       fileDeleted = true;
     }
   }
