@@ -34,6 +34,25 @@ router.post(
   })
 );
 
+// Renombra a mano un solo vídeo: { id, name } (nombre sin extensión; se
+// mantienen su carpeta y su extensión). Para lo que la pasada automática
+// no sabe resolver sola.
+router.post(
+  '/normalize/rename',
+  asyncHandler(async (req, res) => {
+    const { id, name } = req.body || {};
+    if (!id || !name) {
+      res.status(400).json({ error: 'Faltan "id" y/o "name"' });
+      return;
+    }
+    try {
+      res.json(await normalize.renameVideo(id, name));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  })
+);
+
 router.get('/normalize/status', (req, res) => {
   res.json(normalize.getProgress());
 });

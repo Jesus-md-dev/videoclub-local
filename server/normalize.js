@@ -56,6 +56,11 @@ function extractEpisodeMarker(video) {
   // se leería como si fuera la temporada 19 (o 20) episodio 1080.
   m = rawTitle.match(/(?:^|[\s\-_.])(\d{1,2})x(\d{1,4})(?:[\s\-_.]|$)/i);
   if (m) return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}`;
+  // Convención de releases en español: "[Cap.101]" = temporada 1, episodio
+  // 01; "[Cap.1203]" = temporada 12, episodio 03 (los dos últimos dígitos
+  // son siempre el episodio).
+  m = rawTitle.match(/(?:^|[^a-z0-9])Cap[\s._]*(\d{1,2})(\d{2})(?!\d)/i);
+  if (m) return `S${m[1].padStart(2, '0')}E${m[2]}`;
   m = rawTitle.match(/(?:^|[^a-z0-9])E(\d{1,4})(?:[^0-9]|$)/i);
   if (m) return `S01E${m[1].padStart(2, '0')}`;
   // Nombre de archivo formado solo por el número de episodio (ej. "01",
@@ -342,6 +347,31 @@ async function applyMovedRename(video, newRelativePath) {
   return { oldId, newId, from: video.relativePath, to: newRelativePath };
 }
 
+// Renombrado a mano de UN vídeo, para lo que el normalizador no puede
+// adivinar (p.ej. "Silo (2023).mkv" dentro de la carpeta de la serie, sin
+// ningún número de episodio en el nombre). Solo cambia el nombre: misma
+// carpeta y misma extensión. Mismo camino que la pasada automática según
+// dónde viva el vídeo de verdad (archivo real, trasladado o archivado).
+async function renameVideo(id, newName) {
+  const video = catalog.getVideoById(id);
+  if (!video) throw new Error('No existe ese vídeo en el catálogo.');
+  const baseName = sanitizeName(String(newName || ''));
+  if (!baseName) throw new Error('Falta el nombre nuevo.');
+
+  const ext = path.extname(video.relativePath);
+  const dir = path.dirname(video.relativePath);
+  const newFileName = `${baseName}${ext}`;
+  const newRelativePath = dir === '.' ? newFileName : path.join(dir, newFileName);
+  if (newRelativePath === video.relativePath) return { id, unchanged: true };
+
+  let result;
+  if (video.archived) result = applyArchivedRename(video, newRelativePath);
+  else if (video.movedTo) result = await applyMovedRename(video, newRelativePath);
+  else result = await applyRename(video, newRelativePath);
+  await catalog.scan();
+  return result;
+}
+
 async function previewCandidates() {
   const candidates = [];
   for (const video of catalog.getCatalog()) {
@@ -438,4 +468,5 @@ module.exports = {
   autoNormalizeNewFiles,
   applyRename,
   applyArchivedRename,
+  renameVideo,
 };
