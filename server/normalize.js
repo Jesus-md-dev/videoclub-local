@@ -335,12 +335,16 @@ async function applyMovedRename(video, newRelativePath) {
   if (fileExists) await safeRename(oldAbsPath, newAbsPath);
   const newId = catalog.idFor(newRelativePath);
 
-  movedOriginals.rename(oldId, newId, {
+  const info = {
     relativePath: newRelativePath,
     title: path.basename(newRelativePath, path.extname(newRelativePath)),
     size: video.size,
     modifiedAt: video.modifiedAt,
-  }, newAbsPath);
+  };
+  movedOriginals.rename(oldId, newId, info, newAbsPath);
+  // Si además consta como archivado (ver catalog.js: los dos registros a la
+  // vez), se renombra también ahí; si no, no hace nada.
+  archivedVideos.rename(oldId, newId, info);
 
   migrateVideoData(oldId, newId, oldGroupKey, newRelativePath);
 
@@ -365,8 +369,8 @@ async function renameVideo(id, newName) {
   if (newRelativePath === video.relativePath) return { id, unchanged: true };
 
   let result;
-  if (video.archived) result = applyArchivedRename(video, newRelativePath);
-  else if (video.movedTo) result = await applyMovedRename(video, newRelativePath);
+  if (video.movedTo) result = await applyMovedRename(video, newRelativePath);
+  else if (video.archived) result = applyArchivedRename(video, newRelativePath);
   else result = await applyRename(video, newRelativePath);
   await catalog.scan();
   return result;
@@ -405,11 +409,11 @@ async function runNormalizeAll() {
   (async () => {
     for (const { video, newRelativePath } of candidates) {
       try {
-        if (video.archived) {
-          applyArchivedRename(video, newRelativePath);
-        } else if (video.movedTo) {
+        if (video.movedTo) {
           // eslint-disable-next-line no-await-in-loop
           await applyMovedRename(video, newRelativePath);
+        } else if (video.archived) {
+          applyArchivedRename(video, newRelativePath);
         } else {
           // eslint-disable-next-line no-await-in-loop
           await applyRename(video, newRelativePath);

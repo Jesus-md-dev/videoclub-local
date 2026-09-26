@@ -388,6 +388,7 @@ async function performScan() {
   // reproducirse nunca, solo como ruido; ya queda apuntado aparte en
   // "Volver a descargar" (lostVideos.js), no hace falta verlo también aquí.
   const seenIds = new Set(results.map((v) => v.id));
+  const listedArchived = new Map();
   lostCount = 0;
   for (const [id, info] of Object.entries(archivedVideos.getAll())) {
     if (seenIds.has(id)) continue; // no debería pasar, pero por si acaso
@@ -404,6 +405,7 @@ async function performScan() {
       continue;
     }
     results.push(video);
+    listedArchived.set(id, video);
   }
 
   // Vídeos cuyo original se trasladó a otro disco para ahorrar espacio
@@ -423,6 +425,19 @@ async function performScan() {
     // que ya no existe, sin ningún aviso).
     if (seenIds.has(id)) {
       movedOriginals.forget(id);
+      continue;
+    }
+    // Un mismo vídeo puede constar en los DOS registros (visto de verdad: 62
+    // episodios, 27 de Bleach y 32 de One Piece, de cuando todavía se
+    // borraba el original tras generar el HLS, ver #100): se añadía una vez
+    // por registro y salía repetido en la web. Queda solo la entrada de
+    // arriba (o ninguna, si ya estaba perdido); el registro de traslado se
+    // conserva porque mediaInfo.inputPathFor lo sigue usando para regenerar
+    // el HLS, y "movedTo" hace que normalize.js renombre los dos a la vez
+    // (si no, volverían a separarse en dos ids distintos).
+    if (archivedVideos.isArchived(id)) {
+      const archived = listedArchived.get(id);
+      if (archived) archived.movedTo = info.absolutePath;
       continue;
     }
     results.push({
