@@ -7,6 +7,7 @@ import ShortcutsHelp from '../components/ShortcutsHelp';
 import { getActiveProfileId } from '../profile';
 import { DEFAULT_SUBTITLE_PREFS, SUBTITLE_SIZE_EM, SUBTITLE_BG_COLOR, fetchSubtitlePrefs, saveSubtitlePrefs } from '../subtitlePrefs';
 import { track } from '../analytics';
+import { episodeTitle } from '../utils/format';
 
 // El progreso se guarda en el servidor por perfil (no en localStorage), así
 // que se retoma igual desde cualquier dispositivo de la red.
@@ -637,7 +638,7 @@ export default function WatchPage() {
           <Link className="back-link" to={backTo}>
             {backLabel}
           </Link>
-          <h1 className="watch-title">{error ? 'Error' : video ? video.title : 'Cargando...'}</h1>
+          <h1 className="watch-title">{error ? 'Error' : video ? episodeTitle(video) : 'Cargando...'}</h1>
           {(prevEpisodeId || nextEpisodeId) && (
             <div className="episode-nav">
               <button disabled={!prevEpisodeId} onClick={() => navigate(`/watch/${prevEpisodeId}`)}>

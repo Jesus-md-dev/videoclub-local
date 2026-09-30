@@ -4,6 +4,7 @@ const thumbnails = require('../thumbnails');
 const metadata = require('../metadata');
 const hls = require('../hls');
 const profiles = require('../profiles');
+const episodeNumbers = require('../episodeNumbers');
 const asyncHandler = require('../asyncHandler');
 
 const router = express.Router();
@@ -49,6 +50,9 @@ function toPublicVideo(video) {
     // El original se borró (era H.264 compatible, el HLS ya es el mismo
     // vídeo, ver hls.js): no queda ningún archivo real, solo el HLS.
     archived: video.archived === true,
+    // Número del episodio contado desde el principio de la serie, sin
+    // temporadas ("S06E15" de Bleach -> 124), o null (ver episodeNumbers.js).
+    absoluteEpisode: episodeNumbers.absoluteEpisodeFor(video),
   };
 }
 

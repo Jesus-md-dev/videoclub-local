@@ -378,8 +378,10 @@ async function fetchTmdbMovie(query, priority, year) {
 
 const TMDB_ANIME_GENRE_ID = 16; // "Animación" en la lista de géneros de TMDB
 
-async function fetchTmdbTv(query, priority, year) {
-  if (!TMDB_API_KEY()) return null;
+// La serie de TMDB que mejor encaja con la búsqueda (o null): compartido
+// entre fetchTmdbTv y fetchEpisodeOrderings, para que la numeración de
+// episodios salga siempre de la misma ficha que los metadatos.
+async function findTmdbTvMatch(query, priority, year) {
   const yearParam = year ? `&first_air_date_year=${year}` : '';
   const res = await throttledFetch(
     `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY()}&language=es-ES&query=${encodeURIComponent(query)}${yearParam}`,
@@ -411,7 +413,13 @@ async function fetchTmdbTv(query, priority, year) {
     .filter((r) => ['name', 'original_name'].some((k) => (r[k] || '').trim().toLowerCase() === query.trim().toLowerCase()));
   const exactAnimeMatch = exactMatches.find(isAnimeCandidate);
   const match = exactAnimeMatch || exactMatches[0] || animeMatch || results[0];
-  if (!match && year) return fetchTmdbTv(query, priority, null);
+  if (!match && year) return findTmdbTvMatch(query, priority, null);
+  return match || null;
+}
+
+async function fetchTmdbTv(query, priority, year) {
+  if (!TMDB_API_KEY()) return null;
+  const match = await findTmdbTvMatch(query, priority, year);
   if (!match) return null;
   const genreMap = await tmdbGenreMap('tv', priority);
   const genres = normalizeGenres((match.genre_ids || []).map((id) => genreMap.get(id)).filter(Boolean));
@@ -1011,6 +1019,67 @@ function getForceTmdbProgress() {
   return forceTmdbProgress;
 }
 
+// Para episodeNumbers.js: cuántos episodios tiene cada temporada de la serie
+// de esta clave, en los repartos de TMDB que pueden coincidir con los
+// "SxxEyy" de los archivos. Primero el grupo "TVDB Order" si existe: es el
+// que siguen casi todas las descargas, y a veces el reparto normal de TMDB
+// no se parece en nada (Bleach: TMDB tiene una temporada de 366 episodios
+// y otra de 50; los archivos, las 16 de TVDB). Después, las temporadas
+// normales de TMDB. Cada reparto es { source, seasons: { <n>: episodios } },
+// sin especiales. [] si la clave no es una serie de TMDB, o si está fijada a
+// mano a una temporada concreta (ver overrideFromTmdb): ahí los episodios
+// de la carpeta no se cuentan desde el principio de la serie. Lanza si
+// TMDB falla, para reintentarlo más tarde en vez de guardar "nada".
+async function fetchEpisodeOrderings(key, priority = 'low') {
+  if (!TMDB_API_KEY()) return [];
+  const tmdbGet = async (apiPath) => {
+    const sep = apiPath.includes('?') ? '&' : '?';
+    const res = await throttledFetch(
+      `https://api.themoviedb.org/3${apiPath}${sep}api_key=${TMDB_API_KEY()}`,
+      undefined,
+      350,
+      priority
+    );
+    if (!res.ok) throw new Error(`TMDB respondió ${res.status}`);
+    return res.json();
+  };
+
+  let tmdbId = null;
+  const saved = overrides[key];
+  if (saved) {
+    if (saved.tmdbType !== 'tv' || saved.season != null) return [];
+    tmdbId = saved.tmdbId;
+  } else {
+    const query = cleanQuery(key);
+    if (!query) return [];
+    const match = await findTmdbTvMatch(query, priority, extractYear(key));
+    if (!match) return [];
+    tmdbId = match.id;
+  }
+
+  const orderings = [];
+  const groupList = await tmdbGet(`/tv/${tmdbId}/episode_groups`);
+  const tvdbGroup = (groupList.results || []).find((g) => /tvdb/i.test(g.name || ''));
+  if (tvdbGroup) {
+    const detail = await tmdbGet(`/tv/episode_group/${tvdbGroup.id}`);
+    const seasons = {};
+    let n = 0;
+    for (const group of [...(detail.groups || [])].sort((a, b) => a.order - b.order)) {
+      if (/special|especial/i.test(group.name || '')) continue;
+      n += 1;
+      seasons[n] = (group.episodes || []).length;
+    }
+    orderings.push({ source: `TMDB: ${tvdbGroup.name}`, seasons });
+  }
+  const show = await tmdbGet(`/tv/${tmdbId}`);
+  const seasons = {};
+  for (const s of show.seasons || []) {
+    if (s.season_number > 0) seasons[s.season_number] = s.episode_count;
+  }
+  orderings.push({ source: 'TMDB: temporadas', seasons });
+  return orderings;
+}
+
 module.exports = {
   getMetadata,
   getCached,
@@ -1020,6 +1089,7 @@ module.exports = {
   overrideFromTmdb,
   forceTmdbRefreshAll,
   getForceTmdbProgress,
+  fetchEpisodeOrderings,
   forgetMetadata,
   getPosterCandidates,
   migrateCacheKey,

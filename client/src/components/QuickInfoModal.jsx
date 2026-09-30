@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PosterPicker from './PosterPicker';
 import useFocusTrap from '../hooks/useFocusTrap';
+import { episodeTitle } from '../utils/format';
 
 // Ficha rápida ("más info" estilo Netflix): un vistazo sin salir del
 // catálogo, en vez de tener que navegar y volver atrás solo para ver el
@@ -60,7 +61,7 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
   if (!target) return null;
   const { type, data, progress } = target;
   const isFolder = type === 'folder';
-  const title = isFolder ? data.cleanName || data.name : data.seriesKey ? data.title : data.cleanName || data.title;
+  const title = isFolder ? data.cleanName || data.name : data.seriesKey ? episodeTitle(data) : data.cleanName || data.title;
   const posterSrc = isFolder
     ? data.poster || (data.thumbnailId ? `/api/thumbnail/${data.thumbnailId}` : '/placeholder.svg')
     : data.poster || `/api/thumbnail/${data.id}`;

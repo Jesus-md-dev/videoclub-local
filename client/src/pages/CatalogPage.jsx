@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import Hls from 'hls.js';
 import { getActiveProfileId } from '../profile';
 import { track } from '../analytics';
+import { episodeTitle } from '../utils/format';
 import HiddenMenu from '../components/HiddenMenu';
 import Row from '../components/Row';
 import QuickInfoModal from '../components/QuickInfoModal';
@@ -110,7 +111,7 @@ function VideoCard({ video, progress, onRemove, onQuickInfo }) {
   const posterSrc = video.poster || `/api/thumbnail/${video.id}`;
   // El nombre limpio es el de la serie (mismo para todos sus episodios), así
   // que en un episodio taparía el número; solo se usa en películas sueltas.
-  const displayTitle = video.seriesKey ? video.title : video.cleanName || video.title;
+  const displayTitle = video.seriesKey ? episodeTitle(video) : video.cleanName || video.title;
   const processingLabel = processingBadgeLabel(video.processingState, video.processingPercent);
 
   const { previewing, videoElRef, startHover, endHover } = useHoverPreview(video.id, video.hlsReady);

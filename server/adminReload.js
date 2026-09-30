@@ -14,6 +14,7 @@ const lostVideos = require('./lostVideos');
 const mediaInfo = require('./mediaInfo');
 const metadata = require('./metadata');
 const catalog = require('./catalog');
+const episodeNumbers = require('./episodeNumbers');
 
 // Cada reloader por separado y con su propio try/catch: uno corrupto (JSON
 // mal formado tras una edición a medias, por ejemplo) no debe impedir que
@@ -29,6 +30,7 @@ const RELOADERS = {
   mediaInfoStore: () => mediaInfo.reloadStore(),
   metadataCache: () => metadata.reloadCache(),
   metadataOverrides: () => metadata.reloadOverrides(),
+  episodeNumbering: () => episodeNumbers.reloadRegistry(),
 };
 
 // pending (búsquedas TMDB en curso) y memo (caché efímera de mediaInfo.js)
