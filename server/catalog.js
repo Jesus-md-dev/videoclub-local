@@ -6,6 +6,16 @@ const archivedVideos = require('./archivedVideos');
 const movedOriginals = require('./movedOriginals');
 const catalogOverrides = require('./catalogOverrides');
 const hls = require('./hls');
+const { createJsonRegistry } = require('./jsonRegistry');
+
+// Claves que alguna vez han sido serie (más de un vídeo): { <clave>: true }.
+// Sin esto, una serie a la que solo le queda un episodio (los demás
+// borrados tras verlos, o aún descargándose) pasaba a mostrarse como
+// película suelta. Ver buildLibrary.
+const knownShows = createJsonRegistry('known-shows.json');
+// Marca de episodio en el título ("S01E05", "1x05"): un único vídeo así
+// dentro de una carpeta es el primer episodio de una serie, no una película.
+const EPISODE_MARKER_PATTERN = /S\d{1,2}E\d{1,4}|(?:^|[\s\-_.])\d{1,2}x\d{1,4}(?:[\s\-_.]|$)/i;
 
 let cache = [];
 let byId = new Map();
@@ -290,12 +300,29 @@ function buildLibrary() {
   moviesList = [];
   showVideos = new Map();
 
-  const showKeys = [...groups.entries()].filter(([, videos]) => videos.length > 1).map(([key]) => key);
+  // Un solo vídeo también es serie si su clave ya lo fue antes, o si está
+  // en una carpeta propia (clave distinta de su título) y trae marca de
+  // episodio. Una película en su carpeta ("Matrix (1999)/Matrix (1999).mkv")
+  // no cumple ninguna de las dos.
+  const known = knownShows.get();
+  let learned = false;
+  const isShow = (key, videos) => {
+    if (videos.length > 1) {
+      if (!known[key]) {
+        known[key] = true;
+        learned = true;
+      }
+      return true;
+    }
+    return Boolean(known[key]) || (key !== videos[0].title && EPISODE_MARKER_PATTERN.test(videos[0].title));
+  };
+  const showKeys = [...groups.entries()].filter(([key, videos]) => isShow(key, videos)).map(([key]) => key);
+  if (learned) knownShows.save();
 
   for (const [key, videos] of groups) {
     videos.sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'es', { numeric: true }));
 
-    if (videos.length > 1) {
+    if (showKeys.includes(key)) {
       showsList.push({ name: key, path: key, thumbnailId: videos[0].id });
       showVideos.set(key, videos);
     } else {
@@ -499,6 +526,16 @@ function getAllGroupKeys() {
 
 // Clave de la serie a la que pertenece un vídeo, o null si es una película
 // suelta (para poder volver a la lista de episodios en vez de al catálogo).
+// Para purge.js: una obra purgada del todo deja de contar como serie
+// conocida (si más adelante llega un único vídeo con ese nombre, no tiene
+// por qué ser la misma serie).
+function forgetShow(key) {
+  const known = knownShows.get();
+  if (!known[key]) return;
+  delete known[key];
+  knownShows.save();
+}
+
 function getShowKeyFor(video) {
   const key = groupKeyFor(video);
   return showVideos.has(key) ? key : null;
@@ -515,6 +552,8 @@ module.exports = {
   isGenericFolderName,
   getAllGroupKeys,
   getShowKeyFor,
+  forgetShow,
+  reloadKnownShows: knownShows.reload,
   seasonNumberFor,
   // Para normalize.js: calcular el id que tendría una ruta relativa nueva
   // (tras renombrar un archivo) sin tener que reescanear toda la carpeta de

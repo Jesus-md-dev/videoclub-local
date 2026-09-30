@@ -49,6 +49,7 @@ async function purgeKey(key) {
   for (const video of videos) forgetVideo(video);
   removeProgressIds(ids);
   metadata.forgetMetadata(key);
+  catalog.forgetShow(key);
   await catalog.scan();
   return { removed: ids.length };
 }
@@ -85,6 +86,7 @@ async function deleteContent(key) {
   }
   removeProgressIds(ids);
   metadata.forgetMetadata(key);
+  catalog.forgetShow(key);
   await catalog.scan();
   return { removed: ids.length, filesDeleted };
 }

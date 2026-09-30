@@ -30,6 +30,7 @@ const RELOADERS = {
   mediaInfoStore: () => mediaInfo.reloadStore(),
   metadataCache: () => metadata.reloadCache(),
   metadataOverrides: () => metadata.reloadOverrides(),
+  knownShows: () => catalog.reloadKnownShows(),
   episodeNumbering: () => episodeNumbers.reloadRegistry(),
 };
 
