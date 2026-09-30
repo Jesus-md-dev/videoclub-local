@@ -152,8 +152,12 @@ async function moveOne(video, onProgress) {
 // proceso servidor sea el dueño del candado). Ya hay una copia verificada
 // en destino en este punto, así que reintentar el borrado sin más, en vez
 // de marcar el traslado entero como fallido por un candado que se libera
-// solo en segundos, es seguro.
-async function removeWithRetry(absPath, attempts = 5, delayMs = 2000) {
+// solo en segundos, es seguro. Desde hls.js el traslado ya espera a que
+// terminen esos extras, pero quedan otros lectores posibles (subtítulos
+// pedidos al reproducir, el traslado de lo ya "ready" al arrancar): con
+// 5x2s se quedaban cortos y el borrado fallaba con EBUSY, así que se
+// aguanta hasta un minuto.
+async function removeWithRetry(absPath, attempts = 12, delayMs = 5000) {
   for (let i = 0; i < attempts; i += 1) {
     try {
       fsUtils.unlinkIfExists(absPath);

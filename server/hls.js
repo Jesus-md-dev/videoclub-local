@@ -701,18 +701,27 @@ async function runGeneration(video, priority) {
     // HDR/Dolby Vision...) nunca llegaba a extraer sus subtítulos
     // incrustados. Visto de verdad con "X-Men '97" S02E05 (HEVC 4K Dolby
     // Vision, 27 pistas de subtítulos en el archivo, ninguna extraída).
-    pregenerateExtras(video).catch((err) => {
-      console.warn(`HLS: no se pudieron precalentar subtítulos/vista previa de "${video.title}": ${err.message}`);
-    });
-
+    //
     // Traslado automático a un disco de respaldo frío (ver moveOriginal.js):
     // sin relación con el borrado de arriba - aquí SIEMPRE queda una copia
     // real verificada antes de tocar el original, y si no hay ninguna
     // carpeta configurada para esto no hace nada. En segundo plano, no
     // bloquea el "ready": el vídeo ya se puede reproducir mientras tanto.
-    moveOriginal.maybeMoveOriginal(video).catch((err) => {
-      console.warn(`HLS: fallo en el traslado automático del original de "${video.title}": ${err.message}`);
-    });
+    // Encadenado DESPUÉS de los extras, no a la vez: ffmpeg tiene el
+    // original abierto mientras extrae cada subtítulo/la vista previa, y
+    // Windows deniega el borrado (EBUSY/EPERM) mientras tanto - con
+    // episodios de varias pistas eso duraba más que los reintentos de
+    // removeWithRetry y el traslado quedaba fallido (visto con Silo y Ted
+    // Lasso, 5 fallidos en /move-queue). De paso los extras ya no se
+    // quedan sin original a mitad de extracción ("No such file").
+    pregenerateExtras(video)
+      .catch((err) => {
+        console.warn(`HLS: no se pudieron precalentar subtítulos/vista previa de "${video.title}": ${err.message}`);
+      })
+      .then(() => moveOriginal.maybeMoveOriginal(video))
+      .catch((err) => {
+        console.warn(`HLS: fallo en el traslado automático del original de "${video.title}": ${err.message}`);
+      });
 
     return master;
   } catch (err) {
