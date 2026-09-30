@@ -32,20 +32,24 @@ function parseSeasonEpisode(title) {
 // encaja con los archivos de la serie: todos tienen que caber (su
 // temporada existe y el episodio no pasa de los que tiene). Con una sola
 // temporada tampoco sirve: el número absoluto sería el mismo del archivo.
-function startsIfFits(ordering, episodes) {
+function startsIfFits(ordering, episodes, allowSeasonOneAbsolute = false) {
   const counts = ordering.seasons || {};
   const numbers = Object.keys(counts)
     .map(Number)
     .sort((a, b) => a - b);
   if (numbers.length < 2) return null;
-  // Un "S01E274" en una serie con temporadas (más episodios de los que
-  // tiene la temporada 1) es un número absoluto al que se le puso S01 por
-  // defecto (visto de verdad: 36 episodios de Bleach renombrados así antes
-  // de existir seasonEpisodeFor). No invalida el reparto: su número
-  // absoluto es el suyo (la temporada 1 empieza en 0), y normalize.js lo
-  // renombra a su temporada real.
+  // Con allowSeasonOneAbsolute, un "S01E274" en una serie con temporadas
+  // (más episodios de los que tiene la temporada 1) se toma por un número
+  // absoluto al que se le puso S01 por defecto (visto de verdad: 36
+  // episodios de Bleach renombrados así antes de existir seasonEpisodeFor):
+  // su número absoluto es el suyo (la temporada 1 empieza en 0), y
+  // normalize.js lo renombra a su temporada real. Solo se usa si ningún
+  // reparto encaja tal cual (ver compute): InuYasha tiene 167 episodios en
+  // su temporada 1 de TMDB, y el "TVDB Order" (27 en la 1) también
+  // "encajaría" así, partiendo mal la serie.
   const fits = ({ season, episode }) =>
-    (counts[season] != null && episode >= 1 && episode <= counts[season]) || (season === 1 && episode > counts[1]);
+    (counts[season] != null && episode >= 1 && episode <= counts[season]) ||
+    (allowSeasonOneAbsolute && season === 1 && episode > counts[1]);
   if (!episodes.every(fits)) return null;
   if (!episodes.some(({ season }) => season > 1)) return null;
   const starts = {};
@@ -102,12 +106,15 @@ function compute(videos) {
     }
     let starts = null;
     let counts = null;
-    for (const ordering of saved.orderings || []) {
-      starts = startsIfFits(ordering, episodes);
-      if (starts) {
-        counts = ordering.seasons;
-        break;
+    for (const allowSeasonOneAbsolute of [false, true]) {
+      for (const ordering of saved.orderings || []) {
+        starts = startsIfFits(ordering, episodes, allowSeasonOneAbsolute);
+        if (starts) {
+          counts = ordering.seasons;
+          break;
+        }
       }
+      if (starts) break;
     }
     if (!starts) {
       if (!(Date.now() - Date.parse(saved.fetchedAt) < REFRESH_UNFIT_MS)) refresh(key);

@@ -53,6 +53,24 @@ router.post(
   })
 );
 
+// Une una serie a otra como temporada nueva (ver normalize.mergeAsSeason):
+// { from: <clave origen>, to: <clave destino>, season: <n> }.
+router.post(
+  '/normalize/merge-season',
+  asyncHandler(async (req, res) => {
+    const { from, to, season } = req.body || {};
+    if (!from || !to || !season) {
+      res.status(400).json({ error: 'Faltan "from", "to" y/o "season"' });
+      return;
+    }
+    try {
+      res.json(await normalize.mergeAsSeason(from, to, season));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  })
+);
+
 router.get('/normalize/status', (req, res) => {
   res.json(normalize.getProgress());
 });

@@ -514,7 +514,54 @@ async function autoNormalizeNewFiles(videos, previousIds) {
   return renamedAny;
 }
 
+// Une una serie a otra como temporada nueva: p.ej. "Inuyasha Kanketsu-hen",
+// que TMDB tiene como temporada 2 de InuYasha, y que en disco venía en su
+// propia carpeta y salía como otra serie. Cada episodio pasa a la carpeta de
+// la serie destino como "<Nombre> - S<season>E<episodio>", con el mismo
+// renombrado que el normalizador (migra progreso, HLS, carátulas...). Se
+// comprueba todo antes de mover nada: cada episodio tiene su número y
+// ningún nombre nuevo choca con uno que ya exista.
+async function mergeAsSeason(fromKey, toKey, season) {
+  const seasonNumber = Number(season);
+  if (!Number.isInteger(seasonNumber) || seasonNumber < 1) throw new Error('Temporada no válida.');
+  if (fromKey === toKey) throw new Error('Origen y destino son la misma serie.');
+  const from = catalog.videosForKey(fromKey);
+  const to = catalog.videosForKey(toKey);
+  if (!from.length) throw new Error(`No hay vídeos en "${fromKey}".`);
+  if (!to.length) throw new Error(`No hay vídeos en "${toKey}".`);
+
+  const targetDir = path.dirname(to[0].relativePath);
+  const normalizedTitle = to.map((v) => v.title.match(/^(.+?) - S\d{1,2}E\d/)).find(Boolean);
+  const baseName = sanitizeName(normalizedTitle ? normalizedTitle[1] : metadata.getCached(toKey).cleanName || toKey);
+  const pad = (n) => String(n).padStart(2, '0');
+
+  const plan = from.map((video) => {
+    const m = video.title.match(/S\d{1,2}E(\d{1,4})(?:-E(\d{1,4}))?/i);
+    if (!m) throw new Error(`"${video.title}" no tiene número de episodio "SxxEyy"; no se ha movido nada.`);
+    const marker = `S${pad(seasonNumber)}E${pad(Number(m[1]))}${m[2] ? `-E${pad(Number(m[2]))}` : ''}`;
+    const newRelativePath = path.join(targetDir, `${baseName} - ${marker}${path.extname(video.relativePath).toLowerCase()}`);
+    if (catalog.getVideoById(catalog.idFor(newRelativePath))) {
+      throw new Error(`Ya existe "${newRelativePath}"; no se ha movido nada.`);
+    }
+    return { video, newRelativePath };
+  });
+
+  const moved = [];
+  for (const { video, newRelativePath } of plan) {
+    let result;
+    if (video.movedTo) result = applyMovedRename(video, newRelativePath);
+    else if (video.archived) result = applyArchivedRename(video, newRelativePath);
+    else result = applyRename(video, newRelativePath);
+    // eslint-disable-next-line no-await-in-loop
+    moved.push(await result);
+  }
+  catalog.forgetShow(fromKey);
+  await catalog.scan();
+  return { moved };
+}
+
 module.exports = {
+  mergeAsSeason,
   previewCandidates,
   runNormalizeAll,
   getProgress,
