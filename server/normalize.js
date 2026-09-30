@@ -47,9 +47,24 @@ function sanitizeName(str) {
 // misma serie según lo que traiga cada archivo original). Si no hay
 // ninguno de los tres, se deja el archivo tal cual (mejor no tocar nada
 // que arriesgarse a desordenar los episodios).
+//
+// Capítulos dobles ("Naruto - 026-027", "S01E26-E27"): "S01E26-E27", que
+// ordena entre el 25 y el 28. Antes se quedaban sin normalizar y, al
+// ordenar por nombre, salían al principio de la serie. Solo si el segundo
+// número es el siguiente o el de después (así "S01E05 - 720" no se lee
+// como un rango).
+function isEpisodeRange(first, second) {
+  const diff = Number(second) - Number(first);
+  return diff >= 1 && diff <= 2;
+}
+
 function extractEpisodeMarker(video) {
   const rawTitle = video.title;
-  let m = rawTitle.match(/S(\d{1,2})E(\d{1,4})/i);
+  let m = rawTitle.match(/S(\d{1,2})E(\d{1,4})\s*-\s*E?(\d{1,4})(?!\d)/i);
+  if (m && isEpisodeRange(m[2], m[3])) {
+    return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}-E${m[3].padStart(2, '0')}`;
+  }
+  m = rawTitle.match(/S(\d{1,2})E(\d{1,4})/i);
   if (m) return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}`;
   // Requiere un separador (espacio/guion/punto/inicio) antes de la
   // temporada, no solo dígitos: si no, algo como "1920x1080" (resolución)
@@ -86,10 +101,15 @@ function extractEpisodeMarker(video) {
   // Solo si lo que va antes del número es el propio nombre de la carpeta
   // (también sin etiquetas): así "Película 2" suelta, o un número que sea
   // parte del título, no se toma por un episodio.
+  const showName = comparableName(metadata.stripReleaseTags(catalog.metadataKeyFor(video)));
+  const season = String(catalog.seasonNumberFor(video) ?? 1).padStart(2, '0');
+  m = metadata.stripReleaseTags(rawTitle).match(/^(.+?)[\s\-_.]+0*(\d{1,4})\s*-\s*0*(\d{1,4})$/);
+  if (m && isEpisodeRange(m[2], m[3]) && comparableName(m[1]) === showName) {
+    return `S${season}E${m[2].padStart(2, '0')}-E${m[3].padStart(2, '0')}`;
+  }
   m = metadata.stripReleaseTags(rawTitle).match(/^(.+?)[\s\-_.]+0*(\d{1,4})$/);
-  if (m && comparableName(m[1]) === comparableName(metadata.stripReleaseTags(catalog.metadataKeyFor(video)))) {
-    const season = catalog.seasonNumberFor(video) ?? 1;
-    return `S${String(season).padStart(2, '0')}E${m[2].padStart(2, '0')}`;
+  if (m && comparableName(m[1]) === showName) {
+    return `S${season}E${m[2].padStart(2, '0')}`;
   }
   return null;
 }
