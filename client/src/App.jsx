@@ -5,6 +5,7 @@ import ConfigPage from './pages/ConfigPage';
 import ProfilesPage from './pages/ProfilesPage';
 import QueuePage from './pages/QueuePage';
 import MoveQueuePage from './pages/MoveQueuePage';
+import UpscaleQueuePage from './pages/UpscaleQueuePage';
 import StatsPage from './pages/StatsPage';
 import { getActiveProfileId } from './profile';
 
@@ -36,6 +37,7 @@ export default function App() {
       <Route path="/config" element={<ConfigPage />} />
       <Route path="/queue" element={<QueuePage />} />
       <Route path="/move-queue" element={<MoveQueuePage />} />
+      <Route path="/upscale-queue" element={<UpscaleQueuePage />} />
       <Route path="/stats" element={<StatsPage />} />
       {/* Cualquier ruta no reconocida: antes se quedaba en blanco (React
           Router no tenía ninguna coincidencia ni fallback). */}

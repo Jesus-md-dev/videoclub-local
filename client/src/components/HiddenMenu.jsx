@@ -9,6 +9,7 @@ const PAGES = [
   { to: '/profiles', label: 'Cambiar perfil' },
   { to: '/queue', label: 'Preparación (HLS)' },
   { to: '/move-queue', label: 'Traslado de originales' },
+  { to: '/upscale-queue', label: 'Reescalado a 720p' },
   { to: '/stats', label: 'Estadísticas de uso' },
   { to: '/config', label: 'Configuración' },
 ];

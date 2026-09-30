@@ -38,6 +38,7 @@ const thumbnails = require('./thumbnails');
 const metadata = require('./metadata');
 const hls = require('./hls');
 const moveOriginal = require('./moveOriginal');
+const upscale = require('./upscale');
 const normalize = require('./normalize');
 const localSubtitles = require('./localSubtitles');
 const { resolveFailed } = require('./resolveFailed');
@@ -51,6 +52,7 @@ const trickplayRouter = require('./routes/trickplay');
 const profilesRouter = require('./routes/profiles');
 const queueRouter = require('./routes/queue');
 const moveQueueRouter = require('./routes/moveQueue');
+const upscaleQueueRouter = require('./routes/upscaleQueue');
 const metadataRouter = require('./routes/metadata');
 const analyticsRouter = require('./routes/analytics');
 const hlsRouter = require('./routes/hls');
@@ -125,6 +127,7 @@ app.use('/api', trickplayRouter);
 app.use('/api', profilesRouter);
 app.use('/api', queueRouter);
 app.use('/api', moveQueueRouter);
+app.use('/api', upscaleQueueRouter);
 app.use('/api', metadataRouter);
 app.use('/api', analyticsRouter);
 app.use('/api', hlsRouter);
@@ -238,6 +241,9 @@ async function warmUpInBackground(initialVideos) {
     if (video.archived || video.movedTo) continue;
     if (hls.getStatus(video) === 'ready') {
       moveOriginal.maybeMoveOriginal(video).catch(() => {});
+      // Igual para el reescalado (upscale.js): lo ya listo por debajo de
+      // 720p de antes de tener esto, o que falló la vez anterior.
+      upscale.maybeUpscale(video);
     }
   }
   // Reintenta lo fallido UNA SOLA VEZ al arrancar (no en bucle: un fallo

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
-const { getMediaInfo, inputPathFor, ffprobePath, forgetAnalysis } = require('./mediaInfo');
+const { getMediaInfo, inputPathFor, ffprobePath, forgetAnalysis, probeRaw } = require('./mediaInfo');
 const { HLS_PATH } = require('./config');
 const { runLimited } = require('./ffmpeg-limiter');
 const subtitles = require('./subtitles');
@@ -10,6 +10,7 @@ const trickplay = require('./trickplay');
 const archivedVideos = require('./archivedVideos');
 const lostVideos = require('./lostVideos');
 const moveOriginal = require('./moveOriginal');
+const upscale = require('./upscale');
 const { isTenBit, isHdr, checkGpuAvailable } = require('./gpu');
 
 // Issue #58/#59/#61 del plan HLS: generación + estado/progreso/prioridad.
@@ -576,12 +577,15 @@ function retry(video) {
   return ensureGenerating(video, 'high');
 }
 
-async function runGeneration(video, priority) {
+// sourcePath: otro archivo del que generar el HLS en vez del original (el
+// reescalado de upscale.js, ver regenerateFromSource). Se analiza aparte:
+// getMediaInfo va memoizado por vídeo y describe siempre el original.
+async function runGeneration(video, priority, sourcePath = null) {
   const outDir = outDirFor(video);
   const master = masterPlaylistFor(video);
 
   try {
-    const info = await getMediaInfo(video);
+    const info = sourcePath ? await probeRaw(sourcePath) : await getMediaInfo(video);
     const videoStream = info.streams.find((s) => s.codec_type === 'video');
     const audioStreams = info.streams.filter((s) => s.codec_type === 'audio');
     if (!videoStream) throw new Error('El archivo no tiene pista de vídeo.');
@@ -620,7 +624,7 @@ async function runGeneration(video, priority) {
       try {
         // eslint-disable-next-line no-await-in-loop
         const ffmpegStderr = await runLimited(
-          () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu: attempts[i], hdr, durationSeconds, onProgress }),
+          () => runFfmpegHls(sourcePath || inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu: attempts[i], hdr, durationSeconds, onProgress }),
           priority
         );
         // ffmpeg puede salir con código 0 (éxito) y aun así dejar el
@@ -721,7 +725,11 @@ async function runGeneration(video, priority) {
       .then(() => moveOriginal.maybeMoveOriginal(video))
       .catch((err) => {
         console.warn(`HLS: fallo en el traslado automático del original de "${video.title}": ${err.message}`);
-      });
+      })
+      // Si lo que se sirve queda por debajo de 720p, a la cola de
+      // reescalado (upscale.js) - después del traslado, que no tiene por
+      // qué esperar horas de GPU. No hace nada si ya está reescalado.
+      .then(() => upscale.maybeUpscale(video));
 
     return master;
   } catch (err) {
@@ -750,6 +758,31 @@ async function pregenerateExtras(video) {
     });
   }
   await trickplay.ensureTrickplay(video);
+}
+
+// Para upscale.js: rehace el HLS de un vídeo ya listo a partir de otro
+// archivo (su versión reescalada). El HLS antiguo se sigue sirviendo
+// mientras tanto - runGeneration trabaja en una carpeta .tmp y solo
+// sustituye la buena al final, ya verificada - y si algo falla se queda
+// tal cual. Espera a que termine cualquier generación en marcha del mismo
+// vídeo en vez de pisarla.
+async function regenerateFromSource(video, sourcePath) {
+  while (['checking', 'processing'].includes(status.get(video.id))) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  status.set(video.id, 'checking');
+  try {
+    await runGeneration(video, 'low', sourcePath);
+  } catch (err) {
+    // El HLS anterior sigue siendo válido: no dejar el vídeo como
+    // "fallido" en /queue por un reescalado que no ha salido.
+    if (hasValidMasterPlaylist(video)) {
+      status.set(video.id, 'ready');
+      lastError.delete(video.id);
+    }
+    throw err;
+  }
 }
 
 // Genera (si hace falta, esperando a que termine) y devuelve la ruta al
@@ -866,6 +899,7 @@ async function warmAll(videos) {
 }
 
 module.exports = {
+  regenerateFromSource,
   generateHls,
   ensureGenerating,
   getStatus,

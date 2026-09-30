@@ -175,6 +175,7 @@ function reloadStore() {
 module.exports = {
   ffmpeg,
   getMediaInfo,
+  probeRaw,
   inputPathFor,
   pruneStore,
   migrateEntry,

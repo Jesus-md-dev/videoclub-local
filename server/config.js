@@ -70,6 +70,22 @@ const MOVED_ORIGINALS_PATH = process.env.MOVED_ORIGINALS_PATH
   ? path.resolve(process.env.MOVED_ORIGINALS_PATH)
   : findDriveWithFolder('VideoclubOriginales');
 
+// Reescalado con IA (Real-ESRGAN, ver upscale.js) de lo que está por debajo
+// de 720p. Mismo criterio que MOVED_ORIGINALS_PATH: opcional, sin fallback
+// local. "VideoclubUpscaled" guarda solo trabajo temporal (fotogramas por
+// tramos y el vídeo reescalado hasta que su HLS queda listo), así que vive
+// en el disco externo aunque sea transitorio. El ejecutable se busca en
+// "VideoclubTools/realesrgan" (release portable realesrgan-ncnn-vulkan).
+const UPSCALE_PATH = process.env.UPSCALE_PATH
+  ? path.resolve(process.env.UPSCALE_PATH)
+  : findDriveWithFolder('VideoclubUpscaled');
+const REALESRGAN_PATH = (() => {
+  if (process.env.REALESRGAN_PATH) return path.resolve(process.env.REALESRGAN_PATH);
+  const tools = findDriveWithFolder('VideoclubTools');
+  const exe = tools && path.join(tools, 'realesrgan', 'realesrgan-ncnn-vulkan.exe');
+  return exe && fs.existsSync(exe) ? exe : null;
+})();
+
 const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.webm', '.mov', '.m4v'];
 
 function readSettings() {
@@ -198,6 +214,8 @@ module.exports = {
   THUMBNAILS_PATH,
   HLS_PATH,
   MOVED_ORIGINALS_PATH,
+  UPSCALE_PATH,
+  REALESRGAN_PATH,
   VIDEO_EXTENSIONS,
   getVideosPath,
   setVideosPath,
