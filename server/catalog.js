@@ -6,6 +6,7 @@ const archivedVideos = require('./archivedVideos');
 const movedOriginals = require('./movedOriginals');
 const catalogOverrides = require('./catalogOverrides');
 const hls = require('./hls');
+const metadata = require('./metadata');
 const { createJsonRegistry } = require('./jsonRegistry');
 
 // Claves que alguna vez han sido serie (más de un vídeo): { <clave>: true }.
@@ -302,8 +303,8 @@ function buildLibrary() {
 
   // Un solo vídeo también es serie si su clave ya lo fue antes, o si está
   // en una carpeta propia (clave distinta de su título) y trae marca de
-  // episodio. Una película en su carpeta ("Matrix (1999)/Matrix (1999).mkv")
-  // no cumple ninguna de las dos.
+  // episodio o su ficha de metadatos dice que es una serie. Una película en
+  // su carpeta ("Matrix (1999)/Matrix (1999).mkv") no cumple nada de eso.
   const known = knownShows.get();
   let learned = false;
   const isShow = (key, videos) => {
@@ -314,7 +315,19 @@ function buildLibrary() {
       }
       return true;
     }
-    return Boolean(known[key]) || (key !== videos[0].title && EPISODE_MARKER_PATTERN.test(videos[0].title));
+    if (known[key]) return true;
+    if (key === videos[0].title) return false;
+    if (EPISODE_MARKER_PATTERN.test(videos[0].title)) return true;
+    // Sin marca de episodio: lo que diga la ficha de TMDB (o Jikan/TVmaze)
+    // de la carpeta. Si aún no la hay, se pide, y al llegar se rehace la
+    // biblioteca si resulta ser una serie.
+    const series = metadata.isSeries(key);
+    if (series === null) {
+      metadata.getMetadata(key).then(() => {
+        if (metadata.isSeries(key) && !showVideos.has(key)) buildLibrary();
+      });
+    }
+    return series === true;
   };
   const showKeys = [...groups.entries()].filter(([key, videos]) => isShow(key, videos)).map(([key]) => key);
   if (learned) knownShows.save();

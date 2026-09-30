@@ -259,6 +259,7 @@ async function fetchTvMaze(query, priority) {
     genres: normalizeGenres(data.genres),
     year: data.premiered ? data.premiered.slice(0, 4) : null,
     type: 'tv',
+    kind: 'series',
     cleanName: spanishName || data.name || null,
     poster: data.image?.original || data.image?.medium || null,
   };
@@ -284,6 +285,9 @@ async function fetchJikanOnce(query, priority) {
     genres: normalizeGenres((match.genres || []).map((g) => g.name)),
     year: match.year || null,
     type: 'anime',
+    // MAL distingue "Movie" de "TV"/"OVA"/"ONA"...; "type" es 'anime' en
+    // todos los casos.
+    kind: match.type === 'Movie' ? 'movie' : 'series',
     cleanName: match.title || null,
     poster: match.images?.jpg?.large_image_url || match.images?.jpg?.image_url || null,
   };
@@ -370,6 +374,7 @@ async function fetchTmdbMovie(query, priority, year) {
     genres,
     year: match.release_date ? match.release_date.slice(0, 4) : null,
     type: 'movie',
+    kind: 'movie',
     cleanName: match.title || null,
     poster: match.poster_path ? `https://image.tmdb.org/t/p/w500${match.poster_path}` : null,
     popularity: match.popularity ?? 0,
@@ -455,6 +460,7 @@ async function fetchTmdbTv(query, priority, year) {
     genres: normalizeGenres(genres),
     year: match.first_air_date ? match.first_air_date.slice(0, 4) : null,
     type: isAnime ? 'anime' : 'tv',
+    kind: 'series',
     cleanName: match.name || null,
     poster,
     popularity: match.popularity ?? 0,
@@ -608,6 +614,7 @@ async function fetchBest(query, priority, year) {
         genres: normalizeGenres([...tv.genres, ...anime.genres, 'anime']),
         year: tv.year || anime.year,
         type: 'anime',
+        kind: 'series',
         cleanName: tv.cleanName || anime.cleanName,
         poster: tv.poster || anime.poster,
       };
@@ -669,6 +676,18 @@ async function getMetadata(key, priority = 'low') {
 // vacío si aún no se ha consultado) y dispara la búsqueda en segundo plano
 // para la próxima vez, sin hacer esperar al que la pide. Pensado para no
 // bloquear el listado del catálogo mientras se consultan fuentes externas.
+// Para catalog.js (una carpeta con un único vídeo): ¿la ficha encontrada es
+// una serie? true/false, o null si aún no hay ficha. "kind" lo pone cada
+// fuente con su dato real (serie o película); las fichas guardadas antes de
+// existir solo se fían de "tv", porque "anime" también lo llevaban las
+// películas de anime encontradas en Jikan.
+function isSeries(key) {
+  const entry = cache[key];
+  if (!entry) return null;
+  if (entry.kind) return entry.kind === 'series';
+  return entry.type === 'tv';
+}
+
 function getCached(key) {
   if (cache[key]) return cache[key];
   getMetadata(key, 'high');
@@ -766,6 +785,7 @@ async function fetchTmdbFixedEntry({ tmdbType, tmdbId, season }) {
       genres: normalizeGenres((m.genres || []).map((g) => g.name)),
       year: m.release_date ? m.release_date.slice(0, 4) : null,
       type: 'movie',
+      kind: 'movie',
       cleanName: m.title || null,
       poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
     };
@@ -817,6 +837,7 @@ async function fetchTmdbFixedEntry({ tmdbType, tmdbId, season }) {
       genres: normalizeGenres([...(t.genres || []).map((g) => g.name), ...(isAnime ? ['anime'] : [])]),
       year: t.first_air_date ? t.first_air_date.slice(0, 4) : null,
       type: isAnime ? 'anime' : 'tv',
+      kind: 'series',
       cleanName,
       poster,
     };
@@ -982,6 +1003,7 @@ async function forceTmdbRefreshOne(key, priority = 'low') {
     genres: match.genres && match.genres.length ? match.genres : existing.genres,
     year: match.year || existing.year,
     type: match.type || existing.type,
+    kind: match.kind || existing.kind,
     cleanName: match.cleanName || existing.cleanName,
     poster: match.poster || existing.poster,
   };
@@ -1083,6 +1105,7 @@ async function fetchEpisodeOrderings(key, priority = 'low') {
 module.exports = {
   getMetadata,
   getCached,
+  isSeries,
   warmAll,
   allGenres,
   refreshMetadata,
