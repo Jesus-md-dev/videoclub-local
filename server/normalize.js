@@ -10,6 +10,7 @@ const movedOriginals = require('./movedOriginals');
 const mediaInfo = require('./mediaInfo');
 const subdl = require('./subdl');
 const localSubtitles = require('./localSubtitles');
+const episodeNumbers = require('./episodeNumbers');
 const { migrateProgressId } = require('./progressStore');
 const { migrateFile } = require('./fsUtils');
 
@@ -58,14 +59,45 @@ function isEpisodeRange(first, second) {
   return diff >= 1 && diff <= 2;
 }
 
+// Marca para un número de episodio sin temporada ("E274", "Bleach - 274",
+// "026-027"). Con carpeta de temporada, esa temporada. Si no, y la serie
+// ya usa temporadas (Bleach: "S14E08"), se convierte con el reparto de
+// TMDB (ver episodeNumbers.seasonEpisodeFor): 274 -> "S14E09"; si no se
+// puede, null (no se renombra). Si la serie no usa temporadas (Naruto),
+// temporada 1 con el mismo número, como siempre.
+function absoluteMarker(video, first, second = null) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const format = (season, e1, e2) => `S${pad(season)}E${pad(e1)}${e2 != null ? `-E${pad(e2)}` : ''}`;
+  const folderSeason = catalog.seasonNumberFor(video);
+  if (folderSeason != null) return format(folderSeason, Number(first), second != null ? Number(second) : null);
+  const start = episodeNumbers.seasonEpisodeFor(video, Number(first));
+  if (start === null) return format(1, Number(first), second != null ? Number(second) : null);
+  if (!start) return null;
+  if (second == null) return format(start.season, start.episode);
+  const end = episodeNumbers.seasonEpisodeFor(video, Number(second));
+  if (!end || end.season !== start.season) return null;
+  return format(start.season, start.episode, end.episode);
+}
+
 function extractEpisodeMarker(video) {
   const rawTitle = video.title;
+  // "S01E274" en una serie con temporadas: número absoluto con S01 puesto
+  // por defecto (ver episodeNumbers.js startsIfFits), se pasa a su
+  // temporada real si se puede.
+  const seasonOneAbsolute = (season, first, second) => {
+    if (Number(season) !== 1) return null;
+    const marker = absoluteMarker(video, first, second);
+    return marker && !marker.startsWith('S01') ? marker : null;
+  };
   let m = rawTitle.match(/S(\d{1,2})E(\d{1,4})\s*-\s*E?(\d{1,4})(?!\d)/i);
   if (m && isEpisodeRange(m[2], m[3])) {
-    return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}-E${m[3].padStart(2, '0')}`;
+    return (
+      seasonOneAbsolute(m[1], m[2], m[3]) ||
+      `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}-E${m[3].padStart(2, '0')}`
+    );
   }
   m = rawTitle.match(/S(\d{1,2})E(\d{1,4})/i);
-  if (m) return `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}`;
+  if (m) return seasonOneAbsolute(m[1], m[2]) || `S${m[1].padStart(2, '0')}E${m[2].padStart(2, '0')}`;
   // Requiere un separador (espacio/guion/punto/inicio) antes de la
   // temporada, no solo dígitos: si no, algo como "1920x1080" (resolución)
   // se leería como si fuera la temporada 19 (o 20) episodio 1080.
@@ -77,7 +109,7 @@ function extractEpisodeMarker(video) {
   m = rawTitle.match(/(?:^|[^a-z0-9])Cap[\s._]*(\d{1,2})(\d{2})(?!\d)/i);
   if (m) return `S${m[1].padStart(2, '0')}E${m[2]}`;
   m = rawTitle.match(/(?:^|[^a-z0-9])E(\d{1,4})(?:[^0-9]|$)/i);
-  if (m) return `S01E${m[1].padStart(2, '0')}`;
+  if (m) return absoluteMarker(video, m[1]);
   // Nombre de archivo formado solo por el número de episodio (ej. "01",
   // sin ninguna letra de por medio): habitual cuando el episodio vive
   // directamente dentro de una carpeta de temporada (ver Initial D,
@@ -102,15 +134,12 @@ function extractEpisodeMarker(video) {
   // (también sin etiquetas): así "Película 2" suelta, o un número que sea
   // parte del título, no se toma por un episodio.
   const showName = comparableName(metadata.stripReleaseTags(catalog.metadataKeyFor(video)));
-  const season = String(catalog.seasonNumberFor(video) ?? 1).padStart(2, '0');
   m = metadata.stripReleaseTags(rawTitle).match(/^(.+?)[\s\-_.]+0*(\d{1,4})\s*-\s*0*(\d{1,4})$/);
   if (m && isEpisodeRange(m[2], m[3]) && comparableName(m[1]) === showName) {
-    return `S${season}E${m[2].padStart(2, '0')}-E${m[3].padStart(2, '0')}`;
+    return absoluteMarker(video, m[2], m[3]);
   }
   m = metadata.stripReleaseTags(rawTitle).match(/^(.+?)[\s\-_.]+0*(\d{1,4})$/);
-  if (m && comparableName(m[1]) === showName) {
-    return `S${season}E${m[2].padStart(2, '0')}`;
-  }
+  if (m && comparableName(m[1]) === showName) return absoluteMarker(video, m[2]);
   return null;
 }
 

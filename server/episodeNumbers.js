@@ -21,7 +21,7 @@ const REFRESH_UNFIT_MS = 7 * 24 * 60 * 60 * 1000;
 
 const pending = new Set();
 const failedAt = new Map();
-let memo = { videos: null, byId: new Map() };
+let memo = { videos: null, byId: new Map(), seasonal: new Map() };
 
 function parseSeasonEpisode(title) {
   const match = title.match(SEASON_EPISODE_PATTERN);
@@ -38,9 +38,16 @@ function startsIfFits(ordering, episodes) {
     .map(Number)
     .sort((a, b) => a - b);
   if (numbers.length < 2) return null;
-  if (!episodes.every(({ season, episode }) => counts[season] != null && episode >= 1 && episode <= counts[season])) {
-    return null;
-  }
+  // Un "S01E274" en una serie con temporadas (más episodios de los que
+  // tiene la temporada 1) es un número absoluto al que se le puso S01 por
+  // defecto (visto de verdad: 36 episodios de Bleach renombrados así antes
+  // de existir seasonEpisodeFor). No invalida el reparto: su número
+  // absoluto es el suyo (la temporada 1 empieza en 0), y normalize.js lo
+  // renombra a su temporada real.
+  const fits = ({ season, episode }) =>
+    (counts[season] != null && episode >= 1 && episode <= counts[season]) || (season === 1 && episode > counts[1]);
+  if (!episodes.every(fits)) return null;
+  if (!episodes.some(({ season }) => season > 1)) return null;
   const starts = {};
   let before = 0;
   for (const n of numbers) {
@@ -83,34 +90,67 @@ function compute(videos) {
   }
 
   const byId = new Map();
+  const seasonal = new Map();
   for (const [key, episodes] of bySeries) {
     // Solo la temporada 1: el número absoluto es el mismo del archivo.
     if (!episodes.some(({ season }) => season > 1)) continue;
+    seasonal.set(key, null);
     const saved = store.get()[key];
     if (!saved) {
       refresh(key);
       continue;
     }
     let starts = null;
+    let counts = null;
     for (const ordering of saved.orderings || []) {
       starts = startsIfFits(ordering, episodes);
-      if (starts) break;
+      if (starts) {
+        counts = ordering.seasons;
+        break;
+      }
     }
     if (!starts) {
       if (!(Date.now() - Date.parse(saved.fetchedAt) < REFRESH_UNFIT_MS)) refresh(key);
       continue;
     }
+    seasonal.set(key, { starts, counts });
     for (const { video, season, episode } of episodes) byId.set(video.id, starts[season] + episode);
   }
-  return byId;
+  return { byId, seasonal };
+}
+
+function current() {
+  const videos = catalog.getCatalog();
+  if (memo.videos !== videos) memo = { videos, ...compute(videos) };
+  return memo;
 }
 
 // null si no se conoce (no es "SxxEyy", la serie no está en TMDB, ningún
 // reparto encaja, o todavía se está consultando).
 function absoluteEpisodeFor(video) {
-  const videos = catalog.getCatalog();
-  if (memo.videos !== videos) memo = { videos, byId: compute(videos) };
-  return memo.byId.get(video.id) ?? null;
+  return current().byId.get(video.id) ?? null;
+}
+
+// Lo contrario, para normalize.js: un archivo que solo trae el número
+// absoluto ("Bleach - 274") pasa a su temporada y episodio ({ season: 14,
+// episode: 9 }) con el mismo reparto que usa absoluteEpisodeFor, elegido
+// porque encaja con los episodios "SxxEyy" que ya tiene la serie.
+// - null: la serie no usa temporadas (todo es S01, como Naruto), así que el
+//   número absoluto ya es el episodio.
+// - false: la serie usa temporadas, pero no se puede convertir (su reparto
+//   aún se está consultando, ninguno encaja, o el número se sale de él).
+//   Mejor no renombrar que ponerle "S01E274" entre los "S14E08".
+function seasonEpisodeFor(video, absolute) {
+  const key = catalog.getShowKeyFor(video);
+  const { seasonal } = current();
+  if (!key || !seasonal.has(key)) return null;
+  const ordering = seasonal.get(key);
+  if (!ordering) return false;
+  for (const [season, before] of Object.entries(ordering.starts)) {
+    const episode = absolute - before;
+    if (episode >= 1 && episode <= ordering.counts[season]) return { season: Number(season), episode };
+  }
+  return false;
 }
 
 function reloadRegistry() {
@@ -118,4 +158,4 @@ function reloadRegistry() {
   memo.videos = null;
 }
 
-module.exports = { absoluteEpisodeFor, reloadRegistry };
+module.exports = { absoluteEpisodeFor, seasonEpisodeFor, reloadRegistry };
