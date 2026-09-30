@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Favicon de la pestaña: la misma "V" dorada de icons/icon-master.svg,
+       pero con esquinas redondeadas y la V más grande (aquí no hay máscara
+       de Android que respetar, y a 16px necesita ocupar más para leerse).
+       favicon.ico y assets/videoclub.ico son la misma imagen en PNG. -->
+  <rect width="512" height="512" rx="97" fill="#0c1a33" />
+  <g>
+    <polygon points="93.5,119 256,409 418.5,119 331,119 256,251.5 181,119" fill="#060c1c" transform="translate(10.8,15)" />
+    <polygon points="93.5,119 256,409 418.5,119 331,119 256,251.5 181,119" fill="#ffc94a" />
+  </g>
+</svg>

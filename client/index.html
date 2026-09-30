@@ -2,7 +2,11 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/placeholder.svg" />
+    <!-- .ico para navegadores sin favicon SVG (y el que piden solos a
+         /favicon.ico); el SVG gana donde se entiende, nítido a cualquier
+         escala. -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <!-- viewport-fit=cover: sin esto, env(safe-area-inset-*) (ver
          index.css, notch/isla dinámica en horizontal) no llega a activarse
          en Safari/iOS - el navegador nunca dibuja bajo esa zona, así que no
