@@ -64,6 +64,8 @@ const cleanup = require('./cleanup');
 const dlnaRouter = require('./routes/dlna');
 const chromecastRouter = require('./routes/chromecast');
 const adminRouter = require('./routes/admin');
+const restartManager = require('./restartManager');
+const updater = require('./updater');
 
 const CLIENT_DIST = path.join(__dirname, '..', 'client', 'dist');
 
@@ -119,6 +121,8 @@ app.use('/api', (req, res, next) => {
 });
 
 app.use(express.json({ limit: '5mb' }));
+// Para no reiniciar en mitad de una reproducción (ver restartManager.js).
+app.use(restartManager.trackStreamActivity);
 app.use('/api', videosRouter);
 app.use('/api', thumbnailRouter);
 app.use('/api', settingsRouter);
@@ -296,7 +300,17 @@ async function afterListen(videos) {
 // respeta los overrides manuales - applyStoredOverrideIfAny los reaplica en
 // vez de sobrescribirlos). Una vez al día basta: ni los nombres ni los
 // metadatos de TMDB cambian con tanta frecuencia como para justificar más.
+//
+// Antes era un setInterval de 24 h, que no llegaba a dispararse nunca si el
+// PC se apaga cada noche (issue #140): ahora se mira cada hora si han
+// pasado 24 h desde la última vez, guardado en disco.
 const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const MAINTENANCE_CHECK_MS = 60 * 60 * 1000;
+// El arranque ya normaliza y reintenta fallidos (warmUpInBackground): la
+// primera comprobación espera para no solaparse con eso.
+const MAINTENANCE_FIRST_CHECK_MS = 30 * 60 * 1000;
+const MAINTENANCE_STATE_FILE = path.join(DATA_PATH, 'maintenance-state.json');
+
 function runPeriodicMaintenance() {
   normalize.runNormalizeAll().catch((err) => console.warn(`Normalización periódica: ${err.message}`));
   metadata
@@ -305,6 +319,30 @@ function runPeriodicMaintenance() {
   Promise.resolve()
     .then(() => localSubtitles.autoImportAllSidecars(catalog.getCatalog()))
     .catch((err) => console.warn(`Importación de subtítulos periódica: ${err.message}`));
+  // Fallidos: antes solo se reintentaban al arrancar.
+  resolveFailed()
+    .then(({ retried }) => retried && console.log(`Mantenimiento: ${retried} HLS fallido(s) reintentado(s)`))
+    .catch((err) => console.warn(`Reintento de HLS fallidos: ${err.message}`));
+  const ready = catalog.getCatalog().filter((video) => hls.getStatus(video) === 'ready');
+  const movesRetried = moveOriginal.retryFailedMoves(ready);
+  if (movesRetried) console.log(`Mantenimiento: ${movesRetried} traslado(s) fallido(s) reintentado(s)`);
+}
+
+function runMaintenanceIfDue() {
+  let lastRunAt = 0;
+  try {
+    lastRunAt = new Date(JSON.parse(fs.readFileSync(MAINTENANCE_STATE_FILE, 'utf8')).lastRunAt).getTime() || 0;
+  } catch {
+    // Primera vez (o archivo ilegible): toca ya.
+  }
+  if (Date.now() - lastRunAt < MAINTENANCE_INTERVAL_MS) return;
+  try {
+    fs.writeFileSync(MAINTENANCE_STATE_FILE, JSON.stringify({ lastRunAt: new Date().toISOString() }));
+  } catch (err) {
+    console.warn(`Mantenimiento: no se pudo guardar su estado: ${err.message}`);
+  }
+  console.log('Mantenimiento diario en marcha');
+  runPeriodicMaintenance();
 }
 
 // Copia de seguridad periódica (por si algo se escribe sin pasar por una
@@ -331,7 +369,8 @@ async function start() {
   const videos = await scanIfConfigured();
   const scannedAt = process.uptime();
   setInterval(() => backup.backupNow(), BACKUP_INTERVAL_MS).unref();
-  setInterval(runPeriodicMaintenance, MAINTENANCE_INTERVAL_MS).unref();
+  setTimeout(runMaintenanceIfDue, MAINTENANCE_FIRST_CHECK_MS).unref();
+  setInterval(runMaintenanceIfDue, MAINTENANCE_CHECK_MS).unref();
   setTimeout(cleanup.runIfDue, CLEANUP_FIRST_CHECK_MS).unref();
   setInterval(cleanup.runIfDue, CLEANUP_CHECK_INTERVAL_MS).unref();
   scheduleShutdownBackup();
@@ -343,6 +382,10 @@ async function start() {
         `escanear catálogo ${(scannedAt - scanStartedAt).toFixed(1)} s)`
     );
     afterListen(videos).catch((err) => console.error(`Tareas tras arrancar: ${err.message}`));
+    updater.start().catch((err) => console.warn(`Actualizaciones automáticas: ${err.message}`));
+    if (!restartManager.isSupervised()) {
+      console.warn('Arrancado sin el vigilante (iniciar.bat): si se cae no se relanzará solo y no se puede reiniciar desde la web.');
+    }
     console.log(`Videoclub local escuchando en el puerto ${PORT}`);
     console.log(`  Local:    http://localhost:${PORT}`);
     for (const ip of localIps()) {

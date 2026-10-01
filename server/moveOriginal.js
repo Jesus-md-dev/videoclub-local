@@ -248,4 +248,23 @@ function getQueueStatus() {
   };
 }
 
-module.exports = { maybeMoveOriginal, getQueueStatus };
+// Los traslados fallidos se quedaban así hasta el siguiente reinicio (su
+// estado solo vive en memoria). El mantenimiento diario (index.js) los
+// vuelve a intentar con esto: se olvida el fallo y se encolan de nuevo los
+// que sigan cumpliendo las condiciones de maybeMoveOriginal.
+function retryFailedMoves(videos) {
+  const failedIds = [...status.entries()].filter(([, info]) => info.state === 'failed').map(([id]) => id);
+  if (!failedIds.length) return 0;
+  const byId = new Map(videos.map((v) => [v.id, v]));
+  let retried = 0;
+  for (const id of failedIds) {
+    status.delete(id);
+    const video = byId.get(id);
+    if (!video) continue;
+    maybeMoveOriginal(video).catch(() => {});
+    retried += 1;
+  }
+  return retried;
+}
+
+module.exports = { maybeMoveOriginal, getQueueStatus, retryFailedMoves };

@@ -7,6 +7,9 @@
 const MAX_CONCURRENT_FFMPEG = 10;
 
 let running = 0;
+// Cuántos de los que corren son de prioridad alta (alguien esperando para
+// verlo): restartManager.js no reinicia mientras haya alguno.
+let runningHigh = 0;
 // Dos carriles: lo que el usuario está pidiendo ver AHORA ('high') adelanta
 // en la cola a lo que el precalentamiento en segundo plano ('low') aún no
 // ha empezado. No interrumpe nada ya en marcha, solo decide qué entra
@@ -18,16 +21,22 @@ function runNext() {
   if (running >= MAX_CONCURRENT_FFMPEG) return;
   const queue = highQueue.length ? highQueue : lowQueue;
   if (queue.length === 0) return;
+  const high = queue === highQueue;
   running += 1;
+  if (high) runningHigh += 1;
   const { fn, resolve, reject } = queue.shift();
+  const done = () => {
+    running -= 1;
+    if (high) runningHigh -= 1;
+  };
   fn().then(
     (value) => {
-      running -= 1;
+      done();
       resolve(value);
       runNext();
     },
     (err) => {
-      running -= 1;
+      done();
       reject(err);
       runNext();
     }
@@ -45,4 +54,8 @@ function runLimited(fn, priority = 'low') {
   });
 }
 
-module.exports = { runLimited, MAX_CONCURRENT_FFMPEG };
+function getStats() {
+  return { running, runningHigh, queuedHigh: highQueue.length, queuedLow: lowQueue.length };
+}
+
+module.exports = { runLimited, getStats, MAX_CONCURRENT_FFMPEG };

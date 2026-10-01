@@ -34,6 +34,10 @@ export default function ConfigPage() {
   const [powerMessage, setPowerMessage] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [showSubdlKey, setShowSubdlKey] = useState(false);
+  const [adminStatus, setAdminStatus] = useState(null);
+  const [adminUnreachable, setAdminUnreachable] = useState(false);
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [adminMessage, setAdminMessage] = useState(null);
   const [storage, setStorage] = useState(null);
   const [cleaning, setCleaning] = useState(false);
   const [cleanupMessage, setCleanupMessage] = useState(null);
@@ -46,6 +50,76 @@ export default function ConfigPage() {
       .then(setStorage)
       .catch(() => {});
   }, []);
+
+  // Estado del servidor (GET /api/admin/status). Mientras hay un reinicio
+  // programado o una compilación en marcha se refresca solo; si el servidor
+  // no responde (p.ej. reiniciándose) se sigue intentando.
+  const loadAdminStatus = () =>
+    fetch('/api/admin/status')
+      .then((res) => {
+        if (!res.ok) throw new Error(res.status);
+        return res.json();
+      })
+      .then((data) => {
+        setAdminStatus(data);
+        setAdminUnreachable(false);
+      })
+      .catch(() => setAdminUnreachable(true));
+
+  useEffect(() => {
+    loadAdminStatus();
+  }, []);
+
+  const adminWaiting = adminUnreachable || adminStatus?.restart?.pending || adminStatus?.updates?.build?.running;
+  useEffect(() => {
+    if (!adminWaiting) return undefined;
+    const timer = setInterval(loadAdminStatus, 5000);
+    return () => clearInterval(timer);
+  }, [adminWaiting]);
+
+  const adminAction = async (url, body, describe) => {
+    setAdminBusy(true);
+    setAdminMessage(null);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setAdminMessage({ text: describe(data), ok: true });
+    } catch (err) {
+      setAdminMessage({ text: err.message, ok: false });
+    } finally {
+      setAdminBusy(false);
+      loadAdminStatus();
+    }
+  };
+
+  const handleUpdate = () =>
+    adminAction('/api/admin/update', { pull: true }, (r) => {
+      const parts = [];
+      parts.push(r.pulled && !/Already up to date|Ya está actualizado/i.test(r.pulled) ? 'Descargada la última versión.' : 'Ya estaba en la última versión.');
+      if (r.depsInstalled) parts.push('Dependencias instaladas.');
+      if (r.clientRebuilt) parts.push('Web recompilada: recarga la página para verla.');
+      if (r.restart?.pending) parts.push('El servidor se reiniciará cuando esté libre.');
+      if (r.restart?.error) parts.push(r.restart.error);
+      return parts.join(' ');
+    });
+
+  const handleRestart = (mode) => {
+    if (mode === 'now') {
+      // eslint-disable-next-line no-alert
+      const ok = window.confirm('¿Reiniciar el servidor ahora? Se cortará lo que se esté viendo o convirtiendo; vuelve en unos segundos.');
+      if (!ok) return;
+    }
+    adminAction('/api/admin/restart', { mode }, (r) => {
+      if (mode === 'cancel') return 'Reinicio cancelado.';
+      if (mode === 'now') return 'Reiniciando…';
+      return r.busy?.length ? `Se reiniciará cuando esté libre (ahora: ${r.busy.join(', ')}).` : 'Reiniciando…';
+    });
+  };
 
   const handleCleanup = async () => {
     setCleaning(true);
@@ -441,6 +515,81 @@ export default function ConfigPage() {
 
         <section className="config-card" aria-labelledby="cfg-server">
           <h2 id="cfg-server">Servidor</h2>
+          <div aria-live="polite">
+            {adminUnreachable && <p className="config-message error">El servidor no responde (¿reiniciándose?). Reintentando…</p>}
+          </div>
+          {adminStatus && (
+            <>
+              <dl className="storage-list">
+                <div className="storage-row">
+                  <dt>Versión en marcha</dt>
+                  <dd>
+                    {adminStatus.updates.runningCommit?.slice(0, 7) || '—'}{' '}
+                    <span className="storage-files">
+                      · desde {new Date(adminStatus.server.startedAt).toLocaleString('es-ES')}
+                    </span>
+                  </dd>
+                </div>
+                <div className="storage-row">
+                  <dt>Vigilante (se relanza solo si se cae)</dt>
+                  <dd>{adminStatus.restart.supervised ? 'Activo' : 'No: arráncalo con iniciar.bat'}</dd>
+                </div>
+                {adminStatus.disks.map((disk) => (
+                  <div key={disk.drive} className="storage-row">
+                    <dt title={disk.uses.join(', ')}>
+                      Disco {disk.drive.replace(/\\$/, '')} <span className="storage-files">({disk.uses.join(', ')})</span>
+                    </dt>
+                    <dd className={disk.freeBytes < 20e9 ? 'disk-low' : undefined}>
+                      {disk.error ? 'no accesible' : `${formatBytes(disk.freeBytes)} libres de ${formatBytes(disk.totalBytes)}`}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              {adminStatus.updates.serverChanged && !adminStatus.restart.pending && (
+                <p className="hint">Hay cambios del servidor sin aplicar: hace falta reiniciar.</p>
+              )}
+              {adminStatus.updates.build?.running && <p className="hint">Recompilando la web…</p>}
+              {adminStatus.restart.pending && (
+                <p className="hint">
+                  <strong>Reinicio programado</strong> ({adminStatus.restart.pending.reason}).{' '}
+                  {adminStatus.restart.busy.length
+                    ? `Esperando a que termine: ${adminStatus.restart.busy.join(', ')}.`
+                    : 'Reiniciando en unos segundos…'}
+                </p>
+              )}
+            </>
+          )}
+          <div className="button-row">
+            <button type="button" onClick={handleUpdate} disabled={adminBusy || adminUnreachable}>
+              Buscar actualizaciones
+            </button>
+            {adminStatus?.restart?.pending ? (
+              <button type="button" className="secondary" onClick={() => handleRestart('cancel')} disabled={adminBusy}>
+                Cancelar reinicio
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => handleRestart('idle')}
+                disabled={adminBusy || !adminStatus?.restart?.supervised}
+              >
+                Reiniciar cuando esté libre
+              </button>
+            )}
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => handleRestart('now')}
+              disabled={adminBusy || !adminStatus?.restart?.supervised}
+            >
+              Reiniciar ahora
+            </button>
+          </div>
+          <Status message={adminMessage} />
+
+          <div className="config-divider" />
+
           <label className="checkbox-row" htmlFor="autostart">
             <input
               type="checkbox"

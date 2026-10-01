@@ -1761,6 +1761,10 @@ button.danger:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+.storage-row dd.disk-low {
+  color: #ff6b75;
+}
+
 .storage-files {
   font-weight: normal;
   color: var(--text-dim);

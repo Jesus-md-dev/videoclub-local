@@ -6,3 +6,6 @@ data-backup/
 .env
 server.log
 server-error.log
+
+supervisor.pid
+install.log
