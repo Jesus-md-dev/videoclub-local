@@ -88,6 +88,18 @@ const MANIFEST_FILE = path.join(BACKUP_DIR, '.backup-manifest.json');
 
 const fsp = fs.promises;
 
+// Al copiar la fecha de modificación (utimes) se pierde lo que haya por
+// debajo del milisegundo y a veces se redondea hacia arriba: la copia
+// quedaba una fracción de ms "más nueva" que el original, y en el
+// siguiente arranque se "recuperaba" del espejo un archivo idéntico (o al
+// revés, se recopiaba en cada pasada). Una modificación real va segundos
+// o minutos por delante, así que por debajo de este margen se consideran
+// la misma versión.
+const MTIME_SLACK_MS = 2;
+function isNewer(srcMs, destMs) {
+  return srcMs - destMs > MTIME_SLACK_MS;
+}
+
 function backupDir() {
   return BACKUP_DIR;
 }
@@ -101,7 +113,7 @@ function syncFile(src, dest) {
   if (!fs.existsSync(src)) return false;
   const srcStat = fs.statSync(src);
   const destStat = fs.existsSync(dest) ? fs.statSync(dest) : null;
-  if (destStat && destStat.mtimeMs >= srcStat.mtimeMs) return false;
+  if (destStat && !isNewer(srcStat.mtimeMs, destStat.mtimeMs)) return false;
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.copyFileSync(src, dest);
   fs.utimesSync(dest, srcStat.atime, srcStat.mtime);
@@ -223,7 +235,7 @@ async function backupFileItem(name) {
     return;
   }
   const destStat = await fsp.stat(dest).catch(() => null);
-  if (destStat && destStat.mtimeMs >= srcStat.mtimeMs) return;
+  if (destStat && !isNewer(srcStat.mtimeMs, destStat.mtimeMs)) return;
   await fsp.mkdir(path.dirname(dest), { recursive: true });
   await copyPreservingMtime(src, dest, srcStat);
 }
@@ -250,7 +262,7 @@ async function backupDirItem(name, manifest) {
         // compara con el destino como se hacía antes.
         if (manifest[key] === undefined) {
           const destStat = await fsp.stat(path.join(dest, entry.name));
-          if (destStat.mtimeMs >= srcStat.mtimeMs) {
+          if (!isNewer(srcStat.mtimeMs, destStat.mtimeMs)) {
             manifest[key] = srcStat.mtimeMs;
             continue;
           }
