@@ -21,16 +21,32 @@ if not exist "node_modules" (
     exit /b 1
 )
 
-call npm run build >build.log 2>&1
+rem Solo se recompila la web si algo de client\ es mas nuevo que la ultima
+rem compilacion (client\dist\index.html): compilar en cada arranque eran
+rem unos segundos tirados casi siempre (issue #137). Tras actualizar.bat,
+rem git deja los archivos cambiados con fecha nueva y se recompila sola.
+powershell -NoProfile -Command ^
+  "$dist = 'client\dist\index.html'; if (-not (Test-Path $dist)) { exit 1 };" ^
+  "$t = (Get-Item $dist).LastWriteTime;" ^
+  "$paths = @('client\src', 'client\public', 'client\index.html', 'client\package.json', 'client\package-lock.json', 'clientite.config.js');" ^
+  "$newer = Get-ChildItem $paths -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $t } | Select-Object -First 1;" ^
+  "if ($newer) { exit 1 } else { exit 0 }"
 if errorlevel 1 (
-    call :avisar "Fallo al compilar la interfaz web. Revisa build.log para mas detalle."
-    exit /b 1
+    call npm run build >build.log 2>&1
+    if errorlevel 1 (
+        call :avisar "Fallo al compilar la interfaz web. Revisa build.log para mas detalle."
+        exit /b 1
+    )
 )
 
 powershell -NoProfile -Command "Start-Process -FilePath 'node' -ArgumentList 'server\index.js' -WorkingDirectory '%~dp0' -WindowStyle Hidden -RedirectStandardOutput '%~dp0server.log' -RedirectStandardError '%~dp0server-error.log'"
 
+rem 127.0.0.1 y no localhost: el servidor solo escucha en IPv4 y, desde
+rem PowerShell, localhost prueba antes IPv6 y tarda ~2 s en caer a IPv4 -
+rem con 1 s de margen por intento no respondia nunca y salia siempre el
+rem aviso de "no respondio a tiempo" aunque el servidor estuviera en marcha.
 powershell -NoProfile -Command ^
-  "$ok = $false; for ($i = 0; $i -lt 60; $i++) { try { Invoke-WebRequest -Uri 'http://localhost:3000/' -UseBasicParsing -TimeoutSec 1 | Out-Null; $ok = $true; break } catch { Start-Sleep -Milliseconds 1000 } }; if (-not $ok) { exit 1 }"
+  "$ok = $false; for ($i = 0; $i -lt 120; $i++) { try { Invoke-WebRequest -Uri 'http://127.0.0.1:3000/health' -UseBasicParsing -TimeoutSec 2 | Out-Null; $ok = $true; break } catch { Start-Sleep -Milliseconds 1000 } }; if (-not $ok) { exit 1 }"
 if errorlevel 1 (
     call :avisar "El servidor no respondio a tiempo. Revisa server.log y server-error.log."
     exit /b 1

@@ -31,6 +31,7 @@ const backup = require('./backup');
 // como la caché de géneros, los cargan en memoria nada más arrancar), se
 // recupera lo que falte desde la copia guardada en la carpeta de vídeos.
 backup.restoreIfNeeded();
+const restoredAt = process.uptime();
 const { getOrCreateCert, CERT_FILE } = require('./https-cert');
 const catalog = require('./catalog');
 const mediaInfo = require('./mediaInfo');
@@ -58,6 +59,8 @@ const purgeRouter = require('./routes/purge');
 const normalizeRouter = require('./routes/normalize');
 const subdlRouter = require('./routes/subdl');
 const healthRouter = require('./routes/health');
+const storageRouter = require('./routes/storage');
+const cleanup = require('./cleanup');
 const dlnaRouter = require('./routes/dlna');
 const chromecastRouter = require('./routes/chromecast');
 const adminRouter = require('./routes/admin');
@@ -132,6 +135,7 @@ app.use('/api', purgeRouter);
 app.use('/api', normalizeRouter);
 app.use('/api', subdlRouter);
 app.use('/api', healthRouter);
+app.use('/api', storageRouter);
 app.use('/api', dlnaRouter);
 app.use('/api', chromecastRouter);
 app.use('/api', adminRouter);
@@ -264,15 +268,27 @@ async function scanIfConfigured() {
     const videos = await catalog.scan();
     console.log(`Catálogo: ${videos.length} vídeo(s) encontrados en ${videosPath}`);
     mediaInfo.pruneStore(videos.map((v) => v.id));
-    thumbnails.generateMissingThumbnails(videos);
     watcher.start();
-    // No se espera (ver el comentario de warmUpInBackground): el servidor
-    // ya puede empezar a responder peticiones con lo que hay del catálogo
-    // mientras esto sigue en marcha detrás.
-    warmUpInBackground(videos).catch((err) => console.error(`Precalentamiento en segundo plano: ${err.message}`));
+    return videos;
   } catch (err) {
     console.error(`Error al escanear la carpeta de vídeos: ${err.message}`);
+    return null;
   }
+}
+
+// Lo que va después de abrir el puerto (issue #137), sin que nada lo
+// espere: antes la copia de seguridad (y en el primer arranque del día, una
+// instantánea de ~2 GB) se hacía ANTES de escuchar, y el servidor pasaba
+// de segundos a minutos sin responder según crecía la biblioteca.
+async function afterListen(videos) {
+  // Primero lo que falte del espejo: si no, generateMissingThumbnails
+  // volvería a generar con ffmpeg carátulas que solo había que copiar.
+  await backup.restoreHeavyDirs();
+  if (videos) {
+    thumbnails.generateMissingThumbnails(videos);
+    warmUpInBackground(videos).catch((err) => console.error(`Precalentamiento en segundo plano: ${err.message}`));
+  }
+  await backup.backupNow();
 }
 
 // Mantenimiento periódico de bajo riesgo (ver conversación que decidió
@@ -298,20 +314,35 @@ const BACKUP_INTERVAL_MS = 10 * 60 * 1000;
 function scheduleShutdownBackup() {
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
-      backup.backupNow();
+      backup.backupEssentialsSync();
       process.exit(0);
     });
   }
 }
 
+// Limpieza de data/ y del espejo (server/cleanup.js): se comprueba cada
+// hora si toca (una vez al día), empezando un rato después de arrancar
+// para no sumarse al precalentamiento inicial.
+const CLEANUP_FIRST_CHECK_MS = 15 * 60 * 1000;
+const CLEANUP_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+
 async function start() {
-  await scanIfConfigured();
-  backup.backupNow();
-  setInterval(backup.backupNow, BACKUP_INTERVAL_MS).unref();
+  const scanStartedAt = process.uptime();
+  const videos = await scanIfConfigured();
+  const scannedAt = process.uptime();
+  setInterval(() => backup.backupNow(), BACKUP_INTERVAL_MS).unref();
   setInterval(runPeriodicMaintenance, MAINTENANCE_INTERVAL_MS).unref();
+  setTimeout(cleanup.runIfDue, CLEANUP_FIRST_CHECK_MS).unref();
+  setInterval(cleanup.runIfDue, CLEANUP_CHECK_INTERVAL_MS).unref();
   scheduleShutdownBackup();
 
   app.listen(PORT, '0.0.0.0', () => {
+    console.log(
+      `Arranque: escuchando ${process.uptime().toFixed(1)} s después de lanzar el proceso ` +
+        `(restaurar copia ${restoredAt.toFixed(1)} s, cargar módulos ${(scanStartedAt - restoredAt).toFixed(1)} s, ` +
+        `escanear catálogo ${(scannedAt - scanStartedAt).toFixed(1)} s)`
+    );
+    afterListen(videos).catch((err) => console.error(`Tareas tras arrancar: ${err.message}`));
     console.log(`Videoclub local escuchando en el puerto ${PORT}`);
     console.log(`  Local:    http://localhost:${PORT}`);
     for (const ip of localIps()) {

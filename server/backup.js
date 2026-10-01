@@ -67,6 +67,27 @@ const ITEMS = [
   { name: 'subtitle-downloads.json', type: 'file' },
 ];
 
+// Carpetas con miles de archivos (issue #137): recorrerlas entera de forma
+// síncrona al arrancar tenía el servidor sin responder varios segundos (y
+// más cuanto más crece la biblioteca). Se restauran en segundo plano
+// (restoreHeavyDirs) y no entran en las instantáneas diarias (#138): son
+// lo que hacía que cada instantánea ocupara ~2 GB. Siguen en el espejo.
+const HEAVY_DIRS = new Set(['thumbnails', 'trickplay', 'subtitles']);
+const SNAPSHOT_ITEMS = ITEMS.filter(({ name }) => !HEAVY_DIRS.has(name));
+
+// Instantáneas que se conservan: las SNAPSHOT_DAILY más recientes y, de
+// las anteriores, la más reciente de cada semana hasta SNAPSHOT_WEEKLY
+// semanas.
+const SNAPSHOT_DAILY = 7;
+const SNAPSHOT_WEEKLY = 4;
+
+// Índice de lo ya copiado al espejo (ruta relativa -> mtime del origen al
+// copiarlo): así respaldar una carpeta solo mira el origen, no también el
+// destino archivo a archivo.
+const MANIFEST_FILE = path.join(BACKUP_DIR, '.backup-manifest.json');
+
+const fsp = fs.promises;
+
 function backupDir() {
   return BACKUP_DIR;
 }
@@ -75,9 +96,7 @@ function backupDir() {
 // todavía), preservando la fecha de modificación del origen. Es lo que
 // convierte esto en una sincronización real "gana el más reciente" en vez
 // de un simple volcado: se usa tanto para restaurar (copia -> local) como
-// para respaldar (local -> copia), así que no se reescribe sin necesidad un
-// archivo que ya está igual a ambos lados (importante para no reescribir de
-// más en el disco de vídeos, a veces una red/USB, con miles de carátulas).
+// para respaldar (local -> copia).
 function syncFile(src, dest) {
   if (!fs.existsSync(src)) return false;
   const srcStat = fs.statSync(src);
@@ -89,9 +108,7 @@ function syncFile(src, dest) {
   return true;
 }
 
-// Igual que syncFile pero para una carpeta plana (progress/, thumbnails/):
-// compara y sincroniza archivo a archivo, nunca de golpe, para no perder ni
-// pisar nada que solo exista en un lado todavía.
+// Igual que syncFile pero para una carpeta plana pequeña (progress/).
 function syncDir(src, dest) {
   if (!fs.existsSync(src)) return false;
   let changed = false;
@@ -108,16 +125,16 @@ function syncItem(src, dest, type) {
 }
 
 // Se llama al arrancar, antes de que el resto del servidor lea sus ficheros
-// de data/: recupera de la copia guardada en la carpeta de vídeos lo que
-// falte localmente Y lo que esté desactualizado (p.ej. se ha usado el
-// videoclub desde otro PC/servidor más recientemente que en este). Nunca
-// pisa un dato local que sea igual o más reciente que el de la copia.
+// de data/: recupera del espejo lo que falte localmente Y lo que esté
+// desactualizado. Nunca pisa un dato local que sea igual o más reciente que
+// el de la copia. Las carpetas grandes van aparte, en restoreHeavyDirs().
 function restoreIfNeeded() {
   const dir = backupDir();
   if (!dir || !fs.existsSync(dir)) return;
 
   let restoredSettings = false;
   for (const { name, type } of ITEMS) {
+    if (HEAVY_DIRS.has(name)) continue;
     const src = path.join(dir, name);
     const dest = path.join(DATA_PATH, name);
     try {
@@ -137,90 +154,288 @@ function restoreIfNeeded() {
   }
 }
 
-// Guarda en la carpeta de vídeos una copia de los datos locales, para poder
-// recuperarlos al usar el videoclub desde otro PC/servidor.
-function backupNow() {
+async function listNames(dir) {
+  try {
+    return new Set(await fsp.readdir(dir));
+  } catch {
+    return new Set();
+  }
+}
+
+async function copyPreservingMtime(src, dest, srcStat) {
+  await fsp.copyFile(src, dest);
+  await fsp.utimes(dest, srcStat.atime, srcStat.mtime);
+}
+
+// Restaura en segundo plano carátulas, trickplay y subtítulos que falten en
+// local pero sigan en el espejo (p.ej. tras perder o cambiar el disco de
+// datos). Solo los que faltan: estos archivos no se editan en el sitio, así
+// que no hace falta comparar fechas de los miles que ya están.
+async function restoreHeavyDirs() {
   const dir = backupDir();
-  if (!dir) return;
-  for (const { name, type } of ITEMS) {
-    const src = path.join(DATA_PATH, name);
-    if (!fs.existsSync(src)) continue;
+  if (!dir || !fs.existsSync(dir)) return;
+  for (const name of HEAVY_DIRS) {
+    const src = path.join(dir, name);
+    const dest = path.join(DATA_PATH, name);
+    const local = await listNames(dest);
+    let restored = 0;
+    for (const file of await listNames(src)) {
+      if (local.has(file)) continue;
+      try {
+        const st = await fsp.stat(path.join(src, file));
+        if (!st.isFile()) continue;
+        await fsp.mkdir(dest, { recursive: true });
+        await copyPreservingMtime(path.join(src, file), path.join(dest, file), st);
+        restored += 1;
+      } catch (err) {
+        console.warn(`No se pudo recuperar "${name}/${file}" de la copia de seguridad: ${err.message}`);
+      }
+    }
+    if (restored) console.log(`Recuperados ${restored} archivo(s) de "${name}" desde la copia de seguridad`);
+  }
+}
+
+// Una sola operación sobre el espejo a la vez (copia, instantánea o la
+// limpieza de cleanup.js): si la limpieza moviera archivos a la papelera a
+// mitad de una copia, esta podría volver a dejarlos en el espejo.
+let chain = Promise.resolve();
+function exclusive(fn) {
+  const run = chain.then(fn);
+  chain = run.catch(() => {});
+  return run;
+}
+
+function readManifest() {
+  try {
+    return JSON.parse(fs.readFileSync(MANIFEST_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+async function backupFileItem(name) {
+  const src = path.join(DATA_PATH, name);
+  const dest = path.join(BACKUP_DIR, name);
+  let srcStat;
+  try {
+    srcStat = await fsp.stat(src);
+  } catch {
+    return;
+  }
+  const destStat = await fsp.stat(dest).catch(() => null);
+  if (destStat && destStat.mtimeMs >= srcStat.mtimeMs) return;
+  await fsp.mkdir(path.dirname(dest), { recursive: true });
+  await copyPreservingMtime(src, dest, srcStat);
+}
+
+async function backupDirItem(name, manifest) {
+  const src = path.join(DATA_PATH, name);
+  const dest = path.join(BACKUP_DIR, name);
+  let entries;
+  try {
+    entries = await fsp.readdir(src, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  await fsp.mkdir(dest, { recursive: true });
+  const inDest = await listNames(dest);
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const key = `${name}/${entry.name}`;
     try {
-      syncItem(src, path.join(dir, name), type);
+      const srcStat = await fsp.stat(path.join(src, entry.name));
+      if (inDest.has(entry.name)) {
+        if (manifest[key] === srcStat.mtimeMs) continue;
+        // Primera pasada con el índice (o archivo que no está en él): se
+        // compara con el destino como se hacía antes.
+        if (manifest[key] === undefined) {
+          const destStat = await fsp.stat(path.join(dest, entry.name));
+          if (destStat.mtimeMs >= srcStat.mtimeMs) {
+            manifest[key] = srcStat.mtimeMs;
+            continue;
+          }
+        }
+      }
+      await copyPreservingMtime(path.join(src, entry.name), path.join(dest, entry.name), srcStat);
+      manifest[key] = srcStat.mtimeMs;
+    } catch (err) {
+      console.warn(`No se pudo copiar "${key}" a la copia de seguridad: ${err.message}`);
+    }
+  }
+}
+
+// Guarda en el espejo una copia de los datos. Asíncrono a propósito: antes
+// era síncrono y bloqueaba el servidor entero unos segundos cada vez que se
+// guardaba progreso (scheduleBackup) y, al arrancar, antes de abrir el puerto.
+let backupQueued = null;
+function backupNow() {
+  // Si ya hay una copia esperando turno, esa misma recogerá estos cambios.
+  if (backupQueued) return backupQueued;
+  backupQueued = exclusive(async () => {
+    backupQueued = null;
+    const dir = backupDir();
+    if (!dir) return;
+    try {
+      await backupEverything();
+    } catch (err) {
+      // Nunca rechaza: quien la llama no suele esperar la promesa.
+      console.warn(`Copia de seguridad: ${err.message}`);
+    }
+  });
+  return backupQueued;
+}
+
+async function backupEverything() {
+  const manifest = readManifest();
+  for (const { name, type } of ITEMS) {
+    try {
+      if (type === 'dir') await backupDirItem(name, manifest);
+      else await backupFileItem(name);
     } catch (err) {
       console.warn(`No se pudo actualizar la copia de seguridad de "${name}": ${err.message}`);
     }
   }
-  snapshotNow();
+  try {
+    await fsp.writeFile(MANIFEST_FILE, JSON.stringify(manifest));
+  } catch (err) {
+    console.warn(`No se pudo guardar el índice de la copia de seguridad: ${err.message}`);
+  }
+  await snapshotNow();
+}
+
+// Al cerrar el servidor no da tiempo a la copia asíncrona (process.exit va
+// justo detrás): se copia en síncrono solo lo pequeño e importante
+// (progreso, perfiles, ajustes...), que es lo que se perdería.
+function backupEssentialsSync() {
+  for (const { name, type } of SNAPSHOT_ITEMS) {
+    try {
+      syncItem(path.join(DATA_PATH, name), path.join(BACKUP_DIR, name), type);
+    } catch (err) {
+      console.warn(`No se pudo actualizar la copia de seguridad de "${name}": ${err.message}`);
+    }
+  }
 }
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
-// Copia recursiva simple: los ítems respaldados son JSON sueltos y unas
-// pocas carpetas de archivos pequeños (carátulas, subtítulos...), nada que
-// necesite streaming ni justifique una dependencia externa.
-function copyRecursive(src, dest) {
-  const stat = fs.statSync(src);
+async function copyRecursive(src, dest) {
+  const stat = await fsp.stat(src);
   if (stat.isDirectory()) {
-    fs.mkdirSync(dest, { recursive: true });
-    for (const name of fs.readdirSync(src)) {
-      copyRecursive(path.join(src, name), path.join(dest, name));
+    await fsp.mkdir(dest, { recursive: true });
+    for (const name of await fsp.readdir(src)) {
+      await copyRecursive(path.join(src, name), path.join(dest, name));
     }
   } else {
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.copyFileSync(src, dest);
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    await fsp.copyFile(src, dest);
   }
 }
 
-// Como mucho una instantánea nueva por día (se llama desde backupNow, que
-// ya se repite solo cada 10 minutos y tras cada cambio - de sobra para
-// pillar el primer momento libre de cada día sin necesidad de su propio
-// temporizador). Si ya existe la carpeta de hoy, no se toca - la
-// instantánea es del primer estado del día, no del último, precisamente
-// para no heredar una corrupción de última hora del mismo día en que pasó.
-function snapshotNow() {
+// Como mucho una instantánea nueva por día. Si ya existe la carpeta de hoy,
+// no se toca - la instantánea es del primer estado del día, no del último,
+// precisamente para no heredar una corrupción de última hora del mismo día
+// en que pasó. Solo lleva SNAPSHOT_ITEMS (unos MB, no los ~2 GB de antes).
+async function snapshotNow() {
   const dir = backupDir();
   if (!dir) return;
   const key = todayKey();
   const target = path.join(SNAPSHOTS_DIR, key);
   if (fs.existsSync(target)) return;
 
-  for (const { name } of ITEMS) {
+  for (const { name } of SNAPSHOT_ITEMS) {
     const src = path.join(dir, name);
     if (!fs.existsSync(src)) continue;
     try {
-      copyRecursive(src, path.join(target, name));
+      await copyRecursive(src, path.join(target, name));
     } catch (err) {
       console.warn(`No se pudo incluir "${name}" en la instantánea del ${key}: ${err.message}`);
     }
   }
   console.log(`Instantánea de copia de seguridad guardada: ${target}`);
-  pruneOldSnapshots();
+  await pruneOldSnapshots();
 }
 
-// Nombres de carpeta "YYYY-MM-DD": el constructor de Date los interpreta
-// bien tal cual, no hace falta parsear a mano.
-function pruneOldSnapshots() {
-  if (!fs.existsSync(SNAPSHOTS_DIR)) return;
-  const cutoff = Date.now() - SNAPSHOT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  for (const name of fs.readdirSync(SNAPSHOTS_DIR)) {
-    const time = new Date(name).getTime();
-    if (!Number.isNaN(time) && time < cutoff) {
-      fs.rmSync(path.join(SNAPSHOTS_DIR, name), { recursive: true, force: true });
-      console.log(`Instantánea de copia de seguridad eliminada por antigüedad (${SNAPSHOT_RETENTION_DAYS} días): ${name}`);
+// Lunes de la semana de una fecha "YYYY-MM-DD", como clave de semana.
+function weekKey(day) {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
+// Qué instantáneas se quedan: las SNAPSHOT_DAILY más recientes y, de las
+// anteriores, la más reciente de cada semana hasta SNAPSHOT_WEEKLY semanas.
+function snapshotsToKeep(days) {
+  const sorted = [...days].sort().reverse();
+  const keep = new Set(sorted.slice(0, SNAPSHOT_DAILY));
+  const weeks = new Set();
+  for (const day of sorted.slice(SNAPSHOT_DAILY)) {
+    const week = weekKey(day);
+    if (weeks.has(week) || weeks.size >= SNAPSHOT_WEEKLY) continue;
+    weeks.add(week);
+    keep.add(day);
+  }
+  return keep;
+}
+
+async function removeDir(target) {
+  await fsp.rm(target, { recursive: true, force: true });
+  // fs.rm puede no hacer nada en silencio en Windows (ver #122): se comprueba.
+  if (fs.existsSync(target)) throw new Error(`no se pudo borrar ${target}`);
+}
+
+// Borra las instantáneas que ya no toca guardar y quita de las que quedan
+// las carpetas grandes que tenían las de antes de #138 (siguen en el
+// espejo). Devuelve qué ha hecho, para el resumen de la limpieza.
+async function pruneOldSnapshots() {
+  const result = { removed: [], slimmed: 0 };
+  if (!fs.existsSync(SNAPSHOTS_DIR)) return result;
+  const days = (await fsp.readdir(SNAPSHOTS_DIR)).filter((name) => /^\d{4}-\d{2}-\d{2}$/.test(name));
+  const keep = snapshotsToKeep(days);
+  for (const day of days) {
+    const target = path.join(SNAPSHOTS_DIR, day);
+    try {
+      if (!keep.has(day)) {
+        await removeDir(target);
+        result.removed.push(day);
+        console.log(`Instantánea de copia de seguridad eliminada (se guardan ${SNAPSHOT_DAILY} diarias y ${SNAPSHOT_WEEKLY} semanales): ${day}`);
+        continue;
+      }
+      let slimmed = false;
+      for (const heavy of HEAVY_DIRS) {
+        const heavyPath = path.join(target, heavy);
+        if (!fs.existsSync(heavyPath)) continue;
+        await removeDir(heavyPath);
+        slimmed = true;
+      }
+      if (slimmed) result.slimmed += 1;
+    } catch (err) {
+      console.warn(`Limpieza de la instantánea ${day}: ${err.message}`);
     }
   }
+  return result;
 }
 
-// Para no reescribir en el disco de vídeos (a veces una red/USB) en cada
-// pequeño cambio (p.ej. cada segundo de reproducción), se agrupan los
-// cambios cercanos en una sola copia.
+// Para no reescribir en cada pequeño cambio (p.ej. cada pocos segundos de
+// reproducción), se agrupan los cambios cercanos en una sola copia.
 let pending = null;
 function scheduleBackup() {
   clearTimeout(pending);
-  pending = setTimeout(backupNow, 5000);
+  pending = setTimeout(() => {
+    backupNow().catch((err) => console.warn(`Copia de seguridad: ${err.message}`));
+  }, 5000);
 }
 
-module.exports = { restoreIfNeeded, backupNow, scheduleBackup };
+module.exports = {
+  BACKUP_DIR,
+  SNAPSHOTS_DIR,
+  HEAVY_DIRS,
+  restoreIfNeeded,
+  restoreHeavyDirs,
+  backupNow,
+  backupEssentialsSync,
+  scheduleBackup,
+  exclusive,
+  pruneOldSnapshots,
+};

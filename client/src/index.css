@@ -1730,6 +1730,42 @@ button.danger:disabled {
   margin: 24px 0 20px;
 }
 
+.storage-list {
+  margin: 0 0 12px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.storage-row {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 10px 14px;
+  background: var(--bg);
+}
+
+.storage-row + .storage-row {
+  border-top: 2px solid var(--border);
+}
+
+.storage-row dt {
+  color: var(--text);
+}
+
+.storage-row dd {
+  margin: 0;
+  font-weight: bold;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.storage-files {
+  font-weight: normal;
+  color: var(--text-dim);
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;

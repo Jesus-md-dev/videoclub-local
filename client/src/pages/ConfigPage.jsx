@@ -34,6 +34,34 @@ export default function ConfigPage() {
   const [powerMessage, setPowerMessage] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [showSubdlKey, setShowSubdlKey] = useState(false);
+  const [storage, setStorage] = useState(null);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanupMessage, setCleanupMessage] = useState(null);
+
+  // Medir el espacio recorre decenas de miles de archivos: se pide aparte
+  // para no retrasar el resto de la página.
+  useEffect(() => {
+    fetch('/api/storage')
+      .then((res) => res.json())
+      .then(setStorage)
+      .catch(() => {});
+  }, []);
+
+  const handleCleanup = async () => {
+    setCleaning(true);
+    setCleanupMessage(null);
+    try {
+      const res = await fetch('/api/storage/cleanup', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setStorage({ usage: data.usage, cleanup: data.cleanup });
+      setCleanupMessage({ text: describeCleanup(data.result), ok: !data.result.skippedOrphans });
+    } catch (err) {
+      setCleanupMessage({ text: err.message, ok: false });
+    } finally {
+      setCleaning(false);
+    }
+  };
 
   useEffect(() => {
     fetch('/api/settings')
@@ -548,6 +576,39 @@ export default function ConfigPage() {
         <section className="config-card" aria-labelledby="cfg-maintenance">
           <h2 id="cfg-maintenance">Mantenimiento</h2>
 
+          <h3>Espacio en disco</h3>
+          <p className="hint" id="cleanup-hint">
+            Una vez al día se mueven a una papelera (que se vacía a los 7 días) las carátulas, vistas previas y
+            subtítulos de vídeos que ya no existen, y se borran las instantáneas viejas (se guardan 7 diarias y 4
+            semanales). Nunca toca nada de vídeos archivados o perdidos.
+          </p>
+          {storage ? (
+            <dl className="storage-list">
+              {storage.usage.items.map((item) => (
+                <div key={item.key} className="storage-row">
+                  <dt title={item.path}>{item.label}</dt>
+                  <dd>
+                    {formatBytes(item.bytes)} <span className="storage-files">· {item.files.toLocaleString('es-ES')} archivos</span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="hint">Midiendo…</p>
+          )}
+          {storage?.cleanup?.lastRunAt && (
+            <p className="hint">
+              Última limpieza: {new Date(storage.cleanup.lastRunAt).toLocaleString('es-ES')}
+              {storage.cleanup.lastResult && <> — {describeCleanup(storage.cleanup.lastResult)}</>}
+            </p>
+          )}
+          <button type="button" aria-describedby="cleanup-hint" onClick={handleCleanup} disabled={cleaning}>
+            {cleaning ? 'Limpiando…' : 'Limpiar ahora'}
+          </button>
+          <Status message={cleanupMessage} />
+
+          <div className="config-divider" />
+
           <h3>Vídeos archivados sin análisis</h3>
           <p className="hint" id="health-hint">
             Un vídeo archivado (sin original, solo HLS) necesita su análisis de pistas guardado; si se pierde,
@@ -694,6 +755,23 @@ export default function ConfigPage() {
       )}
     </>
   );
+}
+
+function formatBytes(bytes) {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  if (bytes >= 1e6) return `${Math.round(bytes / 1e6)} MB`;
+  return `${Math.round(bytes / 1e3)} KB`;
+}
+
+function describeCleanup(result) {
+  const parts = [
+    `${result.files} archivo(s) sobrantes a la papelera (${formatBytes(result.bytes)})`,
+    `${result.snapshotsRemoved.length} instantánea(s) borradas`,
+  ];
+  if (result.snapshotsSlimmed) parts.push(`${result.snapshotsSlimmed} aligeradas`);
+  if (result.trashEmptied.length) parts.push(`papelera vaciada (${result.trashEmptied.length} día/s)`);
+  const text = `${parts.join(', ')}.`;
+  return result.skippedOrphans ? `No se quitaron archivos sobrantes: ${result.skippedOrphans}. ${text}` : text;
 }
 
 // La región aria-live existe siempre (vacía si no hay mensaje): si se
