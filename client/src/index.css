@@ -1525,7 +1525,8 @@ video {
   margin-bottom: 8px;
 }
 
-.config-wrap input[type='text'] {
+.config-wrap input[type='text'],
+.config-wrap input[type='password'] {
   width: 100%;
   padding: 12px 14px;
   border-radius: 8px;
@@ -1554,9 +1555,13 @@ video {
   cursor: pointer;
 }
 
-.config-wrap input[type='text']:focus {
+/* El borde solo cambiaba de color al enfocar, muy poco visible: se suma un
+   anillo como el del resto de controles (focus-visible, arriba). */
+.config-wrap input[type='text']:focus,
+.config-wrap input[type='password']:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 201, 74, 0.35);
 }
 
 .config-wrap button {
@@ -1575,8 +1580,14 @@ video {
   background: var(--accent-glow);
 }
 
-.config-wrap button:disabled {
-  opacity: 0.6;
+/* Con solo opacidad, un botón amarillo deshabilitado parecía otro tono de
+   activo: gris y sin sombra se lee como "no disponible". */
+.config-wrap button:disabled,
+.config-wrap button:disabled:hover {
+  background: var(--border);
+  color: var(--text-dim);
+  border-color: transparent;
+  box-shadow: none;
   cursor: not-allowed;
 }
 
@@ -1618,6 +1629,149 @@ button.danger:disabled {
   display: flex;
   gap: 10px;
   align-items: flex-start;
+}
+
+/* ---- Página de Configuración: tarjetas por tema con encabezados reales
+   (h1 > h2 > h3) en vez de una lista plana de títulos. ---- */
+.config-page {
+  max-width: 680px;
+}
+
+.config-page .config-title {
+  font-size: 26px;
+  margin: 0 0 24px;
+  color: var(--text);
+}
+
+.config-card {
+  background: var(--bg-alt);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: 20px clamp(16px, 3vw, 28px) 24px;
+  margin-bottom: 24px;
+}
+
+.config-card h2 {
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 2.5px;
+  color: var(--accent);
+  margin: 0 0 18px;
+}
+
+.config-card h3 {
+  font-size: 16px;
+  color: var(--text);
+  margin: 20px 0 6px;
+}
+
+.config-card h2 + h3,
+.config-card .config-divider + h3 {
+  margin-top: 0;
+}
+
+.config-page label {
+  letter-spacing: 1px;
+}
+
+/* Dentro de la tarjeta, el campo va sobre el fondo de la página para
+   distinguirse de la tarjeta (antes ambos eran --bg-alt). */
+.config-card input[type='text'],
+.config-card input[type='password'] {
+  background: var(--bg);
+  margin-bottom: 0;
+}
+
+/* .hint global tiene margin-top negativo para pegarse a un campo; aquí
+   hacía que el texto se montara sobre el botón de encima. */
+.config-page .hint {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 8px 0 16px;
+}
+
+.config-page .path-row input[type='text'],
+.config-page .path-row input[type='password'] {
+  min-width: 0;
+}
+
+.config-page a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+.config-page a:hover {
+  color: var(--accent-glow);
+}
+
+.config-page .config-message {
+  margin: 12px 0 0;
+}
+
+.config-page .config-message:not(.ok):not(.error) {
+  color: var(--text);
+}
+
+.config-page .status-ok {
+  color: #6fcf97;
+}
+
+.config-page .status-off {
+  color: var(--text-dim);
+}
+
+.config-page .checkbox-row {
+  margin-bottom: 0;
+  min-height: 44px;
+}
+
+.config-divider {
+  border-top: 2px solid var(--border);
+  margin: 24px 0 20px;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.config-progress {
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.config-card.danger-zone {
+  border-color: rgba(230, 57, 70, 0.55);
+}
+
+/* --danger como texto sobre la tarjeta se queda en 3.4:1; este rojo más
+   claro pasa de 5:1. */
+.config-card.danger-zone h2,
+.config-page .config-message.error {
+  color: #ff6b75;
+}
+
+/* El rojo de --danger con texto blanco no llega a 4.5:1; un tono algo más
+   oscuro sí, sin dejar de leerse como peligro. */
+.config-page button.danger {
+  background: #c62b38;
+  color: #fff;
+  border: 2px solid var(--border-strong);
+}
+
+.config-page button.danger:hover:not(:disabled) {
+  background: #d93341;
+}
+
+.config-page button.danger:disabled {
+  background: var(--border);
+  color: var(--text-dim);
+  border-color: transparent;
+  box-shadow: none;
+  opacity: 1;
 }
 
 .queue-wrap {
