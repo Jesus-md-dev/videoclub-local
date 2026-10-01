@@ -1536,6 +1536,24 @@ video {
   margin-bottom: 16px;
 }
 
+.config-wrap label.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.config-wrap label.checkbox-row input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .config-wrap input[type='text']:focus {
   outline: none;
   border-color: var(--accent);

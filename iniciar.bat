@@ -4,7 +4,9 @@ cd /d "%~dp0"
 
 if "%~1"=="__run__" goto :run
 
-powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -FilePath '%~f0' -ArgumentList '__run__' -WorkingDirectory '%~dp0' -WindowStyle Hidden"
+rem "silencioso" lo pasa el acceso directo de inicio automatico (ver
+rem server/autostart.js): sin aviso de "Servidor en marcha" en cada encendido.
+powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -FilePath '%~f0' -ArgumentList '__run__ %~1' -WorkingDirectory '%~dp0' -WindowStyle Hidden"
 exit /b 0
 
 :run
@@ -34,7 +36,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-call :avisar "Servidor en marcha en http://localhost:3000. Para detenerlo, ejecuta detener.bat."
+if not "%~2"=="silencioso" call :avisar "Servidor en marcha en http://localhost:3000. Para detenerlo, ejecuta detener.bat."
 exit /b 0
 
 :avisar

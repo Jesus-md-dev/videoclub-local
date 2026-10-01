@@ -8,6 +8,7 @@ const hls = require('../hls');
 const watcher = require('../watcher');
 const backup = require('../backup');
 const asyncHandler = require('../asyncHandler');
+const autostart = require('../autostart');
 
 const router = express.Router();
 
@@ -39,6 +40,26 @@ router.post(
     hls.warmAll(videos);
     watcher.start();
     res.json({ videosPath: getVideosPath(), count: videos.length });
+  })
+);
+
+router.get('/settings/autostart', (req, res) => {
+  res.json(autostart.getStatus());
+});
+
+router.post(
+  '/settings/autostart',
+  asyncHandler(async (req, res) => {
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'Falta el campo "enabled" (true/false)' });
+      return;
+    }
+    try {
+      res.json(await autostart.setEnabled(enabled));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   })
 );
 

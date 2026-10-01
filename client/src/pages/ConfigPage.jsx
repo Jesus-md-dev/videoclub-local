@@ -26,6 +26,9 @@ export default function ConfigPage() {
   const [deleteConfirmTitle, setDeleteConfirmTitle] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState(null);
+  const [autostart, setAutostart] = useState(null);
+  const [autostartSaving, setAutostartSaving] = useState(false);
+  const [autostartMessage, setAutostartMessage] = useState(null);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -33,7 +36,36 @@ export default function ConfigPage() {
       .then((data) => {
         if (data.videosPath) setVideosPath(data.videosPath);
       });
+    fetch('/api/settings/autostart')
+      .then((res) => res.json())
+      .then(setAutostart)
+      .catch(() => {});
   }, []);
+
+  const handleAutostart = async (enabled) => {
+    setAutostartSaving(true);
+    setAutostartMessage(null);
+    try {
+      const res = await fetch('/api/settings/autostart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setAutostart(data);
+      setAutostartMessage({
+        text: data.enabled
+          ? 'Activado: el servidor arrancará solo al iniciar sesión en Windows.'
+          : 'Desactivado: ya no arrancará solo.',
+        ok: true,
+      });
+    } catch (err) {
+      setAutostartMessage({ text: err.message, ok: false });
+    } finally {
+      setAutostartSaving(false);
+    }
+  };
 
   // Si ya había una pasada en marcha (p.ej. se recargó la página a medias),
   // se engancha a su progreso en vez de mostrar el botón como si no hubiera
@@ -284,6 +316,28 @@ export default function ConfigPage() {
         </button>
         {message && (
           <p className={`config-message ${message.ok ? 'ok' : 'error'}`}>{message.text}</p>
+        )}
+
+        <p className="section-title" style={{ marginTop: 32 }}>
+          Inicio automático
+        </p>
+        <label className="checkbox-row" htmlFor="autostart">
+          <input
+            type="checkbox"
+            id="autostart"
+            checked={Boolean(autostart?.enabled)}
+            disabled={!autostart?.supported || autostartSaving}
+            onChange={(e) => handleAutostart(e.target.checked)}
+          />
+          Arrancar el servidor al encender el PC
+        </label>
+        <p className="hint">
+          {autostart && !autostart.supported
+            ? 'Solo disponible cuando el servidor corre en Windows.'
+            : 'Pone un acceso directo a iniciar.bat en la carpeta Inicio de Windows: arranca al iniciar sesión, en segundo plano y sin avisos salvo si algo falla.'}
+        </p>
+        {autostartMessage && (
+          <p className={`config-message ${autostartMessage.ok ? 'ok' : 'error'}`}>{autostartMessage.text}</p>
         )}
 
         <p className="section-title" style={{ marginTop: 32 }}>
