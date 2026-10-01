@@ -29,6 +29,10 @@ export default function ConfigPage() {
   const [autostart, setAutostart] = useState(null);
   const [autostartSaving, setAutostartSaving] = useState(false);
   const [autostartMessage, setAutostartMessage] = useState(null);
+  const [power, setPower] = useState(null);
+  const [powerBusy, setPowerBusy] = useState(false);
+  const [powerMessage, setPowerMessage] = useState(null);
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     fetch('/api/settings')
@@ -40,7 +44,83 @@ export default function ConfigPage() {
       .then((res) => res.json())
       .then(setAutostart)
       .catch(() => {});
+    fetch('/api/power')
+      .then((res) => res.json())
+      .then(setPower)
+      .catch(() => {});
   }, []);
+
+  const shutdownAt = power?.scheduledFor ? new Date(power.scheduledFor).getTime() : null;
+  const shutdownSecondsLeft = shutdownAt ? Math.max(0, Math.ceil((shutdownAt - now) / 1000)) : null;
+
+  useEffect(() => {
+    if (!shutdownAt) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [shutdownAt]);
+
+  // Antes de confirmar, avisa si hay trabajos a medias (HLS, traslados de
+  // originales a otro disco): al apagar se cortan y se retoman en el
+  // siguiente arranque, pero mejor saberlo.
+  const describeRunningWork = async () => {
+    const parts = [];
+    try {
+      const queue = await fetch('/api/queue').then((res) => res.json());
+      const hlsLeft = (queue.summary?.processing || 0) + (queue.summary?.pending || 0);
+      if (hlsLeft > 0) parts.push(`${hlsLeft} vídeo(s) generando o esperando HLS`);
+    } catch {
+      // Sin datos de la cola: se confirma igual, solo sin el aviso.
+    }
+    try {
+      const moves = await fetch('/api/move-queue').then((res) => res.json());
+      const movesLeft = (moves.moving?.length || 0) + (moves.queued?.length || 0);
+      if (movesLeft > 0) parts.push(`${movesLeft} original(es) trasladándose a otro disco`);
+    } catch {
+      // Igual que arriba.
+    }
+    return parts;
+  };
+
+  const handleShutdown = async () => {
+    setPowerBusy(true);
+    setPowerMessage(null);
+    try {
+      const running = await describeRunningWork();
+      const warning = running.length
+        ? `\n\nHay trabajo en marcha que se cortará (se retoma al volver a encender): ${running.join(', ')}.`
+        : '';
+      // eslint-disable-next-line no-alert
+      const confirmed = window.confirm(
+        `¿Apagar el PC del servidor? Se apagará en ${power?.delaySeconds || 60} segundos y la web dejará de funcionar hasta que se vuelva a encender.${warning}`
+      );
+      if (!confirmed) return;
+      const res = await fetch('/api/power/shutdown', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setNow(Date.now());
+      setPower(data);
+    } catch (err) {
+      setPowerMessage({ text: err.message, ok: false });
+    } finally {
+      setPowerBusy(false);
+    }
+  };
+
+  const handleCancelShutdown = async () => {
+    setPowerBusy(true);
+    setPowerMessage(null);
+    try {
+      const res = await fetch('/api/power/cancel', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      setPower(data);
+      setPowerMessage({ text: 'Apagado cancelado.', ok: true });
+    } catch (err) {
+      setPowerMessage({ text: err.message, ok: false });
+    } finally {
+      setPowerBusy(false);
+    }
+  };
 
   const handleAutostart = async (enabled) => {
     setAutostartSaving(true);
@@ -338,6 +418,37 @@ export default function ConfigPage() {
         </p>
         {autostartMessage && (
           <p className={`config-message ${autostartMessage.ok ? 'ok' : 'error'}`}>{autostartMessage.text}</p>
+        )}
+
+        <p className="section-title danger" style={{ marginTop: 32 }}>
+          Apagar el PC
+        </p>
+        <p className="hint">
+          {power && !power.supported
+            ? 'Solo disponible cuando el servidor corre en Windows.'
+            : `Apaga el equipo donde corre el servidor, con ${power?.delaySeconds || 60} segundos de margen para cancelarlo desde aquí.`}
+        </p>
+        {shutdownSecondsLeft !== null ? (
+          <>
+            <p className="config-message error">
+              {shutdownSecondsLeft > 0 ? `El PC se apagará en ${shutdownSecondsLeft} s.` : 'Apagando el PC…'}
+            </p>
+            <button type="button" onClick={handleCancelShutdown} disabled={powerBusy}>
+              Cancelar apagado
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="danger"
+            onClick={handleShutdown}
+            disabled={!power?.supported || powerBusy}
+          >
+            Apagar el PC
+          </button>
+        )}
+        {powerMessage && (
+          <p className={`config-message ${powerMessage.ok ? 'ok' : 'error'}`}>{powerMessage.text}</p>
         )}
 
         <p className="section-title" style={{ marginTop: 32 }}>

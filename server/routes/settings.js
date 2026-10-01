@@ -9,6 +9,7 @@ const watcher = require('../watcher');
 const backup = require('../backup');
 const asyncHandler = require('../asyncHandler');
 const autostart = require('../autostart');
+const power = require('../power');
 
 const router = express.Router();
 
@@ -57,6 +58,32 @@ router.post(
     }
     try {
       res.json(await autostart.setEnabled(enabled));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  })
+);
+
+router.get('/power', (req, res) => {
+  res.json(power.getStatus());
+});
+
+router.post(
+  '/power/shutdown',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await power.scheduleShutdown());
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  })
+);
+
+router.post(
+  '/power/cancel',
+  asyncHandler(async (req, res) => {
+    try {
+      res.json(await power.cancelShutdown());
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
