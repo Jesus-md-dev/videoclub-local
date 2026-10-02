@@ -87,6 +87,7 @@ router.get('/videos', (req, res) => {
       ...toPublicVideo(video),
       genres: meta.genres,
       cleanName: meta.cleanName,
+      customName: meta.customName || null,
       poster: meta.poster,
       type: resolveType(meta),
     };
@@ -124,6 +125,7 @@ router.get('/videos/browse', (req, res) => {
         metadataKey: folder.name,
         genres: meta.genres,
         cleanName: meta.cleanName,
+        customName: meta.customName || null,
         poster: meta.poster,
         type: resolveType(meta),
         processingState,
@@ -143,6 +145,7 @@ router.get('/videos/browse', (req, res) => {
         ...toPublicVideo(video),
         genres: meta.genres,
         cleanName: meta.cleanName,
+        customName: meta.customName || null,
         poster: meta.poster,
         type: resolveType(meta),
       };

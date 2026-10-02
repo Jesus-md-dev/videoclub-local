@@ -58,6 +58,17 @@ router.post(
   })
 );
 
+// Nombre puesto a mano para una clave (p.ej. "Bleach (VOSE)" para
+// distinguirla de "Bleach"); vacío lo quita y vuelve al de TMDB.
+router.post('/metadata/custom-name', (req, res) => {
+  const { key, name } = req.body || {};
+  if (!key || typeof name !== 'string') {
+    res.status(400).json({ error: 'Faltan "key" y/o "name"' });
+    return;
+  }
+  res.json(metadata.setCustomName(key, name));
+});
+
 // Hasta 3 fichas candidatas de TMDB (nombre, año, carátula) para que la
 // persona elija cuál es la correcta a mano, en vez de fiarse a ciegas de
 // la búsqueda automática (ver ConfigPage/QuickInfoModal "Cambiar carátula").

@@ -10,6 +10,10 @@ const METADATA_FILE = path.join(DATA_PATH, 'metadata.json');
 // forceTmdbRefreshAll...) no las vuelva a pisar con un resultado
 // "parecido" pero equivocado.
 const OVERRIDES_FILE = path.join(DATA_PATH, 'metadata-overrides.json');
+// Nombres puestos a mano desde la web (ver setCustomName), p.ej. "Bleach
+// (VOSE)" para una segunda versión de una serie que TMDB llamaría igual que
+// la primera. Aparte de la caché: una búsqueda nueva en TMDB nunca los pisa.
+const CUSTOM_NAMES_FILE = path.join(DATA_PATH, 'custom-names.json');
 
 let cache = loadCache();
 const pending = new Map();
@@ -50,6 +54,39 @@ function saveOverrides() {
 
 let overrides = loadOverrides();
 
+function loadCustomNames() {
+  try {
+    return JSON.parse(fs.readFileSync(CUSTOM_NAMES_FILE, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveCustomNames() {
+  fs.mkdirSync(DATA_PATH, { recursive: true });
+  fs.writeFileSync(CUSTOM_NAMES_FILE, JSON.stringify(customNames, null, 2));
+}
+
+let customNames = loadCustomNames();
+
+// El nombre puesto a mano manda sobre el de TMDB al mostrarlo y al
+// normalizar nombres de archivo; el de TMDB se conserva en tmdbName para lo
+// que necesita el título real (búsqueda de subtítulos).
+function withCustomName(key, entry) {
+  const customName = customNames[key];
+  if (!customName) return entry;
+  return { ...entry, cleanName: customName, customName, tmdbName: entry.cleanName };
+}
+
+// Nombre vacío = quitarlo y volver al de TMDB.
+function setCustomName(key, name) {
+  const clean = typeof name === 'string' ? name.replace(/\s+/g, ' ').trim() : '';
+  if (clean) customNames[key] = clean;
+  else delete customNames[key];
+  saveCustomNames();
+  return getCached(key);
+}
+
 // Para POST /api/admin/reload (ver adminReload.js): recarga metadata.json
 // desde disco por si algo lo editó por fuera de este proceso (migración,
 // restauración de backup - el bug real que motivó esta función: una
@@ -68,6 +105,7 @@ function reloadCache() {
 // tienen dueños y frecuencias de cambio distintas.
 function reloadOverrides() {
   overrides = loadOverrides();
+  customNames = loadCustomNames();
 }
 
 function wait(ms) {
@@ -689,9 +727,9 @@ function isSeries(key) {
 }
 
 function getCached(key) {
-  if (cache[key]) return cache[key];
+  if (cache[key]) return withCustomName(key, cache[key]);
   getMetadata(key, 'high');
-  return { genres: [], year: null, type: null, cleanName: null, poster: null };
+  return withCustomName(key, { genres: [], year: null, type: null, cleanName: null, poster: null });
 }
 
 // Para normalize.js: una película suelta (sin carpeta propia) usa su propio
@@ -702,6 +740,11 @@ function getCached(key) {
 // repuesto acierta menos que la búsqueda original). Mueve la entrada ya
 // cacheada de la clave vieja a la nueva en vez de perderla.
 function migrateCacheKey(oldKey, newKey) {
+  if (oldKey !== newKey && customNames[oldKey]) {
+    if (!customNames[newKey]) customNames[newKey] = customNames[oldKey];
+    delete customNames[oldKey];
+    saveCustomNames();
+  }
   if (oldKey === newKey || !cache[oldKey]) return;
   if (!cache[newKey]) cache[newKey] = cache[oldKey];
   delete cache[oldKey];
@@ -739,6 +782,10 @@ function forgetMetadata(key) {
   if (overrides[key]) {
     delete overrides[key];
     saveOverrides();
+  }
+  if (customNames[key]) {
+    delete customNames[key];
+    saveCustomNames();
   }
 }
 
@@ -1110,6 +1157,7 @@ module.exports = {
   allGenres,
   refreshMetadata,
   overrideFromTmdb,
+  setCustomName,
   forceTmdbRefreshAll,
   getForceTmdbProgress,
   fetchEpisodeOrderings,

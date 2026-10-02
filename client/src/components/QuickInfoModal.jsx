@@ -12,6 +12,10 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState(null);
   const cardRef = useRef(null);
 
   // Mueve el foco dentro del modal al abrir, atrapa Tab mientras está
@@ -37,7 +41,31 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
     setConfirmingDelete(false);
     setDeleting(false);
     setDeleteError(null);
-  }, [target?.data?.id]);
+    setEditingName(false);
+    setNameError(null);
+  }, [target?.data?.id, target?.data?.path]);
+
+  // Nombre puesto a mano (p.ej. "Bleach (VOSE)" para distinguir una segunda
+  // versión de la misma serie); vacío vuelve al nombre de TMDB.
+  async function saveName(name) {
+    setSavingName(true);
+    setNameError(null);
+    try {
+      const res = await fetch('/api/metadata/custom-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: metadataKey, name }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'No se pudo cambiar el nombre.');
+      onMetadataChanged?.();
+      onClose();
+    } catch (err) {
+      setNameError(err.message);
+    } finally {
+      setSavingName(false);
+    }
+  }
 
   async function handleDelete() {
     setDeleting(true);
@@ -58,6 +86,8 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
     }
   }
 
+  const metadataKey = target ? target.data.metadataKey || (target.type === 'folder' ? target.data.name : null) : null;
+
   if (!target) return null;
   const { type, data, progress } = target;
   const isFolder = type === 'folder';
@@ -66,7 +96,6 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
     ? data.poster || (data.thumbnailId ? `/api/thumbnail/${data.thumbnailId}` : '/placeholder.svg')
     : data.poster || `/api/thumbnail/${data.id}`;
   const genres = data.genres || [];
-  const metadataKey = data.metadataKey || (isFolder ? data.name : null);
 
   return (
     <div className="quickinfo-backdrop" onClick={onClose}>
@@ -84,7 +113,34 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
           }}
         />
         <div className="quickinfo-body">
-          <h2>{title}</h2>
+          {editingName ? (
+            <form
+              className="quickinfo-rename"
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveName(nameDraft);
+              }}
+            >
+              <input
+                type="text"
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                aria-label="Nombre"
+                placeholder="Vacío = nombre de TMDB"
+                autoFocus
+                disabled={savingName}
+              />
+              <button type="submit" disabled={savingName}>
+                {savingName ? 'Guardando…' : 'Guardar'}
+              </button>
+              <button type="button" className="secondary" onClick={() => setEditingName(false)} disabled={savingName}>
+                Cancelar
+              </button>
+            </form>
+          ) : (
+            <h2>{title}</h2>
+          )}
+          {nameError && <p className="config-message error">{nameError}</p>}
           {genres.length > 0 && (
             <div className="quickinfo-genres">
               {genres.map((g) => (
@@ -121,6 +177,22 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
             {metadataKey && (
               <button className="secondary" onClick={() => setPickingPoster(true)}>
                 Cambiar carátula
+              </button>
+            )}
+            {metadataKey && (isFolder || !data.seriesKey) && (
+              <button
+                className="secondary"
+                onClick={() => {
+                  setNameDraft(data.customName || data.cleanName || metadataKey);
+                  setEditingName(true);
+                }}
+              >
+                Cambiar nombre
+              </button>
+            )}
+            {metadataKey && (isFolder || !data.seriesKey) && data.customName && (
+              <button className="secondary" onClick={() => saveName('')} disabled={savingName}>
+                Quitar nombre propio
               </button>
             )}
             {!isFolder &&

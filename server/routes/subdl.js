@@ -20,7 +20,7 @@ function metaFor(video) {
 
 function queryFor(video, meta) {
   const groupKey = catalog.metadataKeyFor(video);
-  return meta.cleanName || groupKey;
+  return meta.tmdbName || meta.cleanName || groupKey;
 }
 
 router.get('/subdl/status', (req, res) => {

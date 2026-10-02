@@ -47,6 +47,8 @@ const ITEMS = [
   // viajara - solo se notaría la próxima vez que una actualización masiva
   // volviera a pisar esa clave sin encontrar el override guardado.
   { name: 'metadata-overrides.json', type: 'file' },
+  // Nombres puestos a mano desde la web (metadata.js setCustomName).
+  { name: 'custom-names.json', type: 'file' },
   // Igual de razonamiento: qué vídeos se dan por perdidos (lostVideos.js) y
   // qué carpetas se han marcado como "no es una serie, son títulos sueltos"
   // (catalogOverrides.js) son decisiones tomadas a mano que no se deben
