@@ -715,7 +715,7 @@ export default function CatalogPage() {
         onMetadataChanged={() => setCatalogVersion((v) => v + 1)}
       />
       <ShortcutsHelp shortcuts={CATALOG_SHORTCUTS} />
-      <EdgeScrollButtons />
+      <EdgeScrollButtons alwaysVisible={layout === 'grid'} />
     </>
   );
 }

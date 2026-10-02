@@ -339,6 +339,23 @@ main {
   opacity: 1;
 }
 
+/* Vista cuadrícula: siempre a la vista (semitransparente), sin degradado
+   que oscurezca las carátulas hasta que se pasa el puntero. */
+.edge-scroll-visible {
+  opacity: 1;
+  background: none;
+  pointer-events: none;
+}
+
+.edge-scroll-visible .edge-scroll-btn {
+  opacity: 0.7;
+  pointer-events: auto;
+}
+
+.edge-scroll-visible .edge-scroll-btn:hover {
+  opacity: 1;
+}
+
 .edge-scroll-btn {
   width: 120px;
   height: 40px;
@@ -356,9 +373,10 @@ main {
 }
 
 /* Sin puntero que pase por encima (móvil/tablet) no tienen sentido: ahí se
-   desliza con el dedo. */
+   desliza con el dedo. En la vista cuadrícula se dejan igualmente, porque
+   algunas teles con puntero también dicen "hover: none". */
 @media (hover: none) {
-  .edge-scroll {
+  .edge-scroll:not(.edge-scroll-visible) {
     display: none;
   }
 }

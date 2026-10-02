@@ -6,11 +6,14 @@ import { useEffect, useRef, useState } from 'react';
 // (tipo Magic Remote), donde no hay rueda ni barra de scroll cómoda.
 // Mantenerlo pulsado sigue desplazando. Con teclado/cruceta no hacen falta
 // (las flechas ya mueven el foco y la página), así que no entran en el Tab.
+// Con alwaysVisible (vista cuadrícula, la que se elige para la tele) se ven
+// siempre, sin esperar al hover: muchos navegadores de tele se declaran
+// "hover: none" aunque tengan puntero, y escondidos no los encontraba nadie.
 const STEP = 0.8;
 const REPEAT_DELAY_MS = 450;
 const REPEAT_EVERY_MS = 350;
 
-export default function EdgeScrollButtons() {
+export default function EdgeScrollButtons({ alwaysVisible = false }) {
   const [headerHeight, setHeaderHeight] = useState(0);
   const [canUp, setCanUp] = useState(false);
   const [canDown, setCanDown] = useState(false);
@@ -25,13 +28,15 @@ export default function EdgeScrollButtons() {
       setCanDown(window.scrollY + window.innerHeight < doc.scrollHeight - 4);
     };
     update();
-    const observer = new ResizeObserver(update);
-    if (header) observer.observe(header);
-    observer.observe(document.body);
+    // Navegadores de tele antiguos no tienen ResizeObserver: ahí basta con
+    // scroll/resize.
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    if (observer && header) observer.observe(header);
+    observer?.observe(document.body);
     window.addEventListener('scroll', update, { passive: true });
     window.addEventListener('resize', update);
     return () => {
-      observer.disconnect();
+      observer?.disconnect();
       window.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
     };
@@ -47,13 +52,24 @@ export default function EdgeScrollButtons() {
     holdRef.current = null;
   };
 
+  // El desplazamiento de una pulsación lo hace onClick (funciona en
+  // cualquier navegador, con o sin eventos de puntero); mantener pulsado
+  // solo añade la repetición, y entonces el click al soltar no suma otro.
   const startHold = (dir) => {
     stopHold();
-    scroll(dir);
-    const timeout = setTimeout(() => {
-      holdRef.current.interval = setInterval(() => scroll(dir), REPEAT_EVERY_MS);
+    const hold = { repeated: false };
+    hold.timeout = setTimeout(() => {
+      hold.repeated = true;
+      scroll(dir);
+      hold.interval = setInterval(() => scroll(dir), REPEAT_EVERY_MS);
     }, REPEAT_DELAY_MS);
-    holdRef.current = { timeout };
+    holdRef.current = hold;
+  };
+
+  const handleClick = (dir) => {
+    const repeated = holdRef.current?.repeated;
+    stopHold();
+    if (!repeated) scroll(dir);
   };
 
   useEffect(() => stopHold, []);
@@ -65,26 +81,24 @@ export default function EdgeScrollButtons() {
     onPointerDown: (e) => {
       if (e.button === 0) startHold(dir);
     },
-    onPointerUp: stopHold,
     onPointerLeave: stopHold,
     onPointerCancel: stopHold,
-    // Mandos que mandan un "click" sin pointerdown previo.
-    onClick: (e) => {
-      if (e.detail === 0) scroll(dir);
-    },
+    onClick: () => handleClick(dir),
   });
+
+  const zoneClass = `edge-scroll${alwaysVisible ? ' edge-scroll-visible' : ''}`;
 
   return (
     <>
       {canUp && (
-        <div className="edge-scroll edge-scroll-top" style={{ top: headerHeight }}>
+        <div className={`${zoneClass} edge-scroll-top`} style={{ top: headerHeight }}>
           <button {...buttonProps(-1)} aria-label="Subir">
             ▲
           </button>
         </div>
       )}
       {canDown && (
-        <div className="edge-scroll edge-scroll-bottom">
+        <div className={`${zoneClass} edge-scroll-bottom`}>
           <button {...buttonProps(1)} aria-label="Bajar">
             ▼
           </button>
