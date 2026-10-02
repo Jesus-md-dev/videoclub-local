@@ -609,7 +609,18 @@ export default function CatalogPage() {
           value={term}
           onChange={(e) => handleSearch(e.target.value)}
         />
-        <HiddenMenu layout={layout} onToggleLayout={toggleLayout} />
+        <div className="header-actions">
+          <button
+            type="button"
+            className="layout-toggle"
+            aria-pressed={layout === 'grid'}
+            onClick={toggleLayout}
+            title={layout === 'grid' ? 'Cambiar a carrusel' : 'Cambiar a cuadrícula'}
+          >
+            {layout === 'grid' ? '☰ Carrusel' : '▦ Cuadrícula'}
+          </button>
+          <HiddenMenu />
+        </div>
       </header>
       <main id="main" tabIndex={-1}>
         {!searching && <Breadcrumb dir={dir} onNavigate={goToDir} />}

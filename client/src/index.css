@@ -183,6 +183,27 @@ header::before {
   position: relative;
 }
 
+/* Botón de la cabecera del catálogo para cambiar entre carrusel y
+   cuadrícula (catalogLayout.js), del mismo alto que el botón del menú. */
+.layout-toggle {
+  height: 40px;
+  padding: 0 14px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-alt);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.layout-toggle:hover,
+.layout-toggle:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .hidden-menu-btn {
   display: flex;
   flex-direction: column;
@@ -232,8 +253,7 @@ header::before {
   z-index: 20;
 }
 
-.hidden-menu-panel a,
-.hidden-menu-panel button {
+.hidden-menu-panel a {
   padding: 10px 12px;
   border-radius: 6px;
   color: var(--text);
@@ -241,22 +261,8 @@ header::before {
   font-size: 14px;
 }
 
-.hidden-menu-panel button {
-  border: none;
-  background: none;
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border);
-  border-radius: 6px 6px 0 0;
-  margin-bottom: 4px;
-}
-
 .hidden-menu-panel a:hover,
-.hidden-menu-panel a:focus-visible,
-.hidden-menu-panel button:hover,
-.hidden-menu-panel button:focus-visible {
+.hidden-menu-panel a:focus-visible {
   background: var(--bg);
   color: var(--accent-glow);
 }

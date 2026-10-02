@@ -4,7 +4,7 @@ const CATALOG_LAYOUT_KEY = 'catalogLayout';
 // horizontal (por defecto) o cuadrícula sin carrusel, más cómoda con el
 // mando de la tele. Es por dispositivo (localStorage), no por perfil: la
 // misma persona puede querer cuadrícula en la tele y carrusel en el móvil.
-// Nunca se elige sola: solo cambia si alguien la activa en el menú.
+// Nunca se elige sola: solo cambia con el botón de la cabecera del catálogo.
 export function getCatalogLayout() {
   try {
     return localStorage.getItem(CATALOG_LAYOUT_KEY) === 'grid' ? 'grid' : 'carousel';
