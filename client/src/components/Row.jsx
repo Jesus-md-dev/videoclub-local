@@ -7,7 +7,9 @@ import { useRef, useState } from 'react';
 // deslizamiento normal ya vale, no hacen falta) - antes solo se montaban
 // con el hover de ratón, así que quien navegaba solo con Tab no podía
 // alcanzarlas nunca, ni siquiera "a ciegas".
-export default function Row({ title, children }) {
+// Con layout="grid" (elegido a mano en el menú, pensado para la tele) la
+// categoría se muestra como una cuadrícula normal, sin carrusel ni flechas.
+export default function Row({ title, layout = 'carousel', children }) {
   const trackRef = useRef(null);
   const sectionRef = useRef(null);
   const [revealed, setRevealed] = useState(false);
@@ -25,6 +27,15 @@ export default function Row({ title, children }) {
   const handleBlur = (e) => {
     if (sectionRef.current && !sectionRef.current.contains(e.relatedTarget)) setRevealed(false);
   };
+
+  if (layout === 'grid') {
+    return (
+      <section className="row row-grid">
+        <p className="section-title">{title}</p>
+        <div className="grid">{children}</div>
+      </section>
+    );
+  }
 
   return (
     <section

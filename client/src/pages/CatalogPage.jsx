@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Hls from 'hls.js';
 import { getActiveProfileId } from '../profile';
+import { getCatalogLayout, setCatalogLayout } from '../catalogLayout';
 import { track } from '../analytics';
 import { episodeTitle } from '../utils/format';
 import HiddenMenu from '../components/HiddenMenu';
@@ -362,6 +363,12 @@ export default function CatalogPage() {
     window.scrollTo(0, 0);
   }, [dir]);
 
+  const [layout, setLayout] = useState(getCatalogLayout);
+  const toggleLayout = () => {
+    const next = layout === 'grid' ? 'carousel' : 'grid';
+    setCatalogLayout(next);
+    setLayout(next);
+  };
   const [folders, setFolders] = useState([]);
   const [videos, setVideos] = useState([]);
   const [allVideos, setAllVideos] = useState([]);
@@ -602,7 +609,7 @@ export default function CatalogPage() {
           value={term}
           onChange={(e) => handleSearch(e.target.value)}
         />
-        <HiddenMenu />
+        <HiddenMenu layout={layout} onToggleLayout={toggleLayout} />
       </header>
       <main id="main" tabIndex={-1}>
         {!searching && <Breadcrumb dir={dir} onNavigate={goToDir} />}
@@ -628,7 +635,7 @@ export default function CatalogPage() {
         {!searching && (
           <>
             {continueWatching.length > 0 && (
-              <Row title="Continuar viendo">
+              <Row title="Continuar viendo" layout={layout}>
                 {continueWatching.map((video) => (
                   <VideoCard
                     key={video.id}
@@ -642,7 +649,7 @@ export default function CatalogPage() {
             )}
 
             {visibleVideos.length > 0 && (
-              <Row title={dir ? 'Vídeos' : 'Películas'}>
+              <Row title={dir ? 'Vídeos' : 'Películas'} layout={layout}>
                 {visibleVideos.map((video) => (
                   <VideoCard
                     key={video.id}
@@ -655,7 +662,7 @@ export default function CatalogPage() {
             )}
 
             {showFolders && seriesFolders.length > 0 && (
-              <Row title={dir ? 'Carpetas' : 'Series'}>
+              <Row title={dir ? 'Carpetas' : 'Series'} layout={layout}>
                 {seriesFolders.map((folder) => (
                   <FolderCard
                     key={folder.path}
@@ -668,7 +675,7 @@ export default function CatalogPage() {
             )}
 
             {showFolders && animeFolders.length > 0 && (
-              <Row title="Animes">
+              <Row title="Animes" layout={layout}>
                 {animeFolders.map((folder) => (
                   <FolderCard
                     key={folder.path}

@@ -232,7 +232,8 @@ header::before {
   z-index: 20;
 }
 
-.hidden-menu-panel a {
+.hidden-menu-panel a,
+.hidden-menu-panel button {
   padding: 10px 12px;
   border-radius: 6px;
   color: var(--text);
@@ -240,8 +241,22 @@ header::before {
   font-size: 14px;
 }
 
+.hidden-menu-panel button {
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+  margin-bottom: 4px;
+}
+
 .hidden-menu-panel a:hover,
-.hidden-menu-panel a:focus-visible {
+.hidden-menu-panel a:focus-visible,
+.hidden-menu-panel button:hover,
+.hidden-menu-panel button:focus-visible {
   background: var(--bg);
   color: var(--accent-glow);
 }
@@ -272,6 +287,16 @@ main {
 
 .row-viewport {
   position: relative;
+}
+
+/* Vista cuadrícula (elegida en el menú): margen para que la carátula
+   ampliada en hover/foco no choque con el título de la fila. */
+.row-grid {
+  margin-bottom: 32px;
+}
+
+.row-grid .grid {
+  padding-top: 12px;
 }
 
 .row-track {

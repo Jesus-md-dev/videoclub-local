@@ -13,7 +13,9 @@ const PAGES = [
   { to: '/config', label: 'Configuración' },
 ];
 
-export default function HiddenMenu() {
+// layout/onToggleLayout: solo en el catálogo, para cambiar entre carrusel
+// y cuadrícula en este dispositivo (ver catalogLayout.js).
+export default function HiddenMenu({ layout, onToggleLayout }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const buttonRef = useRef(null);
@@ -68,6 +70,11 @@ export default function HiddenMenu() {
       </button>
       {open && (
         <nav className="hidden-menu-panel">
+          {onToggleLayout && (
+            <button type="button" aria-pressed={layout === 'grid'} onClick={onToggleLayout}>
+              {layout === 'grid' ? 'Vista: cuadrícula (cambiar a carrusel)' : 'Vista: carrusel (cambiar a cuadrícula)'}
+            </button>
+          )}
           {PAGES.map((page) => (
             <Link key={page.to} to={page.to} onClick={() => setOpen(false)}>
               {page.label}
