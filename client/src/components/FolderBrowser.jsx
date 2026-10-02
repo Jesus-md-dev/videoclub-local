@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import useFocusTrap from '../hooks/useFocusTrap';
+import useBackButtonClose from '../hooks/useBackButtonClose';
 
 export default function FolderBrowser({ startPath, onSelect, onClose }) {
   const [currentPath, setCurrentPath] = useState(startPath || null);
@@ -10,6 +11,7 @@ export default function FolderBrowser({ startPath, onSelect, onClose }) {
   const modalRef = useRef(null);
 
   useFocusTrap(modalRef, true);
+  useBackButtonClose(true, onClose);
 
   useEffect(() => {
     const handleKeyDown = (e) => {

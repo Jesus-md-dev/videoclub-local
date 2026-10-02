@@ -372,12 +372,19 @@ main {
   color: var(--bg);
 }
 
-/* Sin puntero que pase por encima (móvil/tablet) no tienen sentido: ahí se
-   desliza con el dedo. En la vista cuadrícula se dejan igualmente, porque
-   algunas teles con puntero también dicen "hover: none". */
+/* Sin hover (Silk de Fire TV, que mueve un cursor pero dice "hover: none")
+   la franja no puede esperar a que se pase por encima: se muestra el botón
+   semitransparente. En táctil ni se montan (EdgeScrollButtons.jsx). */
 @media (hover: none) {
-  .edge-scroll:not(.edge-scroll-visible) {
-    display: none;
+  .edge-scroll {
+    opacity: 1;
+    background: none;
+    pointer-events: none;
+  }
+
+  .edge-scroll-btn {
+    opacity: 0.7;
+    pointer-events: auto;
   }
 }
 
@@ -2229,6 +2236,13 @@ button.danger:disabled {
   .control-btn,
   .row-arrow {
     touch-action: manipulation;
+  }
+
+  /* Dedo o cursor de tele (Silk): 36 px se quedaba corto para acertar. */
+  .control-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
   }
 }
 

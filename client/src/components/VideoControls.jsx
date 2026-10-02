@@ -2,6 +2,51 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import HiddenMenu from './HiddenMenu';
 
+// Nombre de tecla normalizado para los atajos del reproductor. Antes solo
+// se miraba e.code, que los mandos de tele no siempre rellenan: la Fire TV
+// manda las teclas multimedia como keyCode 179 (play/pausa), 227
+// (retroceder) y 228 (avanzar); otras teles, 415/19/412/417.
+const MEDIA_KEYS = new Set(['MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaRewind', 'MediaFastForward']);
+const KEY_NAMES = {
+  ' ': 'Space',
+  Spacebar: 'Space',
+  ArrowLeft: 'ArrowLeft',
+  ArrowRight: 'ArrowRight',
+  ArrowUp: 'ArrowUp',
+  ArrowDown: 'ArrowDown',
+  Left: 'ArrowLeft',
+  Right: 'ArrowRight',
+  Up: 'ArrowUp',
+  Down: 'ArrowDown',
+  m: 'KeyM',
+  M: 'KeyM',
+  f: 'KeyF',
+  F: 'KeyF',
+};
+const KEYCODE_NAMES = {
+  32: 'Space',
+  37: 'ArrowLeft',
+  38: 'ArrowUp',
+  39: 'ArrowRight',
+  40: 'ArrowDown',
+  70: 'KeyF',
+  77: 'KeyM',
+  179: 'MediaPlayPause',
+  227: 'MediaRewind',
+  228: 'MediaFastForward',
+  415: 'MediaPlay',
+  19: 'MediaPause',
+  412: 'MediaRewind',
+  417: 'MediaFastForward',
+};
+
+function keyNameFor(e) {
+  if (MEDIA_KEYS.has(e.key)) return e.key;
+  const fromKeyCode = KEYCODE_NAMES[e.keyCode || e.which];
+  if (MEDIA_KEYS.has(fromKeyCode)) return fromKeyCode;
+  return e.code || KEY_NAMES[e.key] || fromKeyCode;
+}
+
 function trackLabel(track) {
   return track.languageLabel || track.title || `Pista ${track.index}`;
 }
@@ -86,6 +131,7 @@ export default function VideoControls({
   const [controlsVisible, setControlsVisible] = useState(true);
   const barRef = useRef(null);
   const hideTimer = useRef(null);
+  const lastMediaKeyAt = useRef(0);
   const subtitleSettingsRef = useRef(null);
   const castPanelRef = useRef(null);
 
@@ -265,11 +311,22 @@ export default function VideoControls({
   const toggleFullscreen = () => {
     const shell = shellRef.current;
     if (!shell) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
+    // Con prefijo webkit de resguardo: navegadores de tele con Chromium
+    // antiguo (Silk de Fire TV viejas) solo tienen esa versión.
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
     } else {
-      shell.requestFullscreen?.();
+      (shell.requestFullscreen || shell.webkitRequestFullscreen)?.call(shell);
     }
+  };
+
+  // Salto de ±10 s compartido por las flechas, las teclas multimedia del
+  // mando, Media Session y los botones ⟲/⟳.
+  const seekBy = (seconds) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const end = video.duration || video.currentTime + Math.abs(seconds);
+    video.currentTime = Math.min(end, Math.max(0, video.currentTime + seconds));
   };
 
   const handleVolumeChange = (e) => {
@@ -302,18 +359,32 @@ export default function VideoControls({
       const video = videoRef.current;
       if (!video) return;
 
-      switch (e.code) {
+      const key = keyNameFor(e);
+      if (MEDIA_KEYS.has(key)) lastMediaKeyAt.current = Date.now();
+
+      switch (key) {
         case 'Space':
+        case 'MediaPlayPause':
           e.preventDefault();
           togglePlay();
           break;
-        case 'ArrowLeft':
+        case 'MediaPlay':
           e.preventDefault();
-          video.currentTime = Math.max(0, video.currentTime - 10);
+          video.play();
+          break;
+        case 'MediaPause':
+          e.preventDefault();
+          video.pause();
+          break;
+        case 'ArrowLeft':
+        case 'MediaRewind':
+          e.preventDefault();
+          seekBy(-10);
           break;
         case 'ArrowRight':
+        case 'MediaFastForward':
           e.preventDefault();
-          video.currentTime = Math.min(video.duration || video.currentTime + 10, video.currentTime + 10);
+          seekBy(10);
           break;
         case 'ArrowUp':
           e.preventDefault();
@@ -341,6 +412,44 @@ export default function VideoControls({
     return () => document.removeEventListener('keydown', handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoRef]);
+
+  // Media Session: en Chromium/Android (Silk de Fire TV incluido) los
+  // botones multimedia del mando pueden llegar por aquí en vez de como
+  // tecla. Si la misma pulsación ya llegó como tecla hace un instante, se
+  // ignora, para no saltar 20 s ni pausar y reanudar a la vez.
+  useEffect(() => {
+    const session = navigator.mediaSession;
+    if (!session) return undefined;
+    const fromKeyJustNow = () => Date.now() - lastMediaKeyAt.current < 400;
+    const handlers = {
+      play: () => !fromKeyJustNow() && videoRef.current?.play(),
+      pause: () => !fromKeyJustNow() && videoRef.current?.pause(),
+      seekbackward: () => !fromKeyJustNow() && seekBy(-10),
+      seekforward: () => !fromKeyJustNow() && seekBy(10),
+    };
+    for (const [action, handler] of Object.entries(handlers)) {
+      try {
+        session.setActionHandler(action, handler);
+      } catch {
+        // Acción no soportada por este navegador.
+      }
+    }
+    return () => {
+      for (const action of Object.keys(handlers)) {
+        try {
+          session.setActionHandler(action, null);
+        } catch {
+          // Ídem.
+        }
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoRef]);
+
+  useEffect(() => {
+    if (!navigator.mediaSession || typeof MediaMetadata === 'undefined' || !title) return;
+    navigator.mediaSession.metadata = new MediaMetadata({ title });
+  }, [title]);
 
   // Cierra el panel abierto (ajustes o búsqueda) al hacer clic fuera de él.
   useEffect(() => {
@@ -733,6 +842,19 @@ export default function VideoControls({
         >
           {displayedPlaying ? '⏸' : '▶'}
         </button>
+
+        {/* Con el cursor de Silk (Fire TV) las flechas no llegan como
+            teclas y arrastrar la barra no es viable: botones de ±10 s. */}
+        {!casting && (
+          <>
+            <button className="control-btn" onClick={() => seekBy(-10)} aria-label="Retroceder 10 segundos" title="−10 s">
+              ⟲
+            </button>
+            <button className="control-btn" onClick={() => seekBy(10)} aria-label="Avanzar 10 segundos" title="+10 s">
+              ⟳
+            </button>
+          </>
+        )}
 
         <span className="time-display">
           {formatTime(displayedCurrentTime)} / {formatTime(duration)}

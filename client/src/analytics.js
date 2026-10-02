@@ -7,3 +7,32 @@ export function track(event, data = {}) {
     body: JSON.stringify({ event, ...data }),
   }).catch(() => {});
 }
+
+// issue #144: una vez por sesión del navegador, qué declara el dispositivo
+// (sobre todo para saber cómo se ve Silk de Fire TV sin tenerla delante).
+export function trackDeviceInfo() {
+  try {
+    if (sessionStorage.getItem('deviceInfoSent')) return;
+    sessionStorage.setItem('deviceInfoSent', '1');
+  } catch {
+    // Sin sessionStorage se manda igualmente.
+  }
+  const media = (q) => {
+    try {
+      return window.matchMedia(q).matches;
+    } catch {
+      return null;
+    }
+  };
+  track('device_info', {
+    userAgent: navigator.userAgent,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    dpr: window.devicePixelRatio,
+    hover: media('(hover: hover)'),
+    pointerFine: media('(pointer: fine)'),
+    pointerCoarse: media('(pointer: coarse)'),
+    touchPoints: navigator.maxTouchPoints || 0,
+    standalone: media('(display-mode: standalone)'),
+  });
+}

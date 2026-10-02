@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import useBackButtonClose from '../hooks/useBackButtonClose';
 
 // Páginas sin enlace visible en el catálogo (config, cola, estadísticas,
 // perfiles): antes solo se llegaba a ellas escribiendo la URL a mano. Este
@@ -17,6 +18,9 @@ export default function HiddenMenu() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const buttonRef = useRef(null);
+
+  // Atrás del mando (Fire TV) cierra el menú en vez de salir de la página.
+  useBackButtonClose(open, () => setOpen(false));
 
   useEffect(() => {
     if (!open) return undefined;

@@ -10,6 +10,18 @@ import { useEffect, useRef, useState } from 'react';
 // siempre, sin esperar al hover: muchos navegadores de tele se declaran
 // "hover: none" aunque tengan puntero, y escondidos no los encontraba nadie.
 const STEP = 0.8;
+
+// Móvil/tablet: se desliza con el dedo y no hacen falta. No basta con
+// "hover: none", porque Silk (Fire TV) también lo dice aunque mueva un
+// cursor; lo que no tiene es pantalla táctil.
+function isTouchOnly() {
+  try {
+    return navigator.maxTouchPoints > 0 && window.matchMedia('(hover: none)').matches;
+  } catch {
+    return false;
+  }
+}
+
 const REPEAT_DELAY_MS = 450;
 const REPEAT_EVERY_MS = 350;
 
@@ -85,6 +97,8 @@ export default function EdgeScrollButtons({ alwaysVisible = false }) {
     onPointerCancel: stopHold,
     onClick: () => handleClick(dir),
   });
+
+  if (!alwaysVisible && isTouchOnly()) return null;
 
   const zoneClass = `edge-scroll${alwaysVisible ? ' edge-scroll-visible' : ''}`;
 

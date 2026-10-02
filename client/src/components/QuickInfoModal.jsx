@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PosterPicker from './PosterPicker';
 import useFocusTrap from '../hooks/useFocusTrap';
+import useBackButtonClose from '../hooks/useBackButtonClose';
 import { episodeTitle } from '../utils/format';
 
 // Ficha rápida ("más info" estilo Netflix): un vistazo sin salir del
@@ -21,6 +22,9 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
   // Mueve el foco dentro del modal al abrir, atrapa Tab mientras está
   // abierto, y lo devuelve a la carátula que lo abrió al cerrar.
   useFocusTrap(cardRef, Boolean(target) && !pickingPoster);
+
+  // Atrás del mando (Fire TV) cierra la ficha en vez de salir del catálogo.
+  useBackButtonClose(Boolean(target), onClose);
 
   // Como cualquier modal: Escape también cierra, no solo el botón ✕ o
   // hacer clic fuera. Mientras PosterPicker está abierto encima, es ÉSE el

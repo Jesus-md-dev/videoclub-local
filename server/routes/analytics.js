@@ -15,6 +15,9 @@ const ALLOWED_EVENTS = new Set([
   // issue #111: diagnóstico más fino de tirones/fallos de reproducción.
   'hls_error',
   'reload_while_stuck',
+  // issue #144: qué declara de verdad cada navegador (tamaño, hover,
+  // puntero, táctil), sobre todo Silk de Fire TV, para ajustar la interfaz.
+  'device_info',
 ]);
 
 router.post('/analytics/track', (req, res) => {

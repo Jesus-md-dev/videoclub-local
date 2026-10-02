@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import useFocusTrap from '../hooks/useFocusTrap';
+import useBackButtonClose from '../hooks/useBackButtonClose';
 
 // Deja elegir a mano entre hasta 3 fichas candidatas de TMDB (nombre, año,
 // carátula) para una clave del catálogo, para cuando la búsqueda
@@ -11,6 +12,7 @@ export default function PosterPicker({ metadataKey, onClose, onApplied }) {
   const pickerRef = useRef(null);
 
   useFocusTrap(pickerRef, true);
+  useBackButtonClose(true, onClose);
 
   // Como cualquier modal: Escape también cierra (antes solo el botón ✕ o
   // el clic fuera). Va sobre "window" y no se propaga más allá de aquí, así
