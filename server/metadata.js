@@ -234,12 +234,22 @@ function normalizeGenres(list) {
 // vídeo/audio): todo lo que venga a partir de la primera ya no es parte del
 // título. Sin esto, "Ice Cream Man 2026 1080p WEBRip x265 DDP5 1-CSP" se
 // buscaba tal cual (solo sin el año) y ninguna fuente encontraba nada.
-const RELEASE_TAG = /(?:^|[\s._\-[(])(?:2160p|1080p|720p|576p|480p|4k|uhd|web[\s._-]?(?:rip|dl)|blu[\s._-]?ray|bdrip|brrip|dvdrip|hdrip|hdtv|remux|x26[45]|h[\s._]?26[45]|hevc|xvid|divx|10bit|hdr(?:10)?|ddp?\d?|dd\+|e?ac3|aac\d?|dts(?:-hd)?|truehd|atmos)(?=$|[\s._\-\])])/i;
+const RELEASE_TAG = /(?:^|[\s._\-[(])(?:2160p|1080p|720p|576p|480p|4k|uhd|web[\s._-]?(?:rip|dl)|blu[\s._-]?ray|bdrip|brrip|dvdrip|hdrip|hdtv|remux|x26[45]|h[\s._]?26[45]|hevc|xvid|divx|10bit|hdr(?:10)?|ddp?\d?|dd\+|e?ac3|aac\d?|dts(?:-hd)?|truehd|atmos|www|microhd)(?=$|[\s._\-\])])/i;
+
+// Calidad al estilo de las webs de descarga españolas pegada al título sin
+// separador: "mundosCoralineM1080.www.newpct.com" (M1080 = MicroHD 1080p).
+// Solo con la M mayúscula justo después de una minúscula, para no cortar
+// títulos que de verdad contengan esos números.
+const GLUED_RELEASE_TAG = /(?<=[a-z])(?:M(?:2160|1080|720)p?|MicroHD)(?=$|[\s._\-[\])])/;
 
 function stripReleaseTags(name) {
+  const indexes = [];
   const m = name.match(RELEASE_TAG);
-  if (!m || m.index === 0) return name;
-  return name.slice(0, m.index).replace(/[\s._\-[(]+$/, '');
+  if (m && m.index > 0) indexes.push(m.index);
+  const glued = name.match(GLUED_RELEASE_TAG);
+  if (glued) indexes.push(glued.index);
+  if (!indexes.length) return name;
+  return name.slice(0, Math.min(...indexes)).replace(/[\s._\-[(]+$/, '');
 }
 
 // Quita etiquetas de release, años, paréntesis/corchetes y separadores
