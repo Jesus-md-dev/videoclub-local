@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getActiveProfileId, setActiveProfileId } from '../profile';
+import { getActiveProfileId, isAdminIn, refreshProfiles, setActiveProfileId } from '../profile';
 
 const COLORS = ['#e63946', '#2a9d8f', '#e9c46a', '#457b9d', '#8338ec', '#f4a261', '#06d6a0', '#ef476f'];
 
@@ -21,10 +21,34 @@ export default function ProfilesPage() {
   const [managing, setManaging] = useState(false);
 
   const loadProfiles = () => {
-    fetch('/api/profiles')
-      .then((res) => res.json())
-      .then(setProfiles)
-      .catch(() => setError('No se pudieron cargar los perfiles.'));
+    refreshProfiles().then((list) => {
+      if (Array.isArray(list)) setProfiles(list);
+      else setError('No se pudieron cargar los perfiles.');
+    });
+  };
+
+  // Crear, borrar y cambiar opciones de perfiles: solo si el último perfil
+  // usado en este dispositivo es admin (#152). Para gestionar desde un
+  // dispositivo nuevo, entra antes con un perfil admin y vuelve aquí desde
+  // el menú ("Cambiar perfil").
+  const canManage = profiles ? isAdminIn(profiles, lastProfileId) : false;
+
+  // Respuesta de error del servidor (p.ej. el 403 de adminGuard) como texto.
+  const failIfNotOk = async (res, fallback) => {
+    if (res.ok) return;
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || fallback);
+  };
+
+  const handleToggleAdmin = (profile) => {
+    fetch(`/api/profiles/${profile.id}/admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admin: !profile.admin }),
+    })
+      .then((res) => failIfNotOk(res, 'No se pudo cambiar el administrador.'))
+      .then(loadProfiles)
+      .catch((err) => setError(err.message));
   };
 
   useEffect(() => {
@@ -69,14 +93,16 @@ export default function ProfilesPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ showAnime: !profile.settings?.showAnime }),
     })
+      .then((res) => failIfNotOk(res, 'No se pudo cambiar la opción de anime.'))
       .then(loadProfiles)
-      .catch(() => setError('No se pudo cambiar la opción de anime.'));
+      .catch((err) => setError(err.message));
   };
 
   const handleDelete = (id) => {
     fetch(`/api/profiles/${id}`, { method: 'DELETE' })
+      .then((res) => failIfNotOk(res, 'No se pudo borrar el perfil.'))
       .then(loadProfiles)
-      .catch(() => setError('No se pudo borrar el perfil.'));
+      .catch((err) => setError(err.message));
   };
 
   return (
@@ -99,6 +125,13 @@ export default function ProfilesPage() {
               <>
                 <button
                   className="profile-option"
+                  aria-pressed={Boolean(profile.admin)}
+                  onClick={() => handleToggleAdmin(profile)}
+                >
+                  {profile.admin ? '✓ Administrador' : 'Sin permisos de admin'}
+                </button>
+                <button
+                  className="profile-option"
                   aria-pressed={Boolean(profile.settings?.showAnime)}
                   onClick={() => handleToggleAnime(profile)}
                 >
@@ -112,38 +145,40 @@ export default function ProfilesPage() {
           </div>
         ))}
 
-        {creating ? (
-          <form className="profile-card-wrap" onSubmit={handleCreate}>
-            <label htmlFor="profile-name-input" className="sr-only">
-              Nombre del perfil
-            </label>
-            <input
-              id="profile-name-input"
-              className="profile-name-input"
-              autoFocus
-              maxLength={30}
-              placeholder="Nombre"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <div className="profile-create-actions">
-              <button type="submit">Crear</button>
-              <button type="button" className="secondary" onClick={() => setCreating(false)}>
-                Cancelar
+        {/* Añadir perfiles: solo admin (#152). */}
+        {canManage &&
+          (creating ? (
+            <form className="profile-card-wrap" onSubmit={handleCreate}>
+              <label htmlFor="profile-name-input" className="sr-only">
+                Nombre del perfil
+              </label>
+              <input
+                id="profile-name-input"
+                className="profile-name-input"
+                autoFocus
+                maxLength={30}
+                placeholder="Nombre"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <div className="profile-create-actions">
+                <button type="submit">Crear</button>
+                <button type="button" className="secondary" onClick={() => setCreating(false)}>
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="profile-card-wrap">
+              <button className="profile-card profile-add" onClick={() => setCreating(true)}>
+                +
               </button>
+              <p className="profile-name">Añadir perfil</p>
             </div>
-          </form>
-        ) : (
-          <div className="profile-card-wrap">
-            <button className="profile-card profile-add" onClick={() => setCreating(true)}>
-              +
-            </button>
-            <p className="profile-name">Añadir perfil</p>
-          </div>
-        )}
+          ))}
       </div>
 
-      {profiles && profiles.length > 0 && (
+      {canManage && profiles && profiles.length > 0 && (
         <button className="profiles-manage-toggle" onClick={() => setManaging((m) => !m)}>
           {managing ? 'Listo' : 'Gestionar perfiles'}
         </button>

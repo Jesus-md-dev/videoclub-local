@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import useBackButtonClose from '../hooks/useBackButtonClose';
+import { useIsAdmin } from '../profile';
 
 // Páginas sin enlace visible en el catálogo (config, cola, estadísticas,
 // perfiles): antes solo se llegaba a ellas escribiendo la URL a mano. Este
 // menú las reúne en un sitio, sin ensuciar la cabecera del catálogo con
 // más enlaces sueltos.
 const PAGES = [
-  { to: '/profiles', label: 'Cambiar perfil' },
+  { to: '/profiles', label: 'Cambiar perfil', everyone: true },
   { to: '/queue', label: 'Preparación (HLS)' },
   { to: '/move-queue', label: 'Traslado de originales' },
   { to: '/stats', label: 'Estadísticas de uso' },
@@ -16,6 +17,9 @@ const PAGES = [
 
 export default function HiddenMenu() {
   const [open, setOpen] = useState(false);
+  // El resto de páginas son de administración: solo para perfiles admin (#152).
+  const admin = useIsAdmin();
+  const pages = PAGES.filter((page) => page.everyone || admin);
   const rootRef = useRef(null);
   const buttonRef = useRef(null);
 
@@ -72,7 +76,7 @@ export default function HiddenMenu() {
       </button>
       {open && (
         <nav className="hidden-menu-panel">
-          {PAGES.map((page) => (
+          {pages.map((page) => (
             <Link key={page.to} to={page.to} onClick={() => setOpen(false)}>
               {page.label}
             </Link>

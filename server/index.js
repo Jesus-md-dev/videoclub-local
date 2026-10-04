@@ -64,6 +64,7 @@ const cleanup = require('./cleanup');
 const dlnaRouter = require('./routes/dlna');
 const chromecastRouter = require('./routes/chromecast');
 const adminRouter = require('./routes/admin');
+const { adminGuard } = require('./adminGuard');
 const restartManager = require('./restartManager');
 const updater = require('./updater');
 
@@ -111,8 +112,8 @@ app.use(
 // origen abierto aquí no añade riesgo real.
 app.use('/api', (req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, X-Profile-Id');
   if (req.method === 'OPTIONS') {
     res.status(204).end();
     return;
@@ -123,6 +124,8 @@ app.use('/api', (req, res, next) => {
 app.use(express.json({ limit: '5mb' }));
 // Para no reiniciar en mitad de una reproducción (ver restartManager.js).
 app.use(restartManager.trackStreamActivity);
+// Acciones solo para perfiles administradores (#152).
+app.use('/api', adminGuard);
 app.use('/api', videosRouter);
 app.use('/api', thumbnailRouter);
 app.use('/api', settingsRouter);

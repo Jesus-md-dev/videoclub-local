@@ -1,6 +1,7 @@
 const express = require('express');
 const profiles = require('../profiles');
 const backup = require('../backup');
+const { requesterIsAdmin } = require('../adminGuard');
 
 const router = express.Router();
 
@@ -19,9 +20,24 @@ router.post('/profiles', (req, res) => {
 });
 
 router.delete('/profiles/:id', (req, res) => {
-  profiles.deleteProfile(req.params.id);
+  try {
+    profiles.deleteProfile(req.params.id);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+    return;
+  }
   backup.scheduleBackup();
   res.json({ ok: true });
+});
+
+// Nombrar o quitar administrador (#152); solo un admin (adminGuard.js).
+router.post('/profiles/:id/admin', (req, res) => {
+  try {
+    res.json(profiles.setAdmin(req.params.id, req.body?.admin === true));
+    backup.scheduleBackup();
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 function requireProfile(req, res) {
@@ -78,6 +94,11 @@ router.get('/profiles/:id/settings', (req, res) => {
 
 router.patch('/profiles/:id/settings', (req, res) => {
   if (!requireProfile(req, res)) return;
+  // "Mostrar anime" (#150) lo decide un admin, no cada perfil (#152).
+  if (req.body && 'showAnime' in req.body && !requesterIsAdmin(req)) {
+    res.status(403).json({ error: 'Solo un perfil administrador puede hacer esto.' });
+    return;
+  }
   res.json(profiles.setSettings(req.params.id, req.body || {}));
   backup.scheduleBackup();
 });

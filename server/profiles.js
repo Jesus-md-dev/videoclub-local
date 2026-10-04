@@ -57,8 +57,30 @@ function createProfile(name) {
   return profile;
 }
 
+// Perfil administrador (#152, ver adminGuard.js). Va en el perfil y no en
+// settings: los ajustes los cambia cada perfil libremente (subtítulos...).
+// Nunca se deja sin ningún admin: sin admins, adminGuard deja hacer todo a
+// todos.
+function setAdmin(id, admin) {
+  const profiles = readProfiles();
+  const profile = profiles.find((p) => p.id === id);
+  if (!profile) throw new Error('Perfil no encontrado');
+  if (!admin && profile.admin && profiles.filter((p) => p.admin).length === 1) {
+    throw new Error('Tiene que quedar al menos un perfil administrador');
+  }
+  if (admin) profile.admin = true;
+  else delete profile.admin;
+  writeProfiles(profiles);
+  return profile;
+}
+
 function deleteProfile(id) {
-  writeProfiles(readProfiles().filter((p) => p.id !== id));
+  const profiles = readProfiles();
+  const profile = profiles.find((p) => p.id === id);
+  if (profile?.admin && profiles.filter((p) => p.admin).length === 1) {
+    throw new Error('No se puede borrar el único perfil administrador');
+  }
+  writeProfiles(profiles.filter((p) => p.id !== id));
   fs.rm(progressFile(id), { force: true }, () => {});
 }
 
@@ -120,6 +142,7 @@ module.exports = {
   profileExists,
   createProfile,
   deleteProfile,
+  setAdmin,
   getProgress,
   setProgress,
   dismissProgress,

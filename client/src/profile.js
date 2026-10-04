@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+
 const ACTIVE_PROFILE_KEY = 'activeProfileId';
 
 // Qué perfil usa este dispositivo/navegador ahora mismo: es lo único que
@@ -37,6 +39,40 @@ export function withProfile(url) {
   const id = getActiveProfileId();
   if (!id) return url;
   return `${url}${url.includes('?') ? '&' : '?'}profileId=${encodeURIComponent(id)}`;
+}
+
+// ¿Es administrador el perfil activo? (#152: solo los admin gestionan
+// perfiles, entran en las páginas de administración y editan el catálogo).
+// Sin ningún admin todavía, todos lo son (como hace el servidor,
+// adminGuard.js). La lista de perfiles se pide una vez y se comparte;
+// refreshProfiles() la vuelve a pedir tras cambiar algo.
+let profilesPromise = null;
+
+export function refreshProfiles() {
+  profilesPromise = fetch('/api/profiles')
+    .then((res) => res.json())
+    .catch(() => []);
+  return profilesPromise;
+}
+
+export function isAdminIn(profiles, id = getActiveProfileId()) {
+  if (!profiles.some((p) => p.admin)) return true;
+  return profiles.some((p) => p.id === id && p.admin);
+}
+
+// null mientras carga; luego true/false.
+export function useIsAdmin() {
+  const [admin, setAdmin] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (profilesPromise || refreshProfiles()).then((profiles) => {
+      if (!cancelled) setAdmin(isAdminIn(profiles));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return admin;
 }
 
 export function clearActiveProfileId() {

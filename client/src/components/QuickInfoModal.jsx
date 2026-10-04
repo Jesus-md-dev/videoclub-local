@@ -4,6 +4,7 @@ import PosterPicker from './PosterPicker';
 import useFocusTrap from '../hooks/useFocusTrap';
 import useBackButtonClose from '../hooks/useBackButtonClose';
 import { episodeTitle } from '../utils/format';
+import { useIsAdmin } from '../profile';
 
 // Ficha rápida ("más info" estilo Netflix): un vistazo sin salir del
 // catálogo, en vez de tener que navegar y volver atrás solo para ver el
@@ -18,6 +19,8 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
   const [savingName, setSavingName] = useState(false);
   const [nameError, setNameError] = useState(null);
   const cardRef = useRef(null);
+  // Editar el catálogo (carátula, nombre, anime, borrar): solo admin (#152).
+  const admin = useIsAdmin();
 
   // Mueve el foco dentro del modal al abrir, atrapa Tab mientras está
   // abierto, y lo devuelve a la carátula que lo abrió al cerrar.
@@ -201,12 +204,12 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
                 ▶ Reproducir
               </Link>
             )}
-            {metadataKey && (
+            {admin && metadataKey && (
               <button className="secondary" onClick={() => setPickingPoster(true)}>
                 Cambiar carátula
               </button>
             )}
-            {metadataKey && (isFolder || !data.seriesKey) && (
+            {admin && metadataKey && (isFolder || !data.seriesKey) && (
               <button
                 className="secondary"
                 onClick={() => {
@@ -217,17 +220,18 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
                 Cambiar nombre
               </button>
             )}
-            {metadataKey && (isFolder || !data.seriesKey) && data.customName && (
+            {admin && metadataKey && (isFolder || !data.seriesKey) && data.customName && (
               <button className="secondary" onClick={() => saveName('')} disabled={savingName}>
                 Quitar nombre propio
               </button>
             )}
-            {metadataKey && (isFolder || !data.seriesKey) && (data.animeMarked || data.type !== 'anime') && (
+            {admin && metadataKey && (isFolder || !data.seriesKey) && (data.animeMarked || data.type !== 'anime') && (
               <button className="secondary" onClick={() => setAnimeMark(!data.animeMarked)} disabled={savingName}>
                 {data.animeMarked ? 'Quitar marca de anime' : 'Marcar como anime'}
               </button>
             )}
-            {!isFolder &&
+            {admin &&
+              !isFolder &&
               (confirmingDelete ? (
                 <>
                   <button className="danger" onClick={handleDelete} disabled={deleting}>
