@@ -23,6 +23,33 @@ let byId = new Map();
 let showsList = []; // agrupaciones con más de un vídeo (series/anime)
 let moviesList = []; // vídeos sueltos (películas)
 let showVideos = new Map(); // clave de serie -> vídeos ordenados
+
+// Episodios sueltos sin carpeta propia ("Mushoku Tensei III - Isekai Ittara
+// Honki Dasu - 01.mkv" ... "- 14.mkv" en la raíz, #160): sin esto cada uno
+// tenía su propio título como clave y salían como 14 películas. Si al menos
+// dos títulos sueltos comparten nombre y solo cambia un número de episodio
+// final (" - 01"), se agrupan como serie con ese nombre como clave. No se
+// mueve ningún archivo (ver #118), así que los ids no cambian.
+const LOOSE_EPISODE_PATTERN = /^(.+?)\s+-\s+(\d{2,4})$/;
+let looseSeriesKeys = new Map(); // título del vídeo -> clave de serie
+
+function computeLooseSeriesKeys(videos) {
+  const byPrefix = new Map();
+  for (const video of videos) {
+    if (groupKeyFor(video, { loose: false }) !== video.title) continue;
+    const match = video.title.match(LOOSE_EPISODE_PATTERN);
+    if (!match) continue;
+    const prefix = match[1].trim();
+    if (!byPrefix.has(prefix)) byPrefix.set(prefix, []);
+    byPrefix.get(prefix).push(video.title);
+  }
+  const keys = new Map();
+  for (const [prefix, titles] of byPrefix) {
+    if (titles.length < 2) continue;
+    for (const title of titles) keys.set(title, prefix);
+  }
+  return keys;
+}
 // Cuántos vídeos archivados están además "perdidos" (isLost) en el último
 // escaneo - no se cuenta con lostVideos.js (registro histórico que solo
 // crece, puede tener entradas obsoletas de ids que ya no existen tras un
@@ -144,7 +171,7 @@ function seasonNumberFor(video) {
 // archivo. No se asume de antemano si es serie o película por estructura de
 // carpetas: eso lo decide cuántos vídeos comparten la clave y la propia
 // búsqueda de metadatos.
-function groupKeyFor(video) {
+function groupKeyFor(video, { loose = true } = {}) {
   const folderSegments = video.relativePath.split(path.sep).slice(0, -1);
   for (let i = folderSegments.length - 1; i >= 0; i -= 1) {
     const name = cleanTitle(folderSegments[i]);
@@ -158,6 +185,8 @@ function groupKeyFor(video) {
       return stripSagaSuffix(name);
     }
   }
+  // Episodio suelto de una serie sin carpeta (ver looseSeriesKeys).
+  if (loose && looseSeriesKeys.has(video.title)) return looseSeriesKeys.get(video.title);
   return video.title;
 }
 
@@ -290,6 +319,7 @@ function looksLikeSameWork(candidateTitle, existingKey) {
 }
 
 function buildLibrary() {
+  looseSeriesKeys = computeLooseSeriesKeys(cache);
   const groups = new Map();
   for (const video of cache) {
     const key = groupKeyFor(video);
