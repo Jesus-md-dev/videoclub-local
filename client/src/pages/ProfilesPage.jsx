@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getActiveProfileId, isAdminIn, refreshProfiles, setActiveProfileId } from '../profile';
+import { clearActiveProfileId, getActiveProfileId, isAdminIn, refreshProfiles, setActiveProfileId } from '../profile';
 
 const COLORS = ['#e63946', '#2a9d8f', '#e9c46a', '#457b9d', '#8338ec', '#f4a261', '#06d6a0', '#ef476f'];
 
@@ -101,6 +101,10 @@ export default function ProfilesPage() {
   const handleDelete = (id) => {
     fetch(`/api/profiles/${id}`, { method: 'DELETE' })
       .then((res) => failIfNotOk(res, 'No se pudo borrar el perfil.'))
+      .then(() => {
+        // Borrado el propio: este dispositivo se queda sin perfil activo.
+        if (id === getActiveProfileId()) clearActiveProfileId();
+      })
       .then(loadProfiles)
       .catch((err) => setError(err.message));
   };
@@ -123,23 +127,31 @@ export default function ProfilesPage() {
             <p className="profile-name">{profile.name}</p>
             {managing && (
               <>
-                <button
-                  className="profile-option"
-                  aria-pressed={Boolean(profile.admin)}
-                  onClick={() => handleToggleAdmin(profile)}
-                >
-                  {profile.admin ? '✓ Administrador' : 'Sin permisos de admin'}
-                </button>
-                <button
-                  className="profile-option"
-                  aria-pressed={Boolean(profile.settings?.showAnime)}
-                  onClick={() => handleToggleAnime(profile)}
-                >
-                  {profile.settings?.showAnime ? '✓ Mostrar anime' : 'Anime oculto'}
-                </button>
-                <button className="profile-delete" onClick={() => handleDelete(profile.id)}>
-                  Borrar
-                </button>
+                {/* Admin y anime: solo un admin. Borrar: un admin, o el
+                    propio perfil (#154). */}
+                {canManage && (
+                  <>
+                    <button
+                      className="profile-option"
+                      aria-pressed={Boolean(profile.admin)}
+                      onClick={() => handleToggleAdmin(profile)}
+                    >
+                      {profile.admin ? '✓ Administrador' : 'Sin permisos de admin'}
+                    </button>
+                    <button
+                      className="profile-option"
+                      aria-pressed={Boolean(profile.settings?.showAnime)}
+                      onClick={() => handleToggleAnime(profile)}
+                    >
+                      {profile.settings?.showAnime ? '✓ Mostrar anime' : 'Anime oculto'}
+                    </button>
+                  </>
+                )}
+                {(canManage || profile.id === lastProfileId) && (
+                  <button className="profile-delete" onClick={() => handleDelete(profile.id)}>
+                    Borrar
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -177,7 +189,8 @@ export default function ProfilesPage() {
         )}
       </div>
 
-      {canManage && profiles && profiles.length > 0 && (
+      {/* Gestionar: cualquiera (#154); qué puede hacer cada uno, arriba. */}
+      {profiles && profiles.length > 0 && (
         <button className="profiles-manage-toggle" onClick={() => setManaging((m) => !m)}>
           {managing ? 'Listo' : 'Gestionar perfiles'}
         </button>

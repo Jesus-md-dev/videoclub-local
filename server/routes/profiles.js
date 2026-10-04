@@ -19,7 +19,12 @@ router.post('/profiles', (req, res) => {
   }
 });
 
+// Borrar: un admin, cualquiera; el resto, solo su propio perfil (#154).
 router.delete('/profiles/:id', (req, res) => {
+  if (!requesterIsAdmin(req) && req.get('X-Profile-Id') !== req.params.id) {
+    res.status(403).json({ error: 'Solo puedes borrar tu propio perfil.' });
+    return;
+  }
   try {
     profiles.deleteProfile(req.params.id);
   } catch (err) {
