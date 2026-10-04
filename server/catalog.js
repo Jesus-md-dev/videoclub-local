@@ -28,9 +28,10 @@ let showVideos = new Map(); // clave de serie -> vídeos ordenados
 // Honki Dasu - 01.mkv" ... "- 14.mkv" en la raíz, #160): sin esto cada uno
 // tenía su propio título como clave y salían como 14 películas. Si al menos
 // dos títulos sueltos comparten nombre y solo cambia un número de episodio
-// final (" - 01"), se agrupan como serie con ese nombre como clave. No se
-// mueve ningún archivo (ver #118), así que los ids no cambian.
-const LOOSE_EPISODE_PATTERN = /^(.+?)\s+-\s+(\d{2,4})$/;
+// final (" - 01", o " - S01E01" tras normalizar el nombre), se agrupan como
+// serie con ese nombre como clave. No se mueve ningún archivo (ver #118),
+// así que los ids no cambian.
+const LOOSE_EPISODE_PATTERN = /^(.+?)\s+-\s+(?:S\d{1,2}E\d{1,4}|\d{2,4})$/i;
 let looseSeriesKeys = new Map(); // título del vídeo -> clave de serie
 
 function computeLooseSeriesKeys(videos) {
