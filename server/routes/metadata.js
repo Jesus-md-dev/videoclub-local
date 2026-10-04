@@ -69,6 +69,17 @@ router.post('/metadata/custom-name', (req, res) => {
   res.json(metadata.setCustomName(key, name));
 });
 
+// Marcar/desmarcar a mano un título como anime (#151), para lo que TMDB
+// cataloga como película normal.
+router.post('/metadata/anime', (req, res) => {
+  const { key, anime } = req.body || {};
+  if (!key || typeof anime !== 'boolean') {
+    res.status(400).json({ error: 'Faltan "key" y/o "anime" (true/false)' });
+    return;
+  }
+  res.json(metadata.setAnimeMark(key, anime));
+});
+
 // Hasta 3 fichas candidatas de TMDB (nombre, año, carátula) para que la
 // persona elija cuál es la correcta a mano, en vez de fiarse a ciegas de
 // la búsqueda automática (ver ConfigPage/QuickInfoModal "Cambiar carátula").

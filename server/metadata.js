@@ -14,6 +14,10 @@ const OVERRIDES_FILE = path.join(DATA_PATH, 'metadata-overrides.json');
 // (VOSE)" para una segunda versión de una serie que TMDB llamaría igual que
 // la primera. Aparte de la caché: una búsqueda nueva en TMDB nunca los pisa.
 const CUSTOM_NAMES_FILE = path.join(DATA_PATH, 'custom-names.json');
+// Títulos marcados a mano como anime (#151): TMDB cataloga como simple
+// película algunas (las de Berserk), y así se ocultan con el resto del anime
+// a los perfiles sin "Mostrar anime". Sobrevive a los refrescos de TMDB.
+const ANIME_MARKS_FILE = path.join(DATA_PATH, 'anime-marks.json');
 
 let cache = loadCache();
 const pending = new Map();
@@ -69,13 +73,50 @@ function saveCustomNames() {
 
 let customNames = loadCustomNames();
 
+function loadAnimeMarks() {
+  try {
+    return JSON.parse(fs.readFileSync(ANIME_MARKS_FILE, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveAnimeMarks() {
+  fs.mkdirSync(DATA_PATH, { recursive: true });
+  fs.writeFileSync(ANIME_MARKS_FILE, JSON.stringify(animeMarks, null, 2));
+}
+
+let animeMarks = loadAnimeMarks();
+
+// Marcado a mano como anime: tipo "anime" y género "Anime", mande lo que
+// mande TMDB.
+function withAnimeMark(key, entry) {
+  if (!animeMarks[key]) return entry;
+  const genres = entry.genres || [];
+  return {
+    ...entry,
+    type: 'anime',
+    genres: genres.includes('Anime') ? genres : [...genres, 'Anime'],
+    animeMarked: true,
+  };
+}
+
+// false = quitar la marca y volver a lo que diga TMDB.
+function setAnimeMark(key, anime) {
+  if (anime) animeMarks[key] = true;
+  else delete animeMarks[key];
+  saveAnimeMarks();
+  return getCached(key);
+}
+
 // El nombre puesto a mano manda sobre el de TMDB al mostrarlo y al
 // normalizar nombres de archivo; el de TMDB se conserva en tmdbName para lo
 // que necesita el título real (búsqueda de subtítulos).
 function withCustomName(key, entry) {
+  const marked = withAnimeMark(key, entry);
   const customName = customNames[key];
-  if (!customName) return entry;
-  return { ...entry, cleanName: customName, customName, tmdbName: entry.cleanName };
+  if (!customName) return marked;
+  return { ...marked, cleanName: customName, customName, tmdbName: marked.cleanName };
 }
 
 // Nombre vacío = quitarlo y volver al de TMDB.
@@ -106,6 +147,7 @@ function reloadCache() {
 function reloadOverrides() {
   overrides = loadOverrides();
   customNames = loadCustomNames();
+  animeMarks = loadAnimeMarks();
 }
 
 function wait(ms) {
@@ -755,6 +797,11 @@ function migrateCacheKey(oldKey, newKey) {
     delete customNames[oldKey];
     saveCustomNames();
   }
+  if (oldKey !== newKey && animeMarks[oldKey]) {
+    animeMarks[newKey] = true;
+    delete animeMarks[oldKey];
+    saveAnimeMarks();
+  }
   if (oldKey === newKey || !cache[oldKey]) return;
   if (!cache[newKey]) cache[newKey] = cache[oldKey];
   delete cache[oldKey];
@@ -796,6 +843,10 @@ function forgetMetadata(key) {
   if (customNames[key]) {
     delete customNames[key];
     saveCustomNames();
+  }
+  if (animeMarks[key]) {
+    delete animeMarks[key];
+    saveAnimeMarks();
   }
 }
 
@@ -1168,6 +1219,7 @@ module.exports = {
   refreshMetadata,
   overrideFromTmdb,
   setCustomName,
+  setAnimeMark,
   forceTmdbRefreshAll,
   getForceTmdbProgress,
   fetchEpisodeOrderings,

@@ -71,6 +71,29 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
     }
   }
 
+  // Marca a mano de anime (#151): para lo que TMDB da como película normal
+  // (las de Berserk); así se oculta con el resto a los perfiles sin
+  // "Mostrar anime".
+  async function setAnimeMark(anime) {
+    setSavingName(true);
+    setNameError(null);
+    try {
+      const res = await fetch('/api/metadata/anime', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: metadataKey, anime }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'No se pudo cambiar la marca de anime.');
+      onMetadataChanged?.();
+      onClose();
+    } catch (err) {
+      setNameError(err.message);
+    } finally {
+      setSavingName(false);
+    }
+  }
+
   async function handleDelete() {
     setDeleting(true);
     setDeleteError(null);
@@ -197,6 +220,11 @@ export default function QuickInfoModal({ target, onClose, onOpenFolder, onMetada
             {metadataKey && (isFolder || !data.seriesKey) && data.customName && (
               <button className="secondary" onClick={() => saveName('')} disabled={savingName}>
                 Quitar nombre propio
+              </button>
+            )}
+            {metadataKey && (isFolder || !data.seriesKey) && (data.animeMarked || data.type !== 'anime') && (
+              <button className="secondary" onClick={() => setAnimeMark(!data.animeMarked)} disabled={savingName}>
+                {data.animeMarked ? 'Quitar marca de anime' : 'Marcar como anime'}
               </button>
             )}
             {!isFolder &&

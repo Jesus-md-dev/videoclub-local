@@ -101,6 +101,7 @@ router.get('/videos', (req, res) => {
       customName: meta.customName || null,
       poster: meta.poster,
       type: resolveType(meta),
+      animeMarked: Boolean(meta.animeMarked),
     };
   });
   res.json(hideAnime ? videos.filter((v) => v.type !== 'anime') : videos);
@@ -147,6 +148,7 @@ router.get('/videos/browse', (req, res) => {
           customName: meta.customName || null,
           poster: meta.poster,
           type: resolveType(meta),
+          animeMarked: Boolean(meta.animeMarked),
           processingState,
           processingPercent,
           hlsCompletion: folderHlsCompletion(folderVideos),
@@ -168,6 +170,7 @@ router.get('/videos/browse', (req, res) => {
           customName: meta.customName || null,
           poster: meta.poster,
           type: resolveType(meta),
+          animeMarked: Boolean(meta.animeMarked),
         };
       })
       .filter((video) => !hideAnime || video.type !== 'anime'),
