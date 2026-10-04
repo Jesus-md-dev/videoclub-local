@@ -27,7 +27,7 @@ export default function ProfilesPage() {
     });
   };
 
-  // Crear, borrar y cambiar opciones de perfiles: solo si el último perfil
+  // Borrar y cambiar opciones de perfiles: solo si el último perfil
   // usado en este dispositivo es admin (#152). Para gestionar desde un
   // dispositivo nuevo, entra antes con un perfil admin y vuelve aquí desde
   // el menú ("Cambiar perfil").
@@ -145,37 +145,36 @@ export default function ProfilesPage() {
           </div>
         ))}
 
-        {/* Añadir perfiles: solo admin (#152). */}
-        {canManage &&
-          (creating ? (
-            <form className="profile-card-wrap" onSubmit={handleCreate}>
-              <label htmlFor="profile-name-input" className="sr-only">
-                Nombre del perfil
-              </label>
-              <input
-                id="profile-name-input"
-                className="profile-name-input"
-                autoFocus
-                maxLength={30}
-                placeholder="Nombre"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <div className="profile-create-actions">
-                <button type="submit">Crear</button>
-                <button type="button" className="secondary" onClick={() => setCreating(false)}>
-                  Cancelar
-                </button>
-              </div>
-            </form>
-          ) : (
-            <div className="profile-card-wrap">
-              <button className="profile-card profile-add" onClick={() => setCreating(true)}>
-                +
+        {/* Añadir perfiles: cualquiera (#153); nacen sin admin y sin anime. */}
+        {creating ? (
+          <form className="profile-card-wrap" onSubmit={handleCreate}>
+            <label htmlFor="profile-name-input" className="sr-only">
+              Nombre del perfil
+            </label>
+            <input
+              id="profile-name-input"
+              className="profile-name-input"
+              autoFocus
+              maxLength={30}
+              placeholder="Nombre"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <div className="profile-create-actions">
+              <button type="submit">Crear</button>
+              <button type="button" className="secondary" onClick={() => setCreating(false)}>
+                Cancelar
               </button>
-              <p className="profile-name">Añadir perfil</p>
             </div>
-          ))}
+          </form>
+        ) : (
+          <div className="profile-card-wrap">
+            <button className="profile-card profile-add" onClick={() => setCreating(true)}>
+              +
+            </button>
+            <p className="profile-name">Añadir perfil</p>
+          </div>
+        )}
       </div>
 
       {canManage && profiles && profiles.length > 0 && (

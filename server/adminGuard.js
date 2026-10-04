@@ -15,8 +15,8 @@ const profiles = require('./profiles');
 //   podría nombrar al primero).
 
 // Rutas (sin /api) de las acciones de administrador.
+// Crear perfiles es libre (#153): uno nuevo nace sin admin y sin anime.
 const ADMIN_ROUTES = [
-  /^\/profiles$/, // crear (POST)
   /^\/profiles\/[^/]+$/, // borrar (DELETE)
   /^\/profiles\/[^/]+\/admin$/,
   /^\/metadata\/(refresh|override|custom-name|anime|force-tmdb-all)$/,
