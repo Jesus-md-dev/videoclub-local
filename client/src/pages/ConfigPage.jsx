@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import FolderBrowser from '../components/FolderBrowser';
 import HiddenMenu from '../components/HiddenMenu';
+import ProfileButton from '../components/ProfileButton';
 
 export default function ConfigPage() {
   const [videosPath, setVideosPath] = useState('');
@@ -478,6 +479,7 @@ export default function ConfigPage() {
           <Link className="back-link" to="/">
             &larr; Volver al catálogo
           </Link>
+          <ProfileButton />
           <HiddenMenu />
         </div>
       </header>

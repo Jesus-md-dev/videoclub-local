@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import HiddenMenu from './HiddenMenu';
+import ProfileButton from './ProfileButton';
 import { isTvMode, setKeepScreenOn } from '../tvMode';
 
 // Nombre de tecla normalizado para los atajos del reproductor. Antes solo
@@ -827,6 +828,7 @@ export default function VideoControls({
               </button>
             </div>
           )}
+          <ProfileButton />
           <HiddenMenu />
         </div>
       </div>

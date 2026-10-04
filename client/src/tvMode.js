@@ -51,6 +51,7 @@ const SKIP = '.card *, .row-arrow, .skip-link, .video-controls-hidden *, .player
 // Ventanas abiertas encima: mientras haya una, las flechas no salen de
 // ella (la última del DOM es la de más arriba).
 const MODALS = '.quickinfo-card, .poster-picker, .browser-modal, .shortcuts-help, .hidden-menu-panel';
+// (.profile-menu-panel también es .hidden-menu-panel: mismo trato.)
 
 function currentScope() {
   const modals = document.querySelectorAll(MODALS);

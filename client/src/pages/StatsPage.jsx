@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import HiddenMenu from '../components/HiddenMenu';
+import ProfileButton from '../components/ProfileButton';
 
 function TopList({ title, entries, emptyText }) {
   return (
@@ -43,6 +44,7 @@ export default function StatsPage() {
           <Link className="back-link" to="/">
             &larr; Volver al catálogo
           </Link>
+          <ProfileButton />
           <HiddenMenu />
         </div>
       </header>

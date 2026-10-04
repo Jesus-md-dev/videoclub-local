@@ -1,17 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { clearActiveProfileId, getActiveProfileId, isAdminIn, refreshProfiles, setActiveProfileId } from '../profile';
-
-const COLORS = ['#e63946', '#2a9d8f', '#e9c46a', '#457b9d', '#8338ec', '#f4a261', '#06d6a0', '#ef476f'];
-
-// El elegido a mano (#155), o uno fijo sacado del id.
-function colorFor(profile) {
-  if (profile.color) return profile.color;
-  const { id } = profile;
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return COLORS[hash % COLORS.length];
-}
+import {
+  PROFILE_COLORS as COLORS,
+  clearActiveProfileId,
+  getActiveProfileId,
+  isAdminIn,
+  profileColor as colorFor,
+  refreshProfiles,
+  setActiveProfileId,
+} from '../profile';
 
 export default function ProfilesPage() {
   const navigate = useNavigate();

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import Hls from 'hls.js';
 import VideoControls from '../components/VideoControls';
 import HiddenMenu from '../components/HiddenMenu';
+import ProfileButton from '../components/ProfileButton';
 import ShortcutsHelp from '../components/ShortcutsHelp';
 import { getActiveProfileId, withProfile } from '../profile';
 import { DEFAULT_SUBTITLE_PREFS, SUBTITLE_SIZE_EM, SUBTITLE_BG_COLOR, fetchSubtitlePrefs, saveSubtitlePrefs } from '../subtitlePrefs';
@@ -664,6 +665,7 @@ export default function WatchPage() {
               ))}
             </select>
           )}
+          <ProfileButton />
           <HiddenMenu />
         </div>
       )}

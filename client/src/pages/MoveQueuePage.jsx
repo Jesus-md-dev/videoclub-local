@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import HiddenMenu from '../components/HiddenMenu';
+import ProfileButton from '../components/ProfileButton';
 import usePolling from '../hooks/usePolling';
 import { formatSize } from '../utils/format';
 
@@ -18,6 +19,7 @@ export default function MoveQueuePage() {
           <Link className="back-link" to="/">
             &larr; Volver al catálogo
           </Link>
+          <ProfileButton />
           <HiddenMenu />
         </div>
       </header>

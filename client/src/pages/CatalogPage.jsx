@@ -6,6 +6,7 @@ import { getCatalogLayout, setCatalogLayout } from '../catalogLayout';
 import { track } from '../analytics';
 import { episodeTitle } from '../utils/format';
 import HiddenMenu from '../components/HiddenMenu';
+import ProfileButton from '../components/ProfileButton';
 import Row from '../components/Row';
 import EdgeScrollButtons from '../components/EdgeScrollButtons';
 import QuickInfoModal from '../components/QuickInfoModal';
@@ -626,6 +627,7 @@ export default function CatalogPage() {
           >
             {layout === 'grid' ? '☰ Carrusel' : '▦ Cuadrícula'}
           </button>
+          <ProfileButton />
           <HiddenMenu />
         </div>
       </header>

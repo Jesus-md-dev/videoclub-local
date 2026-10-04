@@ -75,6 +75,33 @@ export function useIsAdmin() {
   return admin;
 }
 
+export const PROFILE_COLORS = ['#e63946', '#2a9d8f', '#e9c46a', '#457b9d', '#8338ec', '#f4a261', '#06d6a0', '#ef476f'];
+
+// El elegido a mano (#155), o uno fijo sacado del id.
+export function profileColor(profile) {
+  if (profile.color) return profile.color;
+  const { id } = profile;
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return PROFILE_COLORS[hash % PROFILE_COLORS.length];
+}
+
+// El perfil activo completo (nombre, color...), o null mientras carga o
+// si no hay ninguno.
+export function useActiveProfile() {
+  const [profile, setProfile] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (profilesPromise || refreshProfiles()).then((profiles) => {
+      if (!cancelled) setProfile(profiles.find((p) => p.id === getActiveProfileId()) || null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return profile;
+}
+
 export function clearActiveProfileId() {
   localStorage.removeItem(ACTIVE_PROFILE_KEY);
 }

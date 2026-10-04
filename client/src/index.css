@@ -183,6 +183,99 @@ header::before {
   position: relative;
 }
 
+/* Avatar del perfil activo en las cabeceras, con menú para cambiar de
+   perfil (#157, ProfileButton.jsx), al estilo de Netflix. */
+.profile-menu {
+  position: relative;
+}
+
+.profile-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.profile-button-avatar,
+.profile-menu-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.profile-button-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  border: 2px solid transparent;
+}
+
+.profile-button:hover .profile-button-avatar,
+.profile-button:focus-visible .profile-button-avatar {
+  border-color: var(--text);
+}
+
+.profile-button-caret {
+  font-size: 12px;
+  transition: transform 0.15s ease;
+}
+
+.profile-button[aria-expanded='true'] .profile-button-caret {
+  transform: rotate(180deg);
+}
+
+.profile-menu-avatar {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+  border-radius: 6px;
+}
+
+.profile-menu-current,
+.profile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.profile-menu-current {
+  margin: 0 0 4px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.profile-menu-item {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.profile-menu-item:hover,
+.profile-menu-item:focus-visible {
+  background: var(--bg);
+  color: var(--accent-glow);
+}
+
+.hidden-menu-panel a.profile-menu-manage {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  border-radius: 0 0 6px 6px;
+}
+
 /* Botón de la cabecera del catálogo para cambiar entre carrusel y
    cuadrícula (catalogLayout.js), del mismo alto que el botón del menú. */
 .layout-toggle {
