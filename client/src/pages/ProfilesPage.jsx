@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { setActiveProfileId } from '../profile';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { getActiveProfileId, setActiveProfileId } from '../profile';
 
 const COLORS = ['#e63946', '#2a9d8f', '#e9c46a', '#457b9d', '#8338ec', '#f4a261', '#06d6a0', '#ef476f'];
 
@@ -12,6 +12,8 @@ function colorFor(id) {
 
 export default function ProfilesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const lastProfileId = getActiveProfileId();
   const [profiles, setProfiles] = useState(null);
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -32,7 +34,8 @@ export default function ProfilesPage() {
   const handleSelect = (id) => {
     if (managing) return;
     setActiveProfileId(id);
-    navigate('/');
+    // replace: Atrás desde el catálogo no vuelve a "¿Quién ve ahora?".
+    navigate(location.state?.from || '/', { replace: true });
   };
 
   const handleCreate = (e) => {
@@ -75,6 +78,7 @@ export default function ProfilesPage() {
               className="profile-card"
               style={{ background: colorFor(profile.id) }}
               onClick={() => handleSelect(profile.id)}
+              data-tv-start={profile.id === lastProfileId ? '' : undefined}
             >
               {profile.name.slice(0, 1).toUpperCase()}
             </button>

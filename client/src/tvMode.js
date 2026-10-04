@@ -270,7 +270,12 @@ export function useTvFocus() {
       }
       const candidates = candidatesIn(currentScope());
       const previous = wanted && candidates.find((el) => focusKey(el) === wanted);
-      let target = previous || (wanted ? null : candidates.find((el) => el.classList.contains('card')));
+      let target =
+        previous ||
+        (wanted
+          ? null
+          : candidates.find((el) => el.hasAttribute('data-tv-start')) ||
+            candidates.find((el) => el.classList.contains('card')));
       if (!target && tries >= limit) target = preferredStart(candidates);
       if (target && target !== active) {
         focusElement(target);
