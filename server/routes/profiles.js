@@ -35,6 +35,20 @@ router.delete('/profiles/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// Cambiar nombre y color (#155): un admin, cualquiera; el resto, el suyo.
+router.patch('/profiles/:id', (req, res) => {
+  if (!requesterIsAdmin(req) && req.get('X-Profile-Id') !== req.params.id) {
+    res.status(403).json({ error: 'Solo puedes cambiar tu propio perfil.' });
+    return;
+  }
+  try {
+    res.json(profiles.updateProfile(req.params.id, { name: req.body?.name, color: req.body?.color }));
+    backup.scheduleBackup();
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Nombrar o quitar administrador (#152); solo un admin (adminGuard.js).
 router.post('/profiles/:id/admin', (req, res) => {
   try {

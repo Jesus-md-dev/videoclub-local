@@ -57,6 +57,29 @@ function createProfile(name) {
   return profile;
 }
 
+// Nombre y color del perfil (#155). Mismas reglas de nombre que al
+// crearlo; el color, un #rrggbb (sin él, la web elige uno por el id).
+function updateProfile(id, { name, color } = {}) {
+  const profiles = readProfiles();
+  const profile = profiles.find((p) => p.id === id);
+  if (!profile) throw new Error('Perfil no encontrado');
+  if (name !== undefined) {
+    const trimmed = String(name).trim();
+    if (!trimmed) throw new Error('El perfil necesita un nombre');
+    if (trimmed.length > 30) throw new Error('El nombre es demasiado largo');
+    if (profiles.some((p) => p.id !== id && p.name.toLowerCase() === trimmed.toLowerCase())) {
+      throw new Error('Ya existe un perfil con ese nombre');
+    }
+    profile.name = trimmed;
+  }
+  if (color !== undefined) {
+    if (!/^#[0-9a-f]{6}$/i.test(String(color))) throw new Error('Color no válido');
+    profile.color = String(color).toLowerCase();
+  }
+  writeProfiles(profiles);
+  return profile;
+}
+
 // Perfil administrador (#152, ver adminGuard.js). Va en el perfil y no en
 // settings: los ajustes los cambia cada perfil libremente (subtítulos...).
 // Nunca se deja sin ningún admin: sin admins, adminGuard deja hacer todo a
@@ -143,6 +166,7 @@ module.exports = {
   createProfile,
   deleteProfile,
   setAdmin,
+  updateProfile,
   getProgress,
   setProgress,
   dismissProgress,

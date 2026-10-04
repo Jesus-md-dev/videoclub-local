@@ -4,7 +4,10 @@ import { clearActiveProfileId, getActiveProfileId, isAdminIn, refreshProfiles, s
 
 const COLORS = ['#e63946', '#2a9d8f', '#e9c46a', '#457b9d', '#8338ec', '#f4a261', '#06d6a0', '#ef476f'];
 
-function colorFor(id) {
+// El elegido a mano (#155), o uno fijo sacado del id.
+function colorFor(profile) {
+  if (profile.color) return profile.color;
+  const { id } = profile;
   let hash = 0;
   for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
   return COLORS[hash % COLORS.length];
@@ -19,6 +22,8 @@ export default function ProfilesPage() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [managing, setManaging] = useState(false);
+  // Perfil en edición (nombre y color, #155): { id, name, color }.
+  const [editing, setEditing] = useState(null);
 
   const loadProfiles = () => {
     refreshProfiles().then((list) => {
@@ -38,6 +43,22 @@ export default function ProfilesPage() {
     if (res.ok) return;
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || fallback);
+  };
+
+  const handleSaveEdit = (e) => {
+    e.preventDefault();
+    fetch(`/api/profiles/${editing.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: editing.name, color: editing.color }),
+    })
+      .then((res) => failIfNotOk(res, 'No se pudo guardar el perfil.'))
+      .then(() => {
+        setEditing(null);
+        setError(null);
+        loadProfiles();
+      })
+      .catch((err) => setError(err.message));
   };
 
   const handleToggleAdmin = (profile) => {
@@ -115,46 +136,93 @@ export default function ProfilesPage() {
       {error && <p className="empty-state">{error}</p>}
       <div className="profiles-grid">
         {(profiles || []).map((profile) => (
-          <div key={profile.id} className="profile-card-wrap">
-            <button
-              className="profile-card"
-              style={{ background: colorFor(profile.id) }}
-              onClick={() => handleSelect(profile.id)}
-              data-tv-start={profile.id === lastProfileId ? '' : undefined}
-            >
-              {profile.name.slice(0, 1).toUpperCase()}
-            </button>
-            <p className="profile-name">{profile.name}</p>
-            {managing && (
-              <>
-                {/* Admin y anime: solo un admin. Borrar: un admin, o el
-                    propio perfil (#154). */}
-                {canManage && (
-                  <>
-                    <button
-                      className="profile-option"
-                      aria-pressed={Boolean(profile.admin)}
-                      onClick={() => handleToggleAdmin(profile)}
-                    >
-                      {profile.admin ? '✓ Administrador' : 'Sin permisos de admin'}
-                    </button>
-                    <button
-                      className="profile-option"
-                      aria-pressed={Boolean(profile.settings?.showAnime)}
-                      onClick={() => handleToggleAnime(profile)}
-                    >
-                      {profile.settings?.showAnime ? '✓ Mostrar anime' : 'Anime oculto'}
-                    </button>
-                  </>
-                )}
-                {(canManage || profile.id === lastProfileId) && (
-                  <button className="profile-delete" onClick={() => handleDelete(profile.id)}>
-                    Borrar
-                  </button>
-                )}
-              </>
-            )}
-          </div>
+          editing?.id === profile.id ? (
+            <form key={profile.id} className="profile-card-wrap profile-edit" onSubmit={handleSaveEdit}>
+              <label htmlFor="profile-edit-name" className="sr-only">
+                Nombre del perfil
+              </label>
+              <input
+                id="profile-edit-name"
+                className="profile-name-input"
+                style={{ borderColor: editing.color }}
+                autoFocus
+                maxLength={30}
+                value={editing.name}
+                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+              />
+              <div className="profile-colors" role="radiogroup" aria-label="Color">
+                {COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    role="radio"
+                    aria-checked={editing.color === color}
+                    aria-label={`Color ${color}`}
+                    className="profile-color"
+                    style={{ background: color }}
+                    onClick={() => setEditing({ ...editing, color })}
+                  />
+                ))}
+              </div>
+              <div className="profile-create-actions">
+                <button type="submit">Guardar</button>
+                <button type="button" className="secondary" onClick={() => setEditing(null)}>
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div key={profile.id} className="profile-card-wrap">
+              <button
+                className="profile-card"
+                style={{ background: colorFor(profile) }}
+                onClick={() => handleSelect(profile.id)}
+                data-tv-start={profile.id === lastProfileId ? '' : undefined}
+              >
+                {profile.name.slice(0, 1).toUpperCase()}
+              </button>
+              <p className="profile-name">{profile.name}</p>
+              {managing && (
+                <>
+                  {/* Admin y anime: solo un admin. Borrar: un admin, o el
+                      propio perfil (#154). */}
+                  {canManage && (
+                    <>
+                      <button
+                        className="profile-option"
+                        aria-pressed={Boolean(profile.admin)}
+                        onClick={() => handleToggleAdmin(profile)}
+                      >
+                        {profile.admin ? '✓ Administrador' : 'Sin permisos de admin'}
+                      </button>
+                      <button
+                        className="profile-option"
+                        aria-pressed={Boolean(profile.settings?.showAnime)}
+                        onClick={() => handleToggleAnime(profile)}
+                      >
+                        {profile.settings?.showAnime ? '✓ Mostrar anime' : 'Anime oculto'}
+                      </button>
+                    </>
+                  )}
+                  {(canManage || profile.id === lastProfileId) && (
+                    <>
+                      <button
+                        className="profile-option"
+                        onClick={() =>
+                          setEditing({ id: profile.id, name: profile.name, color: colorFor(profile) })
+                        }
+                      >
+                        Editar
+                      </button>
+                      <button className="profile-delete" onClick={() => handleDelete(profile.id)}>
+                        Borrar
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          )
         ))}
 
         {/* Añadir perfiles: cualquiera (#153); nacen sin admin y sin anime. */}
