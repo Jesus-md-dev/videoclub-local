@@ -11,11 +11,10 @@ import EdgeScrollButtons from '../components/EdgeScrollButtons';
 import QuickInfoModal from '../components/QuickInfoModal';
 import ServerUnreachable from '../components/ServerUnreachable';
 import ShortcutsHelp from '../components/ShortcutsHelp';
-import useSpatialNavigation from '../hooks/useSpatialNavigation';
-import { isTvMode } from '../tvMode';
+import { isTvMode, useArrowNavigation } from '../tvMode';
 
 const CATALOG_SHORTCUTS = [
-  { keys: '↑↓←→', label: 'Moverse entre carátulas' },
+  { keys: '↑↓←→', label: 'Moverse por carátulas, filtros y cabecera' },
   { keys: '/', label: 'Ir al buscador' },
   { keys: 'Enter', label: 'Abrir la carátula enfocada' },
   { keys: 'Esc', label: 'Cerrar la ficha rápida' },
@@ -388,10 +387,9 @@ export default function CatalogPage() {
   // forzar una recarga inmediata, sin esperar al sondeo periódico.
   const [catalogVersion, setCatalogVersion] = useState(0);
 
-  // Flechas de mando/teclado entre carátulas (ver el hook): desactivada
-  // mientras el modal de información rápida está abierto, para no mover el
-  // fondo a la vez que se navega dentro de él.
-  useSpatialNavigation('.card', { enabled: !quickInfoTarget });
+  // Flechas de mando/teclado por toda la página (carátulas, filtros,
+  // cabecera); con una ventana abierta, solo dentro de ella (tvMode.js).
+  useArrowNavigation();
 
   // Atajo "/" para saltar directo al buscador desde cualquier sitio de la
   // página (patrón habitual en sitios con mucho contenido) - antes solo se

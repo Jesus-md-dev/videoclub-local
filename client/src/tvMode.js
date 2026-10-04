@@ -7,9 +7,9 @@ import { useLocation } from 'react-router-dom';
 // recuerda en este navegador; ?tv=0 lo quita), para probarlo en el PC o en
 // navegadores de tele que sí entreguen las flechas como teclas.
 //
-// En escritorio no cambia nada: ahí las flechas siguen desplazando la
-// página y solo el catálogo mueve el foco entre carátulas
-// (useSpatialNavigation).
+// Fuera del modo tele las flechas solo mueven el foco en el catálogo
+// (useArrowNavigation), con el mismo motor; en el resto de páginas siguen
+// desplazando la página como siempre.
 const STORAGE_KEY = 'videoclub-tv-mode';
 
 let tvMode = null;
@@ -75,8 +75,8 @@ function centerOf(rect) {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
-// Igual que useSpatialNavigation, pero midiendo desde el borde que mira en
-// esa dirección y con solape: así de un botón ancho de la cabecera se baja
+// De entre lo que hay en esa dirección, lo más cercano, midiendo desde el
+// borde que mira hacia allí y con solape: así de un botón ancho de la cabecera se baja
 // a lo que tiene justo debajo y no a lo más cercano a su centro.
 function findBest(from, direction, candidates) {
   const a = from.getBoundingClientRect();
@@ -220,6 +220,17 @@ export function setupTvMode() {
   // ventanas usan antes las teclas que les tocan.
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('videoclub-remote', handleRemote);
+}
+
+// Flechas en una página concreta fuera del modo tele (el catálogo, en
+// cualquier navegador: PC con teclado o tele sin la APK). En modo tele ya
+// está puesto para todas las páginas.
+export function useArrowNavigation() {
+  useEffect(() => {
+    if (isTvMode()) return undefined;
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 }
 
 // Foco al cambiar de página: al volver atrás, en la carátula de la que se
