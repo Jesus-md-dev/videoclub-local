@@ -1100,6 +1100,11 @@ main {
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 13px;
+  /* Sin tope, mide lo que su opción más larga y empuja fuera de la
+     pantalla el resto de controles (#156). */
+  max-width: 16em;
+  min-width: 0;
+  text-overflow: ellipsis;
 }
 
 .player-wrap {

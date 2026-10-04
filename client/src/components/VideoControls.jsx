@@ -48,8 +48,14 @@ function keyNameFor(e) {
   return e.code || KEY_NAMES[e.key] || fromKeyCode;
 }
 
+// Recortado: un <select> mide lo que su opción más larga, y pistas como
+// "Inglés (Audio Commentary with producer Tim Burton, director...)"
+// sacaban de la pantalla el resto de controles (#156).
+const MAX_TRACK_LABEL = 40;
+
 function trackLabel(track) {
-  return track.languageLabel || track.title || `Pista ${track.index}`;
+  const label = track.languageLabel || track.title || `Pista ${track.index}`;
+  return label.length > MAX_TRACK_LABEL ? `${label.slice(0, MAX_TRACK_LABEL - 1).trimEnd()}…` : label;
 }
 
 // El origen de una pista de subtítulo se distingue por el prefijo de su
