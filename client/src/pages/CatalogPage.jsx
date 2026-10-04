@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Hls from 'hls.js';
-import { getActiveProfileId } from '../profile';
+import { getActiveProfileId, withProfile } from '../profile';
 import { getCatalogLayout, setCatalogLayout } from '../catalogLayout';
 import { track } from '../analytics';
 import { episodeTitle } from '../utils/format';
@@ -410,7 +410,7 @@ export default function CatalogPage() {
   const searching = term.trim().length > 0;
 
   useEffect(() => {
-    fetch('/api/genres')
+    fetch(withProfile('/api/genres'))
       .then((res) => res.json())
       .then(setGenres)
       .catch(() => {});
@@ -473,7 +473,7 @@ export default function CatalogPage() {
     let cancelled = false;
     let timer;
     const load = () => {
-      fetch('/api/videos')
+      fetch(withProfile('/api/videos'))
         .then((res) => res.json())
         .then((data) => {
           if (cancelled) return;

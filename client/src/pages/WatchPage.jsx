@@ -4,7 +4,7 @@ import Hls from 'hls.js';
 import VideoControls from '../components/VideoControls';
 import HiddenMenu from '../components/HiddenMenu';
 import ShortcutsHelp from '../components/ShortcutsHelp';
-import { getActiveProfileId } from '../profile';
+import { getActiveProfileId, withProfile } from '../profile';
 import { DEFAULT_SUBTITLE_PREFS, SUBTITLE_SIZE_EM, SUBTITLE_BG_COLOR, fetchSubtitlePrefs, saveSubtitlePrefs } from '../subtitlePrefs';
 import { track } from '../analytics';
 import { episodeTitle } from '../utils/format';
@@ -204,12 +204,12 @@ export default function WatchPage() {
       .catch(() => {});
 
   useEffect(() => {
-    fetch('/api/videos')
+    fetch(withProfile('/api/videos'))
       .then((res) => res.json())
       .then((videos) => {
         const found = videos.find((v) => v.id === id);
         if (!found) {
-          setError('El vídeo solicitado no existe en el catálogo.');
+          setError('El vídeo solicitado no existe en el catálogo o no está disponible para este perfil.');
           return;
         }
         setVideo(found);
@@ -277,7 +277,7 @@ export default function WatchPage() {
       setNextEpisodeId(null);
       return;
     }
-    fetch(`/api/videos/browse?dir=${encodeURIComponent(video.seriesKey)}`)
+    fetch(withProfile(`/api/videos/browse?dir=${encodeURIComponent(video.seriesKey)}`))
       .then((res) => res.json())
       .then((data) => {
         const list = data.videos || [];

@@ -18,6 +18,16 @@ function resolveType(meta) {
   return meta.type;
 }
 
+// Anime oculto por perfil (#150): solo lo ve el perfil que tenga activada
+// la opción "Mostrar anime" (settings.showAnime, desactivada de base). Sin
+// profileId en la petición no se filtra nada (páginas de administración).
+// No es un control de acceso de verdad: no hay contraseñas (red local).
+function hidesAnime(req) {
+  const profileId = typeof req.query.profileId === 'string' ? req.query.profileId : null;
+  if (!profileId || !profiles.profileExists(profileId)) return false;
+  return profiles.getSettings(profileId).showAnime !== true;
+}
+
 // 'active': generándose el HLS ahora mismo (con su % si se conoce).
 // 'queued': ya se sabe que hace falta, pero aún analizando/esperando su
 // turno. null: ya está listo, o aún no se ha comprobado.
@@ -81,6 +91,7 @@ function folderHlsCompletion(videosInFolder) {
 }
 
 router.get('/videos', (req, res) => {
+  const hideAnime = hidesAnime(req);
   const videos = catalog.getCatalog().map((video) => {
     const meta = metadata.getCached(catalog.metadataKeyFor(video));
     return {
@@ -92,7 +103,7 @@ router.get('/videos', (req, res) => {
       type: resolveType(meta),
     };
   });
-  res.json(videos);
+  res.json(hideAnime ? videos.filter((v) => v.type !== 'anime') : videos);
 });
 
 // Fracción (0-1) de episodios ya vistos (>=95%) de una carpeta de serie,
@@ -110,51 +121,62 @@ router.get('/videos/browse', (req, res) => {
   const { parent, folders, videos } = catalog.listDir(dir);
   const profileId = typeof req.query.profileId === 'string' ? req.query.profileId : null;
   const profileProgress = profileId && profiles.profileExists(profileId) ? profiles.getProgress(profileId) : null;
+  const hideAnime = hidesAnime(req);
+  // Dentro de una carpeta de anime (enlace directo a ?dir=), nada.
+  if (hideAnime && dir && resolveType(metadata.getCached(dir.split(/[\/]/)[0])) === 'anime') {
+    res.json({ dir, parent, folders: [], videos: [] });
+    return;
+  }
 
   // Metadatos ya cacheados (si los hay); nunca bloquea esperando a fuentes
   // externas, así el catálogo carga al instante aunque haya miles de vídeos.
   res.json({
     dir,
     parent,
-    folders: folders.map((folder) => {
-      const meta = metadata.getCached(folder.name);
-      const folderVideos = catalog.listDir(folder.path).videos;
-      const { processingState, processingPercent } = folderProcessingState(folderVideos);
-      return {
-        ...folder,
-        metadataKey: folder.name,
-        genres: meta.genres,
-        cleanName: meta.cleanName,
-        customName: meta.customName || null,
-        poster: meta.poster,
-        type: resolveType(meta),
-        processingState,
-        processingPercent,
-        hlsCompletion: folderHlsCompletion(folderVideos),
-        seriesProgress: seriesProgressFor(folderVideos, profileProgress),
-        // Para la vista previa al pasar el ratón sobre la carátula de la
-        // serie (folder.thumbnailId es justo el primer episodio, mismo
-        // orden que folderVideos[0] - ver catalog.js buildLibrary): solo
-        // tiene sentido intentarla si su HLS ya está generado.
-        firstVideoReady: folderVideos.length > 0 && hls.getStatus(folderVideos[0]) === 'ready',
-      };
-    }),
-    videos: videos.map((video) => {
-      const meta = metadata.getCached(catalog.metadataKeyFor(video));
-      return {
-        ...toPublicVideo(video),
-        genres: meta.genres,
-        cleanName: meta.cleanName,
-        customName: meta.customName || null,
-        poster: meta.poster,
-        type: resolveType(meta),
-      };
-    }),
+    folders: folders
+      .filter((folder) => !hideAnime || resolveType(metadata.getCached(folder.name)) !== 'anime')
+      .map((folder) => {
+        const meta = metadata.getCached(folder.name);
+        const folderVideos = catalog.listDir(folder.path).videos;
+        const { processingState, processingPercent } = folderProcessingState(folderVideos);
+        return {
+          ...folder,
+          metadataKey: folder.name,
+          genres: meta.genres,
+          cleanName: meta.cleanName,
+          customName: meta.customName || null,
+          poster: meta.poster,
+          type: resolveType(meta),
+          processingState,
+          processingPercent,
+          hlsCompletion: folderHlsCompletion(folderVideos),
+          seriesProgress: seriesProgressFor(folderVideos, profileProgress),
+          // Para la vista previa al pasar el ratón sobre la carátula de la
+          // serie (folder.thumbnailId es justo el primer episodio, mismo
+          // orden que folderVideos[0] - ver catalog.js buildLibrary): solo
+          // tiene sentido intentarla si su HLS ya está generado.
+          firstVideoReady: folderVideos.length > 0 && hls.getStatus(folderVideos[0]) === 'ready',
+        };
+      }),
+    videos: videos
+      .map((video) => {
+        const meta = metadata.getCached(catalog.metadataKeyFor(video));
+        return {
+          ...toPublicVideo(video),
+          genres: meta.genres,
+          cleanName: meta.cleanName,
+          customName: meta.customName || null,
+          poster: meta.poster,
+          type: resolveType(meta),
+        };
+      })
+      .filter((video) => !hideAnime || video.type !== 'anime'),
   });
 });
 
 router.get('/genres', (req, res) => {
-  res.json(metadata.allGenres());
+  const genres = metadata.allGenres();
+  res.json(hidesAnime(req) ? genres.filter((g) => g !== 'Anime') : genres);
 });
 
 router.post(

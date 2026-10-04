@@ -31,6 +31,14 @@ export function isProfileChosenThisSession() {
   }
 }
 
+// Añade el perfil activo a una URL del catálogo: el servidor oculta el
+// anime a los perfiles que no tienen activado "Mostrar anime" (#150).
+export function withProfile(url) {
+  const id = getActiveProfileId();
+  if (!id) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}profileId=${encodeURIComponent(id)}`;
+}
+
 export function clearActiveProfileId() {
   localStorage.removeItem(ACTIVE_PROFILE_KEY);
 }

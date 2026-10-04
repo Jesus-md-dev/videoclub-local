@@ -61,6 +61,18 @@ export default function ProfilesPage() {
       .catch((err) => setError(err.message));
   };
 
+  // "Mostrar anime" (#150): desactivado de base; el servidor oculta el
+  // anime del catálogo, la búsqueda y los géneros a quien no lo tenga.
+  const handleToggleAnime = (profile) => {
+    fetch(`/api/profiles/${profile.id}/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ showAnime: !profile.settings?.showAnime }),
+    })
+      .then(loadProfiles)
+      .catch(() => setError('No se pudo cambiar la opción de anime.'));
+  };
+
   const handleDelete = (id) => {
     fetch(`/api/profiles/${id}`, { method: 'DELETE' })
       .then(loadProfiles)
@@ -84,9 +96,18 @@ export default function ProfilesPage() {
             </button>
             <p className="profile-name">{profile.name}</p>
             {managing && (
-              <button className="profile-delete" onClick={() => handleDelete(profile.id)}>
-                Borrar
-              </button>
+              <>
+                <button
+                  className="profile-option"
+                  aria-pressed={Boolean(profile.settings?.showAnime)}
+                  onClick={() => handleToggleAnime(profile)}
+                >
+                  {profile.settings?.showAnime ? '✓ Mostrar anime' : 'Anime oculto'}
+                </button>
+                <button className="profile-delete" onClick={() => handleDelete(profile.id)}>
+                  Borrar
+                </button>
+              </>
             )}
           </div>
         ))}
