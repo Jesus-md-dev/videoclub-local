@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isTvMode } from '../tvMode';
 
 // Navegación por flechas entre carátulas (estilo mando de TV/D-pad): sin
 // esto, la única forma de moverse por el catálogo con teclado/mando era el
@@ -84,7 +85,8 @@ function ownsArrowKeys(el) {
 // efecto (p.ej. mientras un modal está abierto encima).
 export default function useSpatialNavigation(selector, { enabled = true } = {}) {
   useEffect(() => {
-    if (!enabled) return undefined;
+    // En modo tele ya lo hace tvMode.js para toda la página.
+    if (!enabled || isTvMode()) return undefined;
 
     const handleKeyDown = (e) => {
       const direction = directionFor(e);

@@ -70,6 +70,32 @@ Desde cualquier otro dispositivo conectado a la misma red Wi-Fi/LAN, abre la URL
 - `POST /api/scan` para volver a escanear la carpeta sin reiniciar el servidor.
 - Copia de seguridad automática: perfiles, progreso ("Continuar viendo"/visto), carpeta configurada, caché de géneros y analítica se guardan también en `<carpeta de vídeos>/.videoclub-datos/`. Al arrancar en un PC nuevo (o tras reinstalar), si `data/` está vacío se recupera automáticamente de ahí, sin perder el historial al cambiar de máquina.
 
+## App para la tele (Android TV, Google TV, Fire TV)
+
+`android-tv/` es una APK propia (WebView a pantalla completa, no un navegador) para manejar el videoclub con el mando, como Netflix: sale en la pantalla de inicio de la tele, la cruceta mueve el foco por toda la web, OK abre, Atrás vuelve (dos veces en el catálogo para salir), mantener OK (o Menú/Info) abre la ficha de la carátula, y los botones de play/pausa, avanzar y retroceder van al reproductor. En un móvil la misma APK funciona como siempre (táctil).
+
+**Instalarla:** en la tele, instala la app *Downloader* (en Fire TV está en la tienda; en Android TV/Google TV, cualquier gestor de archivos que descargue por URL) y abre `http://192.168.1.200:3000/videoclub-tv.apk`. Hay que permitir "instalar apps desconocidas" para esa app la primera vez. Se instala encima de la APK anterior (mismo paquete y firma). Si el PC cambia de IP, la app enseña una pantalla para corregir la dirección.
+
+**Probar el modo tele en el PC:** abre la web con `?tv=1` (se recuerda en ese navegador; `?tv=0` lo quita) y usa las flechas, Intro y Escape.
+
+**Recompilarla** (tras cambiar `android-tv/`; los cambios de la web no lo necesitan): hace falta `android-tv/keystore.properties` (no se sube; ruta y contraseña del keystore de `Proyectos/videoclub-apk/`, ver su `LEEME-IMPORTANTE.txt`):
+
+```
+storeFile=C:/Users/jesus/Documents/Proyectos/videoclub-apk/android.keystore
+storePassword=...
+keyAlias=android
+keyPassword=...
+```
+
+```bat
+set JAVA_HOME=C:\Users\jesus\.bubblewrap\jdk\jdk-17.0.11+9
+set ANDROID_HOME=C:\Users\jesus\.bubblewrap\android_sdk
+cd android-tv && gradlew.bat assembleRelease
+copy app\build\outputs\apk\release\app-release.apk ..\client\public\videoclub-tv.apk
+```
+
+Sube `versionCode` en `android-tv/app/build.gradle` en cada versión nueva. Hay un emulador de Android TV 11 en `E:\AndroidEmu` (AVD `tv30`) para probarla.
+
 ## Cuidado al liberar espacio en disco
 
 - `data/hls` **NO siempre es caché desechable**. Cuando un vídeo ya era compatible con el navegador, su HLS es un simple remux (mismo vídeo, sin recodificar) y el original se borra automáticamente para no duplicarlo (ver `archivedVideos.js`). Para esos vídeos, `data/hls/<id>/` es la **única copia que queda** — borrarla los pierde para siempre, sin forma de regenerarlos. Antes de tocar `data/hls` a mano, comprobar `data/hls-archived.json`: cualquier id que aparezca ahí no se debe borrar de `data/hls` sin haber puesto el vídeo a buen recaudo antes.

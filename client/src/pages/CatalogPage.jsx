@@ -12,6 +12,7 @@ import QuickInfoModal from '../components/QuickInfoModal';
 import ServerUnreachable from '../components/ServerUnreachable';
 import ShortcutsHelp from '../components/ShortcutsHelp';
 import useSpatialNavigation from '../hooks/useSpatialNavigation';
+import { isTvMode } from '../tvMode';
 
 const CATALOG_SHORTCUTS = [
   { keys: '↑↓←→', label: 'Moverse entre carátulas' },
@@ -104,6 +105,12 @@ function useHoverPreview(videoId, ready) {
   return { previewing, videoElRef, startHover, endHover };
 }
 
+// En modo tele no hay ratón: la vista previa arranca al llegar con el
+// mando a la carátula y se para al salir.
+function focusPreview(startHover, endHover) {
+  return isTvMode() ? { onFocus: startHover, onBlur: endHover } : {};
+}
+
 function VideoCard({ video, progress, onRemove, onQuickInfo }) {
   const showProgress = progress && progress.ratio < 0.95;
   // Terminado del todo (no a medias, eso ya lo cubre "Continuar"): se
@@ -119,7 +126,7 @@ function VideoCard({ video, progress, onRemove, onQuickInfo }) {
   const { previewing, videoElRef, startHover, endHover } = useHoverPreview(video.id, video.hlsReady);
 
   return (
-    <Link className="card" to={`/watch/${video.id}`} onMouseEnter={startHover} onMouseLeave={endHover}>
+    <Link className="card" to={`/watch/${video.id}`} onMouseEnter={startHover} onMouseLeave={endHover} {...focusPreview(startHover, endHover)}>
       {showProgress && <span className="badge">Continuar</span>}
       {showWatched && <span className="badge badge-watched">✓ Visto</span>}
       {processingLabel && (
@@ -206,6 +213,7 @@ function FolderCard({ folder, onOpen, onQuickInfo }) {
       onClick={() => onOpen(folder.path)}
       onMouseEnter={startHover}
       onMouseLeave={endHover}
+      {...focusPreview(startHover, endHover)}
     >
       {showSeriesWatched && <span className="badge badge-watched">✓ Completa</span>}
       {processingLabel && (

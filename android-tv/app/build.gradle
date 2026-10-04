@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Firma: el mismo keystore que la TWA de #93 (mismo paquete), para que se
+// instale encima sin desinstalar. Las contraseñas van en
+// keystore.properties, que no se sube (ver README.md).
+def keystoreProps = new Properties()
+def keystoreFile = rootProject.file('keystore.properties')
+if (keystoreFile.exists()) keystoreFile.withInputStream { keystoreProps.load(it) }
+
+android {
+    namespace 'com.jesus.videoclub'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.jesus.videoclub'
+        minSdk 21
+        // 34 y no más: con 35 Android obliga a dibujar bajo las barras del
+        // sistema en los móviles. No se publica en ninguna tienda.
+        targetSdk 34
+        versionCode 2
+        versionName '2.0'
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreProps['storeFile']) {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}

@@ -1,0 +1,18 @@
+// APK de tele del videoclub (#146). Misma versión del plugin que la TWA
+// de #93, que ya está en la caché de Gradle de este PC.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.9.1'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}

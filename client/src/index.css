@@ -2501,3 +2501,44 @@ button.danger:disabled {
   color: var(--text);
   border-color: var(--accent);
 }
+
+/* Modo tele (#146, tvMode.js): todo se maneja con la cruceta, así que el
+   foco tiene que verse desde el sofá y lo que solo sirve con puntero
+   sobra. */
+.tv-mode button:focus-visible,
+.tv-mode a:focus-visible,
+.tv-mode input:focus-visible,
+.tv-mode select:focus-visible,
+.tv-mode [tabindex]:focus-visible {
+  outline: 4px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.tv-mode .card:focus,
+.tv-mode .card:focus-visible {
+  outline: none;
+  transform: scale(1.08);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent), 0 14px 30px rgba(0, 0, 0, 0.6);
+  z-index: 3;
+}
+
+/* El vídeo enfocado no lleva marco: es la pantalla entera. */
+.tv-mode .player-shell:focus,
+.tv-mode .player-shell:focus-visible {
+  outline: none;
+}
+
+/* Las teles se declaran "hover: none" y heredaban la ✕ y la ⓘ siempre
+   visibles del táctil: solo en la carátula enfocada. */
+.tv-mode .card:not(:focus) .card-remove,
+.tv-mode .card:not(:focus) .card-info-btn {
+  opacity: 0;
+}
+
+.tv-mode .row-arrow,
+.tv-mode .edge-scroll,
+.tv-mode .volume-slider,
+.tv-mode .skip-link {
+  display: none;
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import HiddenMenu from './HiddenMenu';
+import { isTvMode, setKeepScreenOn } from '../tvMode';
 
 // Nombre de tecla normalizado para los atajos del reproductor. Antes solo
 // se miraba e.code, que los mandos de tele no siempre rellenan: la Fire TV
@@ -246,6 +247,22 @@ export default function VideoControls({
     };
   }, [shellRef, playing, dragging]);
 
+  // Modo tele: al ocultarse los controles el foco vuelve al vídeo, para
+  // que las flechas no se pierdan entre botones invisibles.
+  useEffect(() => {
+    if (controlsVisible || !isTvMode()) return;
+    const shell = shellRef.current;
+    if (shell && shell !== document.activeElement && shell.contains(document.activeElement)) {
+      shell.focus({ preventScroll: true });
+    }
+  }, [controlsVisible, shellRef]);
+
+  // La APK de tele deja la pantalla encendida solo mientras se reproduce.
+  useEffect(() => {
+    setKeepScreenOn(playing);
+    return () => setKeepScreenOn(false);
+  }, [playing]);
+
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -361,6 +378,25 @@ export default function VideoControls({
 
       const key = keyNameFor(e);
       if (MEDIA_KEYS.has(key)) lastMediaKeyAt.current = Date.now();
+
+      // Modo tele (mando, como Netflix): con el foco en un botón de los
+      // controles las flechas van de botón en botón (tvMode.js) y OK lo
+      // pulsa; con el foco en el vídeo, ←/→ avanzan, OK pausa y ↑/↓ entran
+      // en los controles (el volumen ya lo lleva la tele).
+      if (isTvMode()) {
+        const onControl = active && active !== shellRef.current && shellRef.current?.contains(active);
+        if (onControl && !MEDIA_KEYS.has(key)) return;
+        if (key === 'ArrowUp' || key === 'ArrowDown') {
+          e.preventDefault();
+          shellRef.current?.querySelector('.controls-row .control-btn')?.focus({ preventScroll: true });
+          return;
+        }
+        if (e.key === 'Enter' || e.keyCode === 13) {
+          e.preventDefault();
+          togglePlay();
+          return;
+        }
+      }
 
       switch (key) {
         case 'Space':
