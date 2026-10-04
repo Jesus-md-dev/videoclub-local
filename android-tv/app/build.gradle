@@ -19,8 +19,8 @@ android {
         // 34 y no más: con 35 Android obliga a dibujar bajo las barras del
         // sistema en los móviles. No se publica en ninguna tienda.
         targetSdk 34
-        versionCode 2
-        versionName '2.0'
+        versionCode 3
+        versionName '2.1'
     }
 
     signingConfigs {

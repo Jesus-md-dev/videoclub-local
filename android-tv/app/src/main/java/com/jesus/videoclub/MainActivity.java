@@ -277,8 +277,18 @@ public class MainActivity extends Activity {
     }
 
     private void showError(String description) {
-        errorDetail.setText("Comprueba que el PC del videoclub está encendido y en la misma red.\n"
-                + "Si ha cambiado de dirección, corrígela aquí abajo.\n(" + description + ")");
+        if (description != null && description.contains("ERR_ACCESS_DENIED")) {
+            // No es la red ni el servidor: Android no deja usar internet a la
+            // app. Pasa al instalarla encima de la TWA de #93, que no tenía
+            // ese permiso: algunas teles no lo activan hasta reinstalar o
+            // reiniciar (#159).
+            errorDetail.setText("La tele no deja a esta app conectarse a la red.\n"
+                    + "Desinstala la app Videoclub y vuelve a instalarla (o reinicia la tele).\n("
+                    + description + ")");
+        } else {
+            errorDetail.setText("Comprueba que el PC del videoclub está encendido y en la misma red.\n"
+                    + "Si ha cambiado de dirección, corrígela aquí abajo.\n(" + description + ")");
+        }
         urlInput.setText(serverUrl());
         errorView.setVisibility(View.VISIBLE);
         retryButton.requestFocus();
