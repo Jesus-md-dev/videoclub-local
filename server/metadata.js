@@ -291,7 +291,13 @@ function stripReleaseTags(name) {
   const glued = name.match(GLUED_RELEASE_TAG);
   if (glued) indexes.push(glued.index);
   if (!indexes.length) return name;
-  return name.slice(0, Math.min(...indexes)).replace(/[\s._\-[(]+$/, '');
+  let cut = name.slice(0, Math.min(...indexes));
+  // La etiqueta puede empezar dentro de un corchete ("Battle Royale
+  // [BD-1080p][Cast+Jap+Subs]"): sin esto quedaba "Battle Royale [BD" (#158).
+  const open = Math.max(cut.lastIndexOf('['), cut.lastIndexOf('('));
+  const close = Math.max(cut.lastIndexOf(']'), cut.lastIndexOf(')'));
+  if (open > close) cut = cut.slice(0, open);
+  return cut.replace(/[\s._\-[(]+$/, '');
 }
 
 // Quita etiquetas de release, años, paréntesis/corchetes y separadores
@@ -299,6 +305,8 @@ function stripReleaseTags(name) {
 function cleanQuery(name) {
   return stripReleaseTags(name)
     .replace(/[([][^)\]]*[)\]]/g, ' ')
+    // Corchete final sin cerrar: restos de un nombre ya cortado mal (#158).
+    .replace(/[([][^)\]]*$/, ' ')
     .replace(/\b(19|20)\d{2}\b/g, ' ')
     .replace(/[._]/g, ' ')
     .replace(/\s+/g, ' ')
