@@ -2399,6 +2399,17 @@ button.danger:disabled {
     padding: 14px 16px;
   }
 
+  /* La barra del reproductor no cabía en 390 px: emitir y pantalla
+     completa quedaban fuera (#166). En el móvil el volumen va con los
+     botones físicos. */
+  .controls-row {
+    gap: 6px;
+  }
+
+  .volume-control {
+    display: none;
+  }
+
   main {
     padding: 16px 16px 40px;
   }
