@@ -110,6 +110,14 @@ function extractEpisodeMarker(video) {
   if (m) return `S${m[1].padStart(2, '0')}E${m[2]}`;
   m = rawTitle.match(/(?:^|[^a-z0-9])E(\d{1,4})(?:[^0-9]|$)/i);
   if (m) return absoluteMarker(video, m[1]);
+  // "Episodio 1", "Episode 12", "Capítulo 3" de un episodio suelto sin
+  // carpeta (la temporada, si la hay en el nombre, la da
+  // catalog.seasonNumberFor; ver LOOSE_EPISODE_WORD_PATTERN). Solo sueltos:
+  // los de una carpeta (Digimon 02) conservan su nombre con el título.
+  m = catalog.isLooseEpisode(video)
+    ? rawTitle.match(/(?:^|[^a-z0-9])(?:episodio|episode|ep|cap[ií]tulo)\.?\s*(\d{1,4})(?!\d)/i)
+    : null;
+  if (m) return absoluteMarker(video, m[1]);
   // Nombre de archivo formado solo por el número de episodio (ej. "01",
   // sin ninguna letra de por medio): habitual cuando el episodio vive
   // directamente dentro de una carpeta de temporada (ver Initial D,

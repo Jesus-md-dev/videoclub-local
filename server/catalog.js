@@ -32,23 +32,45 @@ let showVideos = new Map(); // clave de serie -> vídeos ordenados
 // serie con ese nombre como clave. No se mueve ningún archivo (ver #118),
 // así que los ids no cambian.
 const LOOSE_EPISODE_PATTERN = /^(.+?)\s+-\s+(?:S\d{1,2}E\d{1,4}|\d{2,4})$/i;
+// Igual, pero con la palabra "Episodio"/"Episode"/"Capítulo" y quizá la
+// temporada delante ("Ao Ashi Season 2 Episodio 1 Sub Español", "Black
+// Clover 2nd Season Episodio 1"). Esto y "S01E01" bastan con UN solo
+// archivo: no dejan duda de que es un episodio. " - 01" a secas exige al
+// menos dos (podría ser "Película - 2019"). La temporada se recuerda en
+// looseSeasons para que la normalización ponga "S02E01" y no "S01E01".
+const LOOSE_EPISODE_WORD_PATTERN =
+  /^(.+?)\s+(?:(?:season|temporada)\s*(\d{1,2})\s+|(\d{1,2})(?:st|nd|rd|th|ª|a)?\s+(?:season|temporada)\s+)?(?:episodio|episode|ep|cap[ií]tulo|cap)\.?\s*(\d{1,4})(?!\d)/i;
 let looseSeriesKeys = new Map(); // título del vídeo -> clave de serie
+let looseSeasons = new Map(); // título del vídeo -> temporada indicada en el nombre
 
 function computeLooseSeriesKeys(videos) {
   const byPrefix = new Map();
+  const add = (prefix, title, certain) => {
+    if (!byPrefix.has(prefix)) byPrefix.set(prefix, { titles: [], certain: false });
+    const entry = byPrefix.get(prefix);
+    entry.titles.push(title);
+    if (certain) entry.certain = true;
+  };
+  const seasons = new Map();
   for (const video of videos) {
     if (groupKeyFor(video, { loose: false }) !== video.title) continue;
+    const word = video.title.match(LOOSE_EPISODE_WORD_PATTERN);
+    if (word) {
+      const season = word[2] || word[3];
+      if (season) seasons.set(video.title, Number(season));
+      add(word[1].trim(), video.title, true);
+      continue;
+    }
     const match = video.title.match(LOOSE_EPISODE_PATTERN);
     if (!match) continue;
-    const prefix = match[1].trim();
-    if (!byPrefix.has(prefix)) byPrefix.set(prefix, []);
-    byPrefix.get(prefix).push(video.title);
+    add(match[1].trim(), video.title, EPISODE_MARKER_PATTERN.test(video.title));
   }
   const keys = new Map();
-  for (const [prefix, titles] of byPrefix) {
-    if (titles.length < 2) continue;
+  for (const [prefix, { titles, certain }] of byPrefix) {
+    if (titles.length < 2 && !certain) continue;
     for (const title of titles) keys.set(title, prefix);
   }
+  looseSeasons = seasons;
   return keys;
 }
 // Cuántos vídeos archivados están además "perdidos" (isLost) en el último
@@ -160,9 +182,12 @@ function seasonNumberForFolder(name) {
 // ninguna marca de temporada ahí.
 function seasonNumberFor(video) {
   const folderSegments = video.relativePath.split(path.sep).slice(0, -1);
-  if (folderSegments.length === 0) return null;
-  const immediateParent = cleanTitle(folderSegments[folderSegments.length - 1]);
-  return seasonNumberForFolder(immediateParent);
+  const immediateParent = folderSegments.length ? cleanTitle(folderSegments[folderSegments.length - 1]) : '';
+  const folderSeason = immediateParent ? seasonNumberForFolder(immediateParent) : null;
+  if (folderSeason != null) return folderSeason;
+  // Episodio suelto con la temporada en el nombre ("... Season 2 Episodio 1").
+  if (looseSeriesKeys.has(video.title)) return looseSeasons.get(video.title) ?? null;
+  return null;
 }
 
 // Clave de agrupación para un vídeo: el nombre de la carpeta contenedora más
@@ -348,6 +373,8 @@ function buildLibrary() {
     }
     if (known[key]) return true;
     if (key === videos[0].title) return false;
+    // Episodio suelto reconocido por su nombre (ver computeLooseSeriesKeys).
+    if (looseSeriesKeys.get(videos[0].title) === key) return true;
     if (EPISODE_MARKER_PATTERN.test(videos[0].title)) return true;
     // Sin marca de episodio: lo que diga la ficha de TMDB (o Jikan/TVmaze)
     // de la carpeta. Si aún no la hay, se pide, y al llegar se rehace la
@@ -580,6 +607,12 @@ function forgetShow(key) {
   knownShows.save();
 }
 
+// ¿Es un episodio suelto sin carpeta agrupado por su nombre? (ver
+// computeLooseSeriesKeys).
+function isLooseEpisode(video) {
+  return looseSeriesKeys.has(video.title) && groupKeyFor(video) === looseSeriesKeys.get(video.title);
+}
+
 function getShowKeyFor(video) {
   const key = groupKeyFor(video);
   return showVideos.has(key) ? key : null;
@@ -593,6 +626,7 @@ module.exports = {
   listDir,
   videosForKey,
   metadataKeyFor: groupKeyFor,
+  isLooseEpisode,
   isGenericFolderName,
   getAllGroupKeys,
   getShowKeyFor,
