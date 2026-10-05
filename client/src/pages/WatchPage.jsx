@@ -381,8 +381,28 @@ export default function WatchPage() {
       // - así "se paró la reproducción" no se podía estudiar después, solo
       // adivinar. "player" puede ser undefined mientras hls.js aún se está
       // conectando al <video> (los primeros instantes tras new Hls()).
+      // Sin conexión con el servidor (reinicio para aplicar un cambio, unos
+      // 7 s; un corte de la wifi): hls.js agota sus reintentos y se detiene
+      // sin más. Se vuelve a intentar solo cada pocos segundos, desde donde
+      // iba, mientras dura el buffer (hasta 60 s). Sin manifiesto aún
+      // (falló al empezar) hay que volver a pedirlo; si no, basta startLoad.
+      let reconnectTimer = null;
+      let mediaRecovered = false;
+      const scheduleReconnect = () => {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+          if (instance.levels?.length) instance.startLoad();
+          else instance.loadSource(masterUrl);
+        }, 3000);
+      };
+      instance.on(Hls.Events.FRAG_LOADED, () => clearTimeout(reconnectTimer));
       instance.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) console.warn(`hls.js FATAL (${data.type}): ${data.details}`);
+        if (data.fatal && data.type === Hls.ErrorTypes.NETWORK_ERROR) scheduleReconnect();
+        if (data.fatal && data.type === Hls.ErrorTypes.MEDIA_ERROR && !mediaRecovered) {
+          mediaRecovered = true;
+          instance.recoverMediaError();
+        }
         const currentPlayer = playerRef.current;
         track('hls_error', {
           videoId: id,
@@ -421,6 +441,7 @@ export default function WatchPage() {
       instance.loadSource(masterUrl);
       instance.attachMedia(player);
       return () => {
+        clearTimeout(reconnectTimer);
         instance.destroy();
         if (hlsRef.current === instance) hlsRef.current = null;
       };
