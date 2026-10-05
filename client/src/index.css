@@ -1422,6 +1422,139 @@ video {
   width: 260px;
 }
 
+/* ---- Panel único de audio y subtítulos (#166), como Netflix/Prime:
+   las dos listas lado a lado; en pantallas estrechas, una debajo de otra. */
+.tracks-panel {
+  width: min(460px, calc(100vw - 32px));
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.tracks-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-dim, var(--text));
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.tracks-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.tracks-column {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tracks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tracks-option {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-align: left;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  padding: 6px 8px 6px 26px;
+  cursor: pointer;
+  position: relative;
+}
+
+.tracks-option:hover,
+.tracks-option:focus-visible,
+.tracks-close:hover,
+.tracks-close:focus-visible,
+.tracks-back:hover,
+.tracks-back:focus-visible {
+  background: var(--bg);
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* La elegida, con ✓ delante como en Netflix. */
+.tracks-option-active {
+  color: var(--accent-glow);
+  font-weight: 600;
+}
+
+.tracks-option-active::before {
+  content: '✓';
+  position: absolute;
+  left: 8px;
+}
+
+.tracks-option-source {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-dim, var(--text));
+  opacity: 0.75;
+}
+
+.tracks-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.tracks-actions button.secondary {
+  background: var(--bg);
+  color: var(--text);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tracks-subview-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tracks-back {
+  background: none;
+  border: 2px solid transparent;
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.tv-mode .tracks-option {
+  font-size: 18px;
+  padding: 10px 12px 10px 32px;
+}
+
+.tv-mode .tracks-option-active::before {
+  left: 10px;
+}
+
 .cast-controls {
   position: relative;
   display: flex;

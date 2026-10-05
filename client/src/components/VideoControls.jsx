@@ -54,6 +54,19 @@ function keyNameFor(e) {
 // sacaban de la pantalla el resto de controles (#156).
 const MAX_TRACK_LABEL = 40;
 
+// Cabecera de las vistas de ajustes y búsqueda dentro del panel de audio y
+// subtítulos: "←" vuelve a las listas.
+function TracksSubviewHeader({ title, onBack }) {
+  return (
+    <div className="tracks-subview-header">
+      <button className="tracks-back" onClick={onBack} aria-label="Volver a audio y subtítulos">
+        ←
+      </button>
+      <p className="subtitle-settings-title">{title}</p>
+    </div>
+  );
+}
+
 function trackLabel(track) {
   const label = track.languageLabel || track.title || `Pista ${track.index}`;
   return label.length > MAX_TRACK_LABEL ? `${label.slice(0, MAX_TRACK_LABEL - 1).trimEnd()}…` : label;
@@ -117,6 +130,10 @@ export default function VideoControls({
   const [muted, setMuted] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [subtitleIndex, setSubtitleIndex] = useState(-1);
+  // Un solo botón "Audio y subtítulos" (#166), como Netflix/Prime/Disney+:
+  // abre un panel con las dos listas lado a lado. Ajustes y búsqueda de
+  // subtítulos son vistas dentro de ese mismo panel.
+  const [tracksOpen, setTracksOpen] = useState(false);
   const [subtitleSettingsOpen, setSubtitleSettingsOpen] = useState(false);
   const [subtitleSearchOpen, setSubtitleSearchOpen] = useState(false);
   const [subtitleSearchResults, setSubtitleSearchResults] = useState(null);
@@ -230,7 +247,7 @@ export default function VideoControls({
     const showThenScheduleHide = () => {
       setControlsVisible(true);
       clearTimeout(hideTimer.current);
-      if (playing && !dragging) {
+      if (playing && !dragging && !tracksOpen) {
         hideTimer.current = setTimeout(() => setControlsVisible(false), 3000);
       }
     };
@@ -252,7 +269,7 @@ export default function VideoControls({
       document.removeEventListener('keydown', showThenScheduleHide);
       clearTimeout(hideTimer.current);
     };
-  }, [shellRef, playing, dragging]);
+  }, [shellRef, playing, dragging, tracksOpen]);
 
   // Modo tele: al ocultarse los controles el foco vuelve al vídeo, para
   // que las flechas no se pierdan entre botones invisibles.
@@ -494,18 +511,32 @@ export default function VideoControls({
     navigator.mediaSession.metadata = new MediaMetadata({ title });
   }, [title]);
 
-  // Cierra el panel abierto (ajustes o búsqueda) al hacer clic fuera de él.
+  const closeTracksPanel = () => {
+    setTracksOpen(false);
+    setSubtitleSettingsOpen(false);
+    setSubtitleSearchOpen(false);
+  };
+
+  // Cierra el panel de audio y subtítulos al hacer clic fuera de él o con
+  // Escape (en captura, antes de que WatchPage lo use para salir del vídeo).
   useEffect(() => {
-    if (!subtitleSettingsOpen && !subtitleSearchOpen) return undefined;
+    if (!tracksOpen) return undefined;
     const onClickOutside = (e) => {
-      if (subtitleSettingsRef.current && !subtitleSettingsRef.current.contains(e.target)) {
-        setSubtitleSettingsOpen(false);
-        setSubtitleSearchOpen(false);
-      }
+      if (subtitleSettingsRef.current && !subtitleSettingsRef.current.contains(e.target)) closeTracksPanel();
+    };
+    const onEscape = (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      closeTracksPanel();
+      subtitleSettingsRef.current?.querySelector('.control-btn')?.focus({ preventScroll: true });
     };
     document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
-  }, [subtitleSettingsOpen, subtitleSearchOpen]);
+    document.addEventListener('keydown', onEscape, true);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      document.removeEventListener('keydown', onEscape, true);
+    };
+  }, [tracksOpen]);
 
   useEffect(() => {
     if (!castOpen) return undefined;
@@ -594,8 +625,7 @@ export default function VideoControls({
   };
 
   const toggleCastPanel = () => {
-    setSubtitleSettingsOpen(false);
-    setSubtitleSearchOpen(false);
+    closeTracksPanel();
     setCastOpen((open) => {
       const next = !open;
       if (next) loadCastDevices();
@@ -921,30 +951,7 @@ export default function VideoControls({
 
         <div className="controls-spacer" />
 
-        {audioTracks.length > 1 && (
-          <select className="track-select" value={audioIndex ?? ''} onChange={onAudioChange} aria-label="Audio">
-            {audioTracks.map((track) => (
-              <option key={track.index} value={track.index}>
-                Audio: {trackLabel(track)}
-              </option>
-            ))}
-          </select>
-        )}
-
         <div className="subtitle-controls" ref={subtitleSettingsRef}>
-            <select
-              className="track-select"
-              value={subtitleIndex}
-              onChange={handleSubtitleChange}
-              aria-label="Subtítulos"
-            >
-              <option value={-1}>Subtítulos: Desactivados</option>
-              {subtitleTracks.map((subtitleTrack, i) => (
-                <option key={subtitleTrack.index} value={i}>
-                  {trackLabel(subtitleTrack)} ({subtitleSourceLabel(subtitleTrack)})
-                </option>
-              ))}
-            </select>
             <input
               type="file"
               accept=".srt,.vtt"
@@ -953,43 +960,94 @@ export default function VideoControls({
               onChange={handleImportFile}
             />
             <button
-              className="control-btn"
-              onClick={() => importFileInputRef.current?.click()}
-              disabled={importingFile}
-              aria-label="Importar subtítulo"
-              title="Importar un archivo .srt/.vtt que ya tengas"
+              className={`control-btn ${tracksOpen ? 'control-btn-active' : ''}`}
+              onClick={() => {
+                setCastOpen(false);
+                if (tracksOpen) closeTracksPanel();
+                else setTracksOpen(true);
+              }}
+              aria-label="Audio y subtítulos"
+              aria-expanded={tracksOpen}
+              title="Audio y subtítulos"
             >
-              {importingFile ? '…' : '📁'}
+              💬
             </button>
-            {subtitleSearchReady && (
-              <button
-                className={`control-btn ${subtitleSearchOpen ? 'control-btn-active' : ''}`}
-                onClick={() => {
-                  setSubtitleSettingsOpen(false);
-                  setSubtitleSearchOpen((v) => !v);
-                }}
-                aria-label="Buscar subtítulos"
-                title="Buscar subtítulos en SubDL"
-              >
-                🔍
-              </button>
+            {tracksOpen && !subtitleSettingsOpen && !subtitleSearchOpen && (
+              <div className="subtitle-settings-panel tracks-panel" role="dialog" aria-label="Audio y subtítulos">
+                <button className="tracks-close" onClick={closeTracksPanel} aria-label="Cerrar">
+                  ✕
+                </button>
+                <div className="tracks-columns">
+                  {audioTracks.length > 0 && (
+                    <div className="tracks-column">
+                      <p className="subtitle-settings-title">Audio</p>
+                      <ul className="tracks-list">
+                        {audioTracks.map((track) => (
+                          <li key={track.index}>
+                            <button
+                              className={`tracks-option ${track.index === audioIndex ? 'tracks-option-active' : ''}`}
+                              aria-pressed={track.index === audioIndex}
+                              onClick={() => onAudioChange({ target: { value: String(track.index) } })}
+                            >
+                              {trackLabel(track)}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="tracks-column">
+                    <p className="subtitle-settings-title">Subtítulos</p>
+                    <ul className="tracks-list">
+                      <li>
+                        <button
+                          className={`tracks-option ${subtitleIndex === -1 ? 'tracks-option-active' : ''}`}
+                          aria-pressed={subtitleIndex === -1}
+                          onClick={() => handleSubtitleChange({ target: { value: '-1' } })}
+                        >
+                          Desactivados
+                        </button>
+                      </li>
+                      {subtitleTracks.map((subtitleTrack, i) => (
+                        <li key={subtitleTrack.index}>
+                          <button
+                            className={`tracks-option ${subtitleIndex === i ? 'tracks-option-active' : ''}`}
+                            aria-pressed={subtitleIndex === i}
+                            onClick={() => handleSubtitleChange({ target: { value: String(i) } })}
+                          >
+                            {trackLabel(subtitleTrack)}
+                            <span className="tracks-option-source">{subtitleSourceLabel(subtitleTrack)}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+                <div className="tracks-actions">
+                  <button
+                    className="secondary"
+                    onClick={() => importFileInputRef.current?.click()}
+                    disabled={importingFile}
+                    title="Importar un archivo .srt/.vtt que ya tengas"
+                  >
+                    {importingFile ? 'Importando…' : '📁 Importar'}
+                  </button>
+                  {subtitleSearchReady && (
+                    <button className="secondary" onClick={() => setSubtitleSearchOpen(true)} title="Buscar subtítulos en SubDL">
+                      🔍 Buscar
+                    </button>
+                  )}
+                  {subtitleTracks.length > 0 && (
+                    <button className="secondary" onClick={() => setSubtitleSettingsOpen(true)} title="Tamaño y color de los subtítulos">
+                      ⚙ Aspecto
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
-            {subtitleTracks.length > 0 && (
-              <button
-                className={`control-btn ${subtitleSettingsOpen ? 'control-btn-active' : ''}`}
-                onClick={() => {
-                  setSubtitleSearchOpen(false);
-                  setSubtitleSettingsOpen((v) => !v);
-                }}
-                aria-label="Ajustes de subtítulos"
-                title="Tamaño y color de los subtítulos"
-              >
-                ⚙
-              </button>
-            )}
-            {subtitleSettingsOpen && (
-              <div className="subtitle-settings-panel">
-                <p className="subtitle-settings-title">Aspecto de los subtítulos</p>
+            {tracksOpen && subtitleSettingsOpen && (
+              <div className="subtitle-settings-panel tracks-panel">
+                <TracksSubviewHeader title="Aspecto de los subtítulos" onBack={() => setSubtitleSettingsOpen(false)} />
                 <label>
                   Tamaño
                   <select
@@ -1022,9 +1080,9 @@ export default function VideoControls({
                 </label>
               </div>
             )}
-            {subtitleSearchOpen && (
-              <div className="subtitle-settings-panel subtitle-search-panel">
-                <p className="subtitle-settings-title">Buscar subtítulos (SubDL)</p>
+            {tracksOpen && subtitleSearchOpen && (
+              <div className="subtitle-settings-panel subtitle-search-panel tracks-panel">
+                <TracksSubviewHeader title="Buscar subtítulos (SubDL)" onBack={() => setSubtitleSearchOpen(false)} />
                 {subtitleSearchLoading && <span className="subtitle-search-hint">Buscando…</span>}
                 {!subtitleSearchLoading && subtitleSearchResults && subtitleSearchResults.length === 0 && (
                   <span className="subtitle-search-hint">Sin resultados para este título.</span>
