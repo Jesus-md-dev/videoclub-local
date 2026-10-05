@@ -192,7 +192,14 @@ function handleKeyDown(e) {
     focusElement(card && candidates.includes(card) ? card : preferredStart(candidates));
     return;
   }
-  const next = findBest(active, direction, candidates);
+  // La cabecera es fija: con la carátula cerca del borde de arriba (en la
+  // tele, casi siempre), la fila anterior queda fuera de pantalla por
+  // encima y el buscador parecía más cerca, así que ↑ siempre acababa en
+  // él. Al subir, la cabecera solo cuenta cuando no queda nada por encima.
+  const outsideHeader = direction === 'up' && !active.closest('header')
+    ? findBest(active, direction, candidates.filter((el) => !el.closest('header')))
+    : null;
+  const next = outsideHeader || findBest(active, direction, candidates);
   if (next) {
     focusElement(next);
   } else if (active.closest('.video-controls')) {
