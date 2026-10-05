@@ -8,7 +8,6 @@ import { episodeTitle } from '../utils/format';
 import HiddenMenu from '../components/HiddenMenu';
 import ProfileButton from '../components/ProfileButton';
 import Row from '../components/Row';
-import EdgeScrollButtons from '../components/EdgeScrollButtons';
 import QuickInfoModal from '../components/QuickInfoModal';
 import ServerUnreachable from '../components/ServerUnreachable';
 import ShortcutsHelp from '../components/ShortcutsHelp';
@@ -723,7 +722,6 @@ export default function CatalogPage() {
         onMetadataChanged={() => setCatalogVersion((v) => v + 1)}
       />
       <ShortcutsHelp shortcuts={CATALOG_SHORTCUTS} />
-      <EdgeScrollButtons alwaysVisible={layout === 'grid'} />
     </>
   );
 }
