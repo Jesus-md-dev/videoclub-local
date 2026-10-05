@@ -142,11 +142,11 @@ export default function VideoControls({
   // abre un panel con las dos listas lado a lado. Ajustes y búsqueda de
   // subtítulos son vistas dentro de ese mismo panel.
   const [tracksOpen, setTracksOpen] = useState(() => Date.now() < reopenTracksUntil);
-  // Tras esa recarga, el foco (modo tele) vuelve a la pista elegida.
+  // Al abrir el panel (o al reabrirlo tras esa recarga), el foco va a la
+  // pista de audio marcada: con el mando no hay que buscar dónde empezar.
   useEffect(() => {
     if (tracksOpen) subtitleSettingsRef.current?.querySelector('.tracks-option-active')?.focus({ preventScroll: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [tracksOpen]);
   const [subtitleSettingsOpen, setSubtitleSettingsOpen] = useState(false);
   const [subtitleSearchOpen, setSubtitleSearchOpen] = useState(false);
   const [subtitleSearchResults, setSubtitleSearchResults] = useState(null);
@@ -992,7 +992,14 @@ export default function VideoControls({
             </button>
             {tracksOpen && !subtitleSettingsOpen && !subtitleSearchOpen && (
               <div className="subtitle-settings-panel tracks-panel" role="dialog" aria-label="Audio y subtítulos">
-                <button className="tracks-close" onClick={closeTracksPanel} aria-label="Cerrar">
+                <button
+                  className="tracks-close"
+                  onClick={() => {
+                    closeTracksPanel();
+                    subtitleSettingsRef.current?.querySelector('.control-btn')?.focus({ preventScroll: true });
+                  }}
+                  aria-label="Cerrar"
+                >
                   ✕
                 </button>
                 <div className="tracks-columns">

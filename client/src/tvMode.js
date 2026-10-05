@@ -202,7 +202,7 @@ function handleKeyDown(e) {
   const next = outsideHeader || findBest(active, direction, candidates);
   if (next) {
     focusElement(next);
-  } else if (active.closest('.video-controls')) {
+  } else if (scope === document && active.closest('.video-controls')) {
     // Saliendo de los controles por arriba/abajo: vuelta al vídeo (←/→
     // vuelven a avanzar y retroceder).
     active.closest('.player-shell')?.focus({ preventScroll: true });
