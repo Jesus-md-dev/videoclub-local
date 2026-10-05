@@ -15,7 +15,7 @@ Videoclub casero (Node/Express + React/Vite) solo para la red local; nunca expue
 ## Aplicar cambios sin pedir permiso para reiniciar
 
 - El servidor corre bajo un vigilante (`iniciar.bat` → `server/supervisor.js`) que lo relanza si se cae o se cuelga.
-- **Después de un commit no hace falta hacer nada**: en menos de un minuto `server/updater.js` lo detecta, recompila la web si cambió `client/` (sin reiniciar) y, si cambió el servidor, lo reinicia **cuando esté libre** (sin reproducciones en 10 min, sin conversiones que alguien espera, sin traslados ni renombrados en curso). Comprueba con `/api/admin/status` que se aplicó (`updates.runningCommit`).
+- **Después de un commit no hace falta hacer nada**: en menos de un minuto `server/updater.js` lo detecta, recompila la web si cambió `client/` (sin reiniciar) y, si cambió el servidor, lo reinicia **cuando esté libre** (sin emisiones a la tele por Chromecast/DLNA, sin conversiones que alguien espera, sin traslados ni renombrados en curso; ver algo en la web o la APK no lo retiene: el reproductor reconecta solo). Comprueba con `/api/admin/status` que se aplicó (`updates.runningCommit`).
 - Para forzarlo sin commit: `POST /api/admin/update` (body `{"pull": true}` para traer antes lo de GitHub) o `POST /api/admin/rebuild-client` (solo la web).
 - Reiniciar: `POST /api/admin/restart` con `{"mode": "idle"}` (cuando esté libre; úsalo sin preguntar), `{"mode": "now"}` (corta lo que haya: solo si el usuario lo pide) o `{"mode": "cancel"}`.
 - Si editas JSON de datos a mano: `POST /api/admin/reload` (recarga sin reiniciar).

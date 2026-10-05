@@ -7,14 +7,23 @@
 //
 // El precalentado de HLS en segundo plano NO cuenta como ocupado: es casi
 // continuo con una biblioteca grande y se retoma solo tras reiniciar.
+//
+// Ver algo en la web o en la APK tampoco (#165): el reinicio dura unos 7 s,
+// el reproductor lleva hasta 90 s cargados y reconecta solo (#163). Esperar
+// 10 min sin reproducciones dejaba los cambios sin aplicar durante horas.
+// Lo que se emite a la tele (Chromecast/DLNA) sí cuenta: lo descarga la
+// tele, sin esa reconexión, y la sesión de emisión vive en este proceso.
 const backup = require('./backup');
+const chromecast = require('./chromecast');
+const dlna = require('./dlna');
 const ffmpegLimiter = require('./ffmpeg-limiter');
 const moveOriginal = require('./moveOriginal');
 const normalize = require('./normalize');
 
 const RESTART_EXIT_CODE = 75;
-// Una reproducción pide segmentos cada pocos segundos; en pausa deja de
-// pedirlos. Con este margen, una pausa corta tampoco se corta.
+// Una emisión pide segmentos cada pocos segundos; en pausa deja de
+// pedirlos. Con este margen, una pausa corta tampoco se corta, y una
+// emisión que nadie paró (la sesión sigue "activa") no bloquea para siempre.
 const PLAYBACK_GRACE_MS = 10 * 60 * 1000;
 const CHECK_INTERVAL_MS = 15 * 1000;
 
@@ -27,7 +36,8 @@ function isSupervised() {
 }
 
 // Middleware: cualquier petición de vídeo (segmentos HLS, envío a la tele
-// por DLNA/Chromecast) cuenta como "alguien está viendo algo".
+// por DLNA/Chromecast). Solo bloquea el reinicio si además hay una emisión
+// a la tele en marcha (ver busyReasons).
 function trackStreamActivity(req, res, next) {
   if (/^\/api\/(hls\/[^/]+\/[^/]+\/|dlna\/remux\/|chromecast\/)/.test(req.path)) lastStreamAt = Date.now();
   next();
@@ -36,8 +46,9 @@ function trackStreamActivity(req, res, next) {
 function busyReasons() {
   const reasons = [];
   const sinceStream = Date.now() - lastStreamAt;
-  if (sinceStream < PLAYBACK_GRACE_MS) {
-    reasons.push(`se está viendo algo (último vídeo pedido hace ${Math.round(sinceStream / 1000)} s)`);
+  const casting = chromecast.getStatus().active || dlna.getStatus().active;
+  if (casting && sinceStream < PLAYBACK_GRACE_MS) {
+    reasons.push(`se está emitiendo a la tele (último vídeo pedido hace ${Math.round(sinceStream / 1000)} s)`);
   }
   const ffmpeg = ffmpegLimiter.getStats();
   if (ffmpeg.runningHigh || ffmpeg.queuedHigh) {
