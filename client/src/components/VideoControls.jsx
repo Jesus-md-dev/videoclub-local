@@ -101,10 +101,12 @@ function formatTime(seconds) {
 // elemento que maneja WatchPage (progreso, reintentos, etc.); este
 // componente solo lee su estado y lo controla desde fuera.
 // Cambiar de audio recarga el reproductor entero (ver handleAudioChange en
-// WatchPage) y con él estos controles: sin esto, el panel de audio y
-// subtítulos se cerraba al elegir una pista. Se marca justo antes del
-// cambio y lo recoge el VideoControls nuevo.
-let reopenTracksAfterReload = false;
+// WatchPage) y con él estos controles, que además se montan dos veces
+// (clave nueva, y otra vez tras volver a comprobar el vídeo): sin esto, el
+// panel de audio y subtítulos se cerraba al elegir una pista. Mientras dura
+// esta ventana, cada VideoControls nuevo lo abre; cerrarlo la anula.
+const REOPEN_TRACKS_MS = 15000;
+let reopenTracksUntil = 0;
 
 export default function VideoControls({
   videoRef,
@@ -139,11 +141,7 @@ export default function VideoControls({
   // Un solo botón "Audio y subtítulos" (#166), como Netflix/Prime/Disney+:
   // abre un panel con las dos listas lado a lado. Ajustes y búsqueda de
   // subtítulos son vistas dentro de ese mismo panel.
-  const [tracksOpen, setTracksOpen] = useState(() => {
-    const reopen = reopenTracksAfterReload;
-    reopenTracksAfterReload = false;
-    return reopen;
-  });
+  const [tracksOpen, setTracksOpen] = useState(() => Date.now() < reopenTracksUntil);
   // Tras esa recarga, el foco (modo tele) vuelve a la pista elegida.
   useEffect(() => {
     if (tracksOpen) subtitleSettingsRef.current?.querySelector('.tracks-option-active')?.focus({ preventScroll: true });
@@ -526,7 +524,12 @@ export default function VideoControls({
     navigator.mediaSession.metadata = new MediaMetadata({ title });
   }, [title]);
 
+  // La pista que suena: la elegida o, sin elección, la de por defecto del
+  // archivo (si no, el panel no marcaba ninguna).
+  const activeAudioIndex = audioIndex ?? (audioTracks.find((t) => t.default) || audioTracks[0])?.index;
+
   const closeTracksPanel = () => {
+    reopenTracksUntil = 0;
     setTracksOpen(false);
     setSubtitleSettingsOpen(false);
     setSubtitleSearchOpen(false);
@@ -1000,11 +1003,11 @@ export default function VideoControls({
                         {audioTracks.map((track) => (
                           <li key={track.index}>
                             <button
-                              className={`tracks-option ${track.index === audioIndex ? 'tracks-option-active' : ''}`}
-                              aria-pressed={track.index === audioIndex}
+                              className={`tracks-option ${track.index === activeAudioIndex ? 'tracks-option-active' : ''}`}
+                              aria-pressed={track.index === activeAudioIndex}
                               onClick={() => {
-                                if (track.index === audioIndex) return;
-                                reopenTracksAfterReload = true;
+                                if (track.index === activeAudioIndex) return;
+                                reopenTracksUntil = Date.now() + REOPEN_TRACKS_MS;
                                 onAudioChange({ target: { value: String(track.index) } });
                               }}
                             >
