@@ -100,6 +100,12 @@ function formatTime(seconds) {
 // progreso, estilo Netflix/YouTube. El <video> sigue siendo el mismo
 // elemento que maneja WatchPage (progreso, reintentos, etc.); este
 // componente solo lee su estado y lo controla desde fuera.
+// Cambiar de audio recarga el reproductor entero (ver handleAudioChange en
+// WatchPage) y con él estos controles: sin esto, el panel de audio y
+// subtítulos se cerraba al elegir una pista. Se marca justo antes del
+// cambio y lo recoge el VideoControls nuevo.
+let reopenTracksAfterReload = false;
+
 export default function VideoControls({
   videoRef,
   shellRef,
@@ -133,7 +139,16 @@ export default function VideoControls({
   // Un solo botón "Audio y subtítulos" (#166), como Netflix/Prime/Disney+:
   // abre un panel con las dos listas lado a lado. Ajustes y búsqueda de
   // subtítulos son vistas dentro de ese mismo panel.
-  const [tracksOpen, setTracksOpen] = useState(false);
+  const [tracksOpen, setTracksOpen] = useState(() => {
+    const reopen = reopenTracksAfterReload;
+    reopenTracksAfterReload = false;
+    return reopen;
+  });
+  // Tras esa recarga, el foco (modo tele) vuelve a la pista elegida.
+  useEffect(() => {
+    if (tracksOpen) subtitleSettingsRef.current?.querySelector('.tracks-option-active')?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [subtitleSettingsOpen, setSubtitleSettingsOpen] = useState(false);
   const [subtitleSearchOpen, setSubtitleSearchOpen] = useState(false);
   const [subtitleSearchResults, setSubtitleSearchResults] = useState(null);
@@ -987,7 +1002,11 @@ export default function VideoControls({
                             <button
                               className={`tracks-option ${track.index === audioIndex ? 'tracks-option-active' : ''}`}
                               aria-pressed={track.index === audioIndex}
-                              onClick={() => onAudioChange({ target: { value: String(track.index) } })}
+                              onClick={() => {
+                                if (track.index === audioIndex) return;
+                                reopenTracksAfterReload = true;
+                                onAudioChange({ target: { value: String(track.index) } });
+                              }}
                             >
                               {trackLabel(track)}
                             </button>
