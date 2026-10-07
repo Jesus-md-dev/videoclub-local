@@ -35,9 +35,21 @@ export default defineConfig({
         // "Cache-Control: no-store" (ver server/index.js) para no arrastrar
         // datos desactualizados - un Service Worker cacheándolo por su
         // cuenta reintroduciría justo ese problema.
-        navigateFallback: '/offline.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/cert$/],
-        runtimeCaching: [],
+        //
+        // Las páginas (navegaciones) van siempre a la red y offline.html solo
+        // sale si la red falla de verdad. Antes era navigateFallback, que en
+        // Workbox sirve esa página a TODA navegación fuera de la caché: abrir
+        // o recargar /profiles o /watch/... por HTTPS (el único caso en que
+        // hay Service Worker) mostraba "No se puede conectar" con el servidor
+        // en marcha (#167; en #147 se achacó a Edge headless).
+        navigateFallback: null,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request, url }) => request.mode === 'navigate' && !/^\/(api\/|cert$)/.test(url.pathname),
+            handler: 'NetworkOnly',
+            options: { precacheFallback: { fallbackURL: '/offline.html' } },
+          },
+        ],
       },
     }),
   ],
