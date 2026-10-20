@@ -615,6 +615,9 @@ function ensureGenerating(video, priority = 'low') {
 // no tiene sentido: no hay archivo de origen con el que hacer nada.
 function retry(video) {
   if (isLost(video)) return 'failed';
+  // Si se apartó a mano la carpeta HLS para regenerarla (#169), la caché
+  // seguiría diciendo "listo" sin volver a mirar el disco.
+  readyIds.delete(video.id);
   status.delete(video.id);
   lastError.delete(video.id);
   // Sin esto, un vídeo que falló una vez por estar roto/incompleto y luego
