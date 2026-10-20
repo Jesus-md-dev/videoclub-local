@@ -7,6 +7,10 @@ const { createJsonRegistry } = require('./jsonRegistry');
 // hls.js:isLost), para no reescribir la lista humana en cada petición y
 // para poder ir añadiendo según se detectan, no solo en una foto fija.
 const store = createJsonRegistry('lost-videos.json');
+// Perdidos que se ha decidido no reponer (#170): sin esto, quitarlos de la
+// lista no servía de nada, porque hls.js:isLost los volvía a detectar y
+// recordLost los añadía otra vez.
+const ignored = createJsonRegistry('lost-ignored.json');
 
 // Fuera de la carpeta de vídeos pero en el mismo disco, para no mezclarla
 // con la biblioteca y que el escaneo del catálogo no la confunda con
@@ -61,7 +65,7 @@ function rewriteManifest(registry) {
 // hace nada si ya estaba registrado, así que es barato llamarla a menudo.
 function recordLost(video) {
   const registry = store.get();
-  if (registry[video.id]) return;
+  if (registry[video.id] || ignored.get()[video.id]) return;
   registry[video.id] = {
     relativePath: video.relativePath,
     title: video.title,
@@ -84,4 +88,19 @@ function forget(id) {
   rewriteManifest(registry);
 }
 
-module.exports = { recordLost, forget, reloadRegistry: store.reload };
+// Quita un vídeo de la lista y no lo vuelve a apuntar aunque se detecte
+// otra vez como perdido.
+function ignore(id) {
+  const registry = store.get();
+  const entry = registry[id];
+  ignored.get()[id] = { title: entry?.title || null, relativePath: entry?.relativePath || null, ignoredAt: new Date().toISOString() };
+  ignored.save();
+  forget(id);
+}
+
+function reloadRegistry() {
+  store.reload();
+  ignored.reload();
+}
+
+module.exports = { recordLost, forget, ignore, reloadRegistry };

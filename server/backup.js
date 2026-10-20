@@ -55,6 +55,7 @@ const ITEMS = [
   // (catalogOverrides.js) son decisiones tomadas a mano que no se deben
   // perder al cambiar de PC.
   { name: 'lost-videos.json', type: 'file' },
+  { name: 'lost-ignored.json', type: 'file' },
   { name: 'catalog-ungrouped.json', type: 'file' },
   { name: 'codec-checks.json', type: 'file' },
   { name: 'analytics.log', type: 'file' },
