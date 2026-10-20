@@ -296,7 +296,51 @@ async function verifyGeneratedHlsWithRetry(masterPath, expectedDurationSeconds) 
   }
 }
 
-function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy, useGpu, hdr, durationSeconds, onProgress }) {
+// Marca de tiempo del primer paquete de una pista (null si no se puede leer).
+// No vale el start_time de ffprobe por pista: en MKV sale 0 para todas
+// aunque el audio no empiece hasta mucho después.
+function firstPacketTime(inputPath, streamSpecifier) {
+  return new Promise((resolve) => {
+    if (!ffprobePath) {
+      resolve(null);
+      return;
+    }
+    const args = ['-v', 'error', '-select_streams', streamSpecifier, '-show_entries', 'packet=pts_time', '-read_intervals', '%+#1', '-of', 'csv=p=0', inputPath];
+    const proc = spawn(ffprobePath, args, { windowsHide: true });
+    let stdout = '';
+    proc.stdout.on('data', (d) => {
+      stdout += d;
+    });
+    proc.on('error', () => resolve(null));
+    proc.on('close', () => {
+      const t = parseFloat(stdout.trim().split(/\r?\n/)[0]);
+      resolve(Number.isFinite(t) ? t : null);
+    });
+  });
+}
+
+// Pistas de audio que empiezan bastante más tarde que el vídeo (issue #169:
+// "Hope (2026)", audio desde el segundo 15). El HLS conserva ese hueco en
+// las marcas de tiempo, pero la lista de audio empieza en 0 y el
+// reproductor coloca el audio 15 s antes de tiempo: las voces van
+// adelantadas respecto a la imagen y a los subtítulos. Devuelve un Set con
+// los índices de esas pistas, para rellenarles el principio con silencio.
+const AUDIO_GAP_THRESHOLD_SECONDS = 0.5;
+async function audioStreamsStartingLate(inputPath, audioStreams) {
+  const videoStart = await firstPacketTime(inputPath, 'v:0');
+  const late = new Set();
+  for (const stream of audioStreams) {
+    // eslint-disable-next-line no-await-in-loop
+    const audioStart = await firstPacketTime(inputPath, String(stream.index));
+    if (audioStart != null && audioStart - (videoStart || 0) > AUDIO_GAP_THRESHOLD_SECONDS) {
+      console.log(`HLS: la pista de audio ${stream.index} empieza en ${audioStart.toFixed(2)}s; se rellena con silencio`);
+      late.add(stream.index);
+    }
+  }
+  return late;
+}
+
+function runFfmpegHls(inputPath, outDir, { audioStreams, lateAudio = new Set(), defaultIndex, videoCopy, useGpu, hdr, durationSeconds, onProgress }) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(outDir, { recursive: true });
 
@@ -369,10 +413,15 @@ function runFfmpegHls(inputPath, outDir, { audioStreams, defaultIndex, videoCopy
       // arrancar con "stream parsing failed" en el SourceBuffer de audio,
       // no solo al cambiar de pista. Nunca copiar audio con más de 2
       // canales, sea cual sea su códec de origen.
-      if (stream.codec_name === 'aac' && stream.channels <= 2) {
+      // Una pista que empieza tarde (ver audioStreamsStartingLate) también se
+      // recodifica: rellenar con silencio exige pasar por un filtro.
+      if (stream.codec_name === 'aac' && stream.channels <= 2 && !lateAudio.has(stream.index)) {
         args.push(`-c:a:${i}`, 'copy');
       } else {
         args.push(`-c:a:${i}`, 'aac', `-b:a:${i}`, '160k', `-ac:a:${i}`, '2');
+      }
+      if (lateAudio.has(stream.index)) {
+        args.push(`-filter:a:${i}`, 'aresample=async=1:first_pts=0');
       }
     });
     // El audio AAC de un origen MKV/TS suele venir en formato ADTS, que
@@ -605,6 +654,7 @@ async function runGeneration(video, priority) {
     };
 
     const tmpDir = `${outDir}.tmp`;
+    const lateAudio = await audioStreamsStartingLate(inputPathFor(video), audioStreams);
 
     // Un archivo grande en un disco externo puede fallar de forma puntual
     // (contención de E/S, la GPU ya saturada por otra sesión NVENC a la
@@ -620,7 +670,7 @@ async function runGeneration(video, priority) {
       try {
         // eslint-disable-next-line no-await-in-loop
         const ffmpegStderr = await runLimited(
-          () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, defaultIndex, videoCopy, useGpu: attempts[i], hdr, durationSeconds, onProgress }),
+          () => runFfmpegHls(inputPathFor(video), tmpDir, { audioStreams, lateAudio, defaultIndex, videoCopy, useGpu: attempts[i], hdr, durationSeconds, onProgress }),
           priority
         );
         // ffmpeg puede salir con código 0 (éxito) y aun así dejar el
