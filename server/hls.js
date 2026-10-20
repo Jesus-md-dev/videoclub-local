@@ -615,6 +615,10 @@ function ensureGenerating(video, priority = 'low') {
 // no tiene sentido: no hay archivo de origen con el que hacer nada.
 function retry(video) {
   if (isLost(video)) return 'failed';
+  // Ya en marcha (p.ej. el precalentamiento): una segunda generación a la vez
+  // borraría la carpeta .tmp de la primera y fallarían las dos (#169).
+  const current = status.get(video.id);
+  if (current === 'checking' || current === 'processing') return current;
   // Si se apartó a mano la carpeta HLS para regenerarla (#169), la caché
   // seguiría diciendo "listo" sin volver a mirar el disco.
   readyIds.delete(video.id);
