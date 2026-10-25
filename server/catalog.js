@@ -151,6 +151,16 @@ function isGenericFolderName(name) {
   );
 }
 
+// Anime doblado al castellano: lo que cuelga de una carpeta "Castellano"
+// dentro de "Anime" (ej. "Anime/Castellano/Trigun/01.mkv"). Va en su propia
+// fila del catálogo y cuenta como anime aunque la ficha de TMDB diga otra
+// cosa: la carpeta en la que se puso es la señal más fiable.
+function isAnimeCastellano(video) {
+  const folders = video.relativePath.split(path.sep).slice(0, -1).map((s) => cleanTitle(s).toLowerCase());
+  const animeAt = folders.indexOf('anime');
+  return animeAt !== -1 && folders.indexOf('castellano', animeAt + 1) !== -1;
+}
+
 // Quita un sufijo de saga pegado al título (ver TITLE_WITH_SAGA_SUFFIX_PATTERN)
 // para obtener el título base de agrupación. Si no hay sufijo, devuelve el
 // nombre tal cual.
@@ -394,7 +404,7 @@ function buildLibrary() {
     videos.sort((a, b) => a.relativePath.localeCompare(b.relativePath, 'es', { numeric: true }));
 
     if (showKeys.includes(key)) {
-      showsList.push({ name: key, path: key, thumbnailId: videos[0].id });
+      showsList.push({ name: key, path: key, thumbnailId: videos[0].id, castellano: videos.some(isAnimeCastellano) });
       showVideos.set(key, videos);
     } else {
       const similarShow = showKeys.find((showKey) => looksLikeSameWork(key, showKey));
@@ -628,6 +638,7 @@ module.exports = {
   metadataKeyFor: groupKeyFor,
   isLooseEpisode,
   isGenericFolderName,
+  isAnimeCastellano,
   getAllGroupKeys,
   getShowKeyFor,
   forgetShow,

@@ -592,7 +592,9 @@ export default function CatalogPage() {
   // En la raíz, las carpetas (series/anime) se separan en dos filas según
   // el tipo detectado por las fuentes de metadatos; dentro de una carpeta
   // concreta (episodios de una sola obra) no aplica la distinción.
-  const animeFolders = !dir ? visibleFolders.filter((f) => f.type === 'anime') : [];
+  // El anime de "Anime/Castellano/" (doblado) va en su propia fila.
+  const animeFolders = !dir ? visibleFolders.filter((f) => f.type === 'anime' && !f.castellano) : [];
+  const castellanoAnimeFolders = !dir ? visibleFolders.filter((f) => f.type === 'anime' && f.castellano) : [];
   const seriesFolders = !dir ? visibleFolders.filter((f) => f.type !== 'anime') : visibleFolders;
 
   const list = searching ? filtered : visibleVideos;
@@ -696,6 +698,19 @@ export default function CatalogPage() {
             {showFolders && animeFolders.length > 0 && (
               <Row title="Animes" layout={layout}>
                 {animeFolders.map((folder) => (
+                  <FolderCard
+                    key={folder.path}
+                    folder={folder}
+                    onOpen={goToDir}
+                    onQuickInfo={() => setQuickInfoTarget({ type: 'folder', data: folder })}
+                  />
+                ))}
+              </Row>
+            )}
+
+            {showFolders && castellanoAnimeFolders.length > 0 && (
+              <Row title="Anime en castellano" layout={layout}>
+                {castellanoAnimeFolders.map((folder) => (
                   <FolderCard
                     key={folder.path}
                     folder={folder}

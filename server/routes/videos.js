@@ -18,6 +18,17 @@ function resolveType(meta) {
   return meta.type;
 }
 
+// Lo de "Anime/Castellano/" es anime mande lo que mande la ficha (ver
+// catalog.isAnimeCastellano): así también se oculta a quien no tenga
+// "Mostrar anime".
+function videoType(video, meta) {
+  return catalog.isAnimeCastellano(video) ? 'anime' : resolveType(meta);
+}
+
+function folderType(folder, meta) {
+  return folder.castellano ? 'anime' : resolveType(meta);
+}
+
 // Anime oculto por perfil (#150): solo lo ve el perfil que tenga activada
 // la opción "Mostrar anime" (settings.showAnime, desactivada de base). Sin
 // profileId en la petición no se filtra nada (páginas de administración).
@@ -100,7 +111,8 @@ router.get('/videos', (req, res) => {
       cleanName: meta.cleanName,
       customName: meta.customName || null,
       poster: meta.poster,
-      type: resolveType(meta),
+      type: videoType(video, meta),
+      castellano: catalog.isAnimeCastellano(video),
       animeMarked: Boolean(meta.animeMarked),
     };
   });
@@ -124,7 +136,11 @@ router.get('/videos/browse', (req, res) => {
   const profileProgress = profileId && profiles.profileExists(profileId) ? profiles.getProgress(profileId) : null;
   const hideAnime = hidesAnime(req);
   // Dentro de una carpeta de anime (enlace directo a ?dir=), nada.
-  if (hideAnime && dir && resolveType(metadata.getCached(dir.split(/[\/]/)[0])) === 'anime') {
+  if (
+    hideAnime &&
+    dir &&
+    (resolveType(metadata.getCached(dir.split(/[\/]/)[0])) === 'anime' || videos.some(catalog.isAnimeCastellano))
+  ) {
     res.json({ dir, parent, folders: [], videos: [] });
     return;
   }
@@ -135,7 +151,7 @@ router.get('/videos/browse', (req, res) => {
     dir,
     parent,
     folders: folders
-      .filter((folder) => !hideAnime || resolveType(metadata.getCached(folder.name)) !== 'anime')
+      .filter((folder) => !hideAnime || folderType(folder, metadata.getCached(folder.name)) !== 'anime')
       .map((folder) => {
         const meta = metadata.getCached(folder.name);
         const folderVideos = catalog.listDir(folder.path).videos;
@@ -147,7 +163,7 @@ router.get('/videos/browse', (req, res) => {
           cleanName: meta.cleanName,
           customName: meta.customName || null,
           poster: meta.poster,
-          type: resolveType(meta),
+          type: folderType(folder, meta),
           animeMarked: Boolean(meta.animeMarked),
           processingState,
           processingPercent,
@@ -169,7 +185,8 @@ router.get('/videos/browse', (req, res) => {
           cleanName: meta.cleanName,
           customName: meta.customName || null,
           poster: meta.poster,
-          type: resolveType(meta),
+          type: videoType(video, meta),
+          castellano: catalog.isAnimeCastellano(video),
           animeMarked: Boolean(meta.animeMarked),
         };
       })
