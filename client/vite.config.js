@@ -3,10 +3,13 @@ import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
+// Demo pública estática (VITE_DEMO=1, ver netlify.toml): sin Service Worker.
+const demo = process.env.VITE_DEMO === '1'
+
 export default defineConfig({
   plugins: [
     react(),
-    VitePWA({
+    !demo && VitePWA({
       // El registro lo hace el propio plugin al montar el bundle - no hace
       // falta código manual en el cliente para darlo de alta.
       registerType: 'autoUpdate',

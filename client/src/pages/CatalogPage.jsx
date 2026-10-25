@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Hls from 'hls.js';
+import { hlsMasterUrl } from '../demo';
 import { getActiveProfileId, withProfile } from '../profile';
 import { getCatalogLayout, setCatalogLayout } from '../catalogLayout';
 import { track } from '../analytics';
@@ -80,7 +81,7 @@ function useHoverPreview(videoId, ready) {
     if (!previewing) return undefined;
     const el = videoElRef.current;
     if (!el) return undefined;
-    const masterUrl = `/api/hls/${videoId}/master.m3u8`;
+    const masterUrl = hlsMasterUrl(videoId);
 
     if (Hls.isSupported()) {
       const instance = new Hls();

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { DEMO } from './demo';
 
 const ACTIVE_PROFILE_KEY = 'activeProfileId';
 
@@ -56,6 +57,7 @@ export function refreshProfiles() {
 }
 
 export function isAdminIn(profiles, id = getActiveProfileId()) {
+  if (DEMO) return false; // la demo no tiene páginas de administración
   if (!profiles.some((p) => p.admin)) return true;
   return profiles.some((p) => p.id === id && p.admin);
 }

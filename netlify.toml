@@ -1,0 +1,14 @@
+# Demo pública estática (datos ficticios, sin servidor). Ver README, "Live demo".
+[build]
+  base = "client"
+  command = "npm install && npm run build"
+  publish = "dist"
+
+[build.environment]
+  VITE_DEMO = "1"
+  NODE_VERSION = "22"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
