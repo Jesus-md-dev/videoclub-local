@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Hls from 'hls.js';
+import { hlsMasterUrl } from '../demo';
 import VideoControls from '../components/VideoControls';
 import HiddenMenu from '../components/HiddenMenu';
 import ProfileButton from '../components/ProfileButton';
@@ -359,7 +360,7 @@ export default function WatchPage() {
     const player = playerRef.current;
     if (!video || !ready || !player) return undefined;
 
-    const masterUrl = `/api/hls/${id}/master.m3u8`;
+    const masterUrl = hlsMasterUrl(id);
 
     if (Hls.isSupported()) {
       // Por defecto hls.js precarga tan por delante como la red permita

@@ -6,6 +6,11 @@ import App from './App.jsx'
 import { trackDeviceInfo } from './analytics'
 import { setupTvMode } from './tvMode'
 import { getActiveProfileId } from './profile'
+import { DEMO } from './demo'
+import { installDemoMock } from './demo/mock'
+import DemoBanner from './demo/DemoBanner'
+
+if (DEMO) installDemoMock()
 
 // Perfil activo en cada petición a la API: el servidor deja hacer las
 // acciones de administrador solo a perfiles admin (#152, adminGuard.js).
@@ -25,6 +30,7 @@ setupTvMode()
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
+      {DEMO && <DemoBanner />}
       <App />
     </BrowserRouter>
   </StrictMode>,
