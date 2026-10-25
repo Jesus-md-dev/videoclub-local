@@ -6,7 +6,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const ffmpeg = require('ffmpeg-static');
 
-const out = path.join(__dirname, '..', 'client', 'public', 'demo');
+const out = path.join(__dirname, '..', 'client', 'demo-assets');
 fs.mkdirSync(path.join(out, 'posters'), { recursive: true });
 
 const POSTERS = [

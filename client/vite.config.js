@@ -1,3 +1,4 @@
+import { cpSync } from 'node:fs'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -6,9 +7,18 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Demo pública estática (VITE_DEMO=1, ver netlify.toml): sin Service Worker.
 const demo = process.env.VITE_DEMO === '1'
 
+// Carátulas y clips de la demo: solo se copian al dist en la build de demo.
+const demoAssets = {
+  name: 'copy-demo-assets',
+  closeBundle() {
+    cpSync('demo-assets', 'dist/demo', { recursive: true })
+  },
+}
+
 export default defineConfig({
   plugins: [
     react(),
+    demo && demoAssets,
     !demo && VitePWA({
       // El registro lo hace el propio plugin al montar el bundle - no hace
       // falta código manual en el cliente para darlo de alta.
